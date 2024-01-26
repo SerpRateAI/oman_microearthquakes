@@ -1,0 +1,20 @@
+name: Auto Update Repository
+
+on:
+  schedule:
+    - cron: '0 5 * * *'  # Runs every day at 00:00 UTC
+
+jobs:
+  update-repo:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v2  # Checks out your repository
+
+    - name: Commit and Push if there are changes
+      run: |
+        git config --global user.email "tianzeliu@gmail.com"
+        git config --global user.name "tianzeliu"
+        git add .
+        git commit -m "Automated update" -a || echo "No changes to commit"
+        git push
