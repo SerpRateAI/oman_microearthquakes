@@ -15,7 +15,7 @@ jobs:
       run: |
         git config --global user.email "tianzeliu@gmail.com"
         git config --global user.name "tianzeliu"
-        git add .
+        git add /Volumes/OmanData/geophones_no_prefilt/scripts || echo "No files to commit"
         
         git commit -m "Automated update" -a || echo "No changes to commit"
         git push https://${{ secrets.BACKUP_PAT }}@github.com/${{ github.repository }} HEAD:${{ github.ref_name }}
