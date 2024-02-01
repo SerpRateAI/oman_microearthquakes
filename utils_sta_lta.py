@@ -4,13 +4,11 @@
 ## Import libraries
 from numpy import sqrt, mean, square, amin, argmin
 from obspy.signal.trigger import coincidence_trigger
-from pandas import DataFrame, Timedelta, Grouper, concat
+from pandas import DataFrame, Timedelta, Grouper, concat, read_csv
 from matplotlib.pyplot import subplots
 from matplotlib.dates import DayLocator, DateFormatter
 
-## Constants
-ROOTDIR = "/Volumes/OmanData/geophones_no_prefilt/data"
-INNER_STATIONS = ["A01", "A02", "A03", "A04", "A05", "A06", "B01", "B02", "B03", "B04", "B05", "B06"]
+from utils_basic import INNER_STATIONS, DAYS_PATH, NIGHTS_PATH, STARTTIME, ENDTIME
 
 ## Class for storing the information of an event claimed by associating the detections
 class AssociatedEvent:
@@ -24,17 +22,56 @@ class AssociatedEvent:
         self.num_of_stations = len(stations)
         self.first_trigger_time = amin(trigger_times)
         self.first_trigger_station = stations[argmin(trigger_times)]
-        self.average_snr = mean(snrs)
+
+        if snrs is not None:
+            self.average_snr = mean(snrs)
+        else:
+            self.average_snr = None
 
     def __str__(self):
         return f"Event {self.name} is detected by {self.num_of_stations} stations. The first trigger time is {self.first_trigger_time}. The average SNR is {self.average_snr}."
     
     def __repr__(self):
         return self.__str__()
+    
+    def append_to_file(self, fp):
+        fp.write("##\n")
+        fp.write(f"{self.name}\n")
+        fp.write("\n")
+        fp.write(f"first_trigger_time first_trigger_station num_of_stations average_snr\n")
+
+        timestr = self.first_trigger_time.strftime('%Y-%m-%dT%H:%M:%S.%f')
+
+        if self.average_snr is not None:
+            fp.write(f"{timestr} {self.first_trigger_station} {self.num_of_stations:d} None\n")
+        else:
+            fp.write(f"{timestr} {self.first_trigger_station} {self.num_of_stations:d} None\n")
+        fp.write("\n")
+
+        fp.write("station trigger_time detrigger_time signal_noise_ratio\n")
+        
+        for i in range(self.num_of_stations):
+            station = self.stations[i]
+            trigger_time = self.trigger_times[i]
+            detrigger_time = self.detrigger_times[i]
+            timestr1 = trigger_time.strftime('%Y-%m-%dT%H:%M:%S.%f')
+            timestr2 = detrigger_time.strftime('%Y-%m-%dT%H:%M:%S.%f')
+
+            if self.snrs is not None:
+                snr = self.snrs[i]
+                
+                fp.write(f"{station} {timestr1} {timestr2} {snr:.2f}\n")
+            else:
+                fp.write(f"{station} {timestr2} {timestr2} None\n")
+
+        fp.write("\n")
 
 ## Class for storing a list of AssociatedEvent objects  
 class Events:
-    def __init__(self):
+    def __init__(self, min_num_det, max_delta, min_snr=None):
+        self.min_num_det = min_num_det
+        self.max_delta = max_delta
+        self.min_snr = min_snr
         self.events = []
 
     def __len__(self):
@@ -74,7 +111,24 @@ class Events:
             trigger_times.append(event.first_trigger_time)
         return trigger_times
     
+    def write_to_file(self, path):
+        with open(path, "w") as fp:
+            fp.write("#\n")
+            fp.write("Parameters\n")
+            fp.write("\n")
+            fp.write("min_num_of_detections max_delta min_snr\n")
 
+            if self.min_snr is None:
+                fp.write(f"{self.min_num_det:d} {self.max_delta:.3f} None\n")
+            else:
+                fp.write(f"{self.min_num_det:d} {self.max_delta:.3f} {self.min_snr:.1f}\n")
+
+            fp.write("\n")
+
+            for event in self.events:
+                event.append_to_file(fp)
+        
+        print(f"Events are written to {path}.")
 
 ### Run the STA/LTA method on the 3C waveforms of a given station at a given time window
 def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigger_type='classicstalta'):
@@ -213,11 +267,12 @@ def associate_detections(detdf, numdet_min=3, delta_max=0.1, use_snr=False, min_
     evdfs = []
     i = 0
     while i < numdet:
-        snr = detdf["signal_noise_ratio"][i]
+        if use_snr:
+            snr = detdf["signal_noise_ratio"][i]
 
-        if use_snr and snr < min_snr:
-            i += 1
-            continue
+            if snr < min_snr:
+                i += 1
+                continue
         
         station0 = detdf["station"][i]
         trigger_time0 = detdf["trigger_time"][i]
@@ -227,11 +282,12 @@ def associate_detections(detdf, numdet_min=3, delta_max=0.1, use_snr=False, min_
         j = i + 1
 
         while j < numdet:
-            snr = detdf["signal_noise_ratio"][j]
+            if use_snr:
+                snr = detdf["signal_noise_ratio"][j]
 
-            if use_snr and snr < min_snr:
-                j += 1
-                continue
+                if snr < min_snr:
+                    j += 1
+                    continue
 
             trigger_time = detdf["trigger_time"][j]
             station = detdf["station"][j]
@@ -258,31 +314,24 @@ def associate_detections(detdf, numdet_min=3, delta_max=0.1, use_snr=False, min_
     print(f"There are in total {numev} associated events.")
 
     ### Store the information in an Events object
-    events = Events()
+    if use_snr:
+        events = Events(numdet_min, delta_max, min_snr)
+    else:
+        events = Events(numdet_min, delta_max)
+
     for i, evdf in enumerate(evdfs):
-        #print(evdf)
-        if numev < 10:
-            evname = "Event"+str(i+1)
-        elif numev < 100:
-            evname = "Event"+str(i+1).zfill(2)
-        elif numev < 1000:
-            evname = "Event"+str(i+1).zfill(3)
-        elif numev < 10000:
-            evname = "Event"+str(i+1).zfill(4)
-        elif numev < 100000:
-            evname = "Event"+str(i+1).zfill(5)
-        else:
-            print("Too many events!")
-            raise ValueError
-       
-        evname = evname
+        evname = "Event" + str(i+1).zfill(len(str(numev)))
         stations = evdf["station"].tolist()
-        snrs = evdf["signal_noise_ratio"].array
+
+        if use_snr:
+            snrs = evdf["signal_noise_ratio"].array
+        else:
+            snrs = None
+
         trigger_times = evdf["trigger_time"].array
         detrigger_times = evdf["detrigger_time"].array
         event = AssociatedEvent(evname, stations, trigger_times, detrigger_times, snrs)
         events.append(event)
-
 
     return events
 
@@ -298,8 +347,27 @@ def bin_events_by_hour(events):
     return countdf
 
 ## Plot the number of detections for each station in Subarray A and B
-def plot_station_hourly_detections(detnumdf, individual_color=True, ymax=4000):
+def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nights=False):
     fig, axes = subplots(2, 1, sharex=True, figsize=(20, 12))
+
+    ### Plot blocks for days and nights
+    if days_and_nights:
+        daysdf = read_csv(DAYS_PATH, parse_dates=["starttime", "endtime"])
+        nightsdf = read_csv(NIGHTS_PATH, parse_dates=["starttime", "endtime"])
+
+        for i in range(len(daysdf)):
+            sunrise = daysdf["starttime"].iloc[i]
+            sunset = daysdf["endtime"].iloc[i]
+
+            axes[0].axvspan(sunrise, sunset, color="lightyellow", alpha=0.5)
+            axes[1].axvspan(sunrise, sunset, color="lightyellow", alpha=0.5)
+
+        for i in range(len(nightsdf)):
+            sunset = nightsdf["starttime"].iloc[i]
+            sunrise = nightsdf["endtime"].iloc[i]
+
+            axes[0].axvspan(sunset, sunrise, color="lightblue", alpha=0.5)
+            axes[1].axvspan(sunset, sunrise, color="lightblue", alpha=0.5)
 
     timeax = detnumdf["hour"].values
 
@@ -324,14 +392,11 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, ymax=4000):
                 axes[0].plot(timeax, data, color="lightgray", label=station, linestyle=":", linewidth=0.5)
                 axes[1].plot(timeax, data, color="lightgray", label=station, linestyle=":", linewidth=0.5)
 
-    axes[0].set_ylim(0, ymax)
-    axes[1].set_ylim(0, ymax)
+    axes[0].set_ylabel("Detections per hour", fontsize=15)
+    axes[1].set_ylabel("Detections per hour", fontsize=15)
 
-    axes[0].set_ylabel("Detections per hour", fontsize=12)
-    axes[1].set_ylabel("Detections per hour", fontsize=12)
-
-    axes[0].set_title("Array A", fontsize=15, fontweight="bold")
-    axes[1].set_title("Array B", fontsize=15, fontweight="bold")
+    axes[0].set_title("Array A", fontsize=18, fontweight="bold")
+    axes[1].set_title("Array B", fontsize=18, fontweight="bold")
 
     ## Set x ticks and labels
     axes[1].tick_params(axis='x', which='major', length=5)
@@ -342,9 +407,16 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, ymax=4000):
         label.set_va('top')  # Vertical alignment for y-axis label
         label.set_ha('right')
         label.set_rotation(15)
-        label.set_fontsize(10)
-    
-    axes[1].set_xlabel("UTC Time", fontsize=12)
+        label.set_fontsize(12)
+
+    for label in axes[0].get_yticklabels():
+        label.set_fontsize(12)
+
+    for label in axes[1].get_yticklabels():
+        label.set_fontsize(12)
+
+    axes[1].set_xlabel("UTC Time", fontsize=15)
+    axes[1].set_xlim(STARTTIME, ENDTIME)
 
     return fig, axes
 
