@@ -7,7 +7,9 @@ from pandas import Timestamp, to_datetime
 
 ## Constants
 ROOTDIR = "/Volumes/OmanData/geophones_no_prefilt/data"
-INNER_STATIONS = ["A01", "A02", "A03", "A04", "A05", "A06", "B01", "B02", "B03", "B04", "B05", "B06"]
+INNER_STATIONS = ["A01", "A02", "A03", "A04", "A05", "A06", "B01", "B02", "B03", "B04", "B06"]
+INNER_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06"]
+INNER_STATIONS_B = ["B01", "B02", "B03", "B04", "B06"]
 DAYS_PATH = join(ROOTDIR, "days.csv")
 NIGHTS_PATH = join(ROOTDIR, "nights.csv")
 STATIONS_PATH = join(ROOTDIR, "stations.csv")
