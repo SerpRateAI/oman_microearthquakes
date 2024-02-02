@@ -4,7 +4,7 @@
 ## Import libraries
 from numpy import sqrt, mean, square, amin, argmin
 from obspy.signal.trigger import coincidence_trigger
-from pandas import DataFrame, Timedelta, Grouper, concat, read_csv
+from pandas import DataFrame, Timestamp, Grouper, concat, read_csv
 from matplotlib.pyplot import subplots
 from matplotlib.dates import DayLocator, DateFormatter
 
@@ -33,6 +33,16 @@ class AssociatedEvent:
     
     def __repr__(self):
         return self.__str__()
+        
+    def get_triggers_by_station(self, station):
+        if station not in self.stations:
+            raise ValueError(f"The station {station} is not in the list of stations that detected the event.")
+        else:
+            index = self.stations.index(station)
+            trigger_time = self.trigger_times[index]
+            detrigger_time = self.detrigger_times[index]
+
+            return trigger_time, detrigger_time
     
     def append_to_file(self, fp):
         fp.write("##\n")
@@ -62,13 +72,14 @@ class AssociatedEvent:
                 
                 fp.write(f"{station} {timestr1} {timestr2} {snr:.2f}\n")
             else:
-                fp.write(f"{station} {timestr2} {timestr2} None\n")
+                fp.write(f"{station} {timestr1} {timestr2} None\n")
 
         fp.write("\n")
 
 ## Class for storing a list of AssociatedEvent objects  
 class Events:
     def __init__(self, min_num_det, max_delta, min_snr=None):
+        self.num_event = 0
         self.min_num_det = min_num_det
         self.max_delta = max_delta
         self.min_snr = min_snr
@@ -92,12 +103,15 @@ class Events:
         if not isinstance(event, AssociatedEvent):
             raise ValueError("Only objects of AssociatedEvent type can be added to the list.")
         self.events.append(event)
+        self.num_event += 1
 
     def remove(self, event):
         self.events.remove(event)
+        self.num_event -= 1
 
     def clear(self):
         self.events.clear()
+        self.num_event = 0
 
     def __str__(self):
         return f"Number of events: {len(self.events)}"
@@ -111,24 +125,40 @@ class Events:
             trigger_times.append(event.first_trigger_time)
         return trigger_times
     
+    def get_events_in_interval(self, starttime, endtime):
+        ### Determine if the interval is valid
+        if type(starttime) is not Timestamp or type(endtime) is not Timestamp:
+            raise TypeError("The inputs must be of type pandas.Timestamp!")
+        
+        if starttime >= endtime:
+            raise ValueError("The start time must be earlier than the end time!")
+        
+        ### Get the events in the interval
+        events_in_interval = Events(self.min_num_det, self.max_delta, self.min_snr)
+        for event in self.events:
+            if event.first_trigger_time >= starttime and event.first_trigger_time <= endtime:
+                events_in_interval.append(event)
+
+        return events_in_interval
+    
     def write_to_file(self, path):
         with open(path, "w") as fp:
             fp.write("#\n")
             fp.write("Parameters\n")
             fp.write("\n")
-            fp.write("min_num_of_detections max_delta min_snr\n")
+            fp.write("num_of_events min_num_of_detections max_delta min_snr\n")
 
             if self.min_snr is None:
-                fp.write(f"{self.min_num_det:d} {self.max_delta:.3f} None\n")
+                fp.write(f"{self.num_event:d} {self.min_num_det:d} {self.max_delta:.3f} None\n")
             else:
-                fp.write(f"{self.min_num_det:d} {self.max_delta:.3f} {self.min_snr:.1f}\n")
+                fp.write(f"{self.num_event:d} {self.min_num_det:d} {self.max_delta:.3f} {self.min_snr:.1f}\n")
 
             fp.write("\n")
 
             for event in self.events:
                 event.append_to_file(fp)
         
-        print(f"Events are written to {path}.")
+        print(f"Events are written to {path}")
 
 ### Run the STA/LTA method on the 3C waveforms of a given station at a given time window
 def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigger_type='classicstalta'):
@@ -420,4 +450,76 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
 
     return fig, axes
 
+## Read the asscoiated events from a file
+def read_associated_events(path):
+    with open(path, "r") as fp:
+        ### Read the parameters
+        line = fp.readline()
+        if not line[0].startswith("#"):
+            raise ValueError("Error: the format of the parameter information is incorrect!")      
+
+        fp.readline()
+        fp.readline()
+        fp.readline()
+
+        line = fp.readline()
+        params = line.split()
+        numev = int(params[0])
+        numdet_min = int(params[1])
+        delta_max = float(params[2])
+        
+        if params[3] == "None":
+            min_snr = None
+        else:
+            min_snr = float(params[3])
+
+        fp.readline()
+
+        ### Read the events
+        events = Events(numdet_min, delta_max, min_snr=min_snr)
+
+        for _ in range(numev):
+            line = fp.readline()
+            if not line.startswith("##"):
+                raise ValueError("Error: the format of the event information is incorrect!")
+            
+            line = fp.readline()
+            evname = line.strip()
+            #print(evname)
+
+            fp.readline()
+            fp.readline()
+
+            line = fp.readline()
+            info = line.split()
+            numst = int(info[2])
+
+            if info[3] == "None":
+                snrs = None
+            else:
+                snrs = []
+
+            fp.readline()
+            fp.readline()
+
+            stations = []
+            trigger_times = []
+            detrigger_times = []
+            for _ in range(numst):
+                line = fp.readline()
+                info = line.split()
+                stations.append(info[0])
+                trigger_times.append(Timestamp(info[1]))
+                detrigger_times.append(Timestamp(info[2]))
+
+                if snrs is not None:
+                    snrs.append(float(info[3]))
+
+            event = AssociatedEvent(evname, stations, trigger_times, detrigger_times, snrs)
+            events.append(event)
+
+            fp.readline()
+
+    return events
+        
 

@@ -3,7 +3,7 @@
 ## Import libraries
 from os.path import join
 from numpy import sqrt, mean, square, amin
-from pandas import Timestamp
+from pandas import Timestamp, to_datetime
 
 ## Constants
 ROOTDIR = "/Volumes/OmanData/geophones_no_prefilt/data"
