@@ -6,10 +6,12 @@ from scipy.stats import linregress
 from scipy.signal import find_peaks
 from obspy import read, UTCDateTime, Stream
 from obspy.signal.cross_correlation import correlate_template
-from utils_cc import TemplateEventWaveforms, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
 from pandas import to_datetime
 
-ROOTDIR = "/Volumes/OmanData/geophones_no_prefilt/data"
+from utils_cc import TemplateEventWaveforms, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
+from utils_basic import ROOTDIR
+
+
 
 ## Read and preprocess waveforms in a set of defined time windows
 def read_and_process_windowed_waveforms(pickdf, freqmin, freqmax, rootdir=ROOTDIR, stations=None, begin=-0.01, end=0.2, reference="individual", taper=0.001, zerophase=False, corners=4):

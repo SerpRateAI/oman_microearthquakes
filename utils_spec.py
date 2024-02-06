@@ -1,12 +1,20 @@
 # Functions and classes for spectrum analysis   
 from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
-from numpy import amax, abs, pi
+from scipy.signal import periodogram
+from numpy import amax, abs, pi, hanning
 
 ## Function to calculate the spectrum of a signal
 def get_data_spectrum(data, samprat, taper=0.01):
    
     numpts = len(data)
+    
+    # Apply taper to the data
+    taper_length = int(taper * numpts)
+    taper_window = hanning(taper_length)
+    data[:taper_length] *= taper_window
+    data[-taper_length:] *= taper_window[::-1]
+    
     freqax = fftfreq(numpts, d=1/samprat)
     spec = fft(data)
     spec = spec[1:int(numpts/2)]
@@ -15,6 +23,21 @@ def get_data_spectrum(data, samprat, taper=0.01):
     spec = spec / amax(spec)
     
     return freqax, spec
+
+## Function to calculate the power spectral density of a signal
+def get_data_psd(data, samprat, taper=0.01):
+        
+        numpts = len(data)
+        
+        # Apply taper to the data
+        taper_length = int(taper * numpts)
+        taper_window = hanning(taper_length)
+        data[:taper_length] *= taper_window
+        data[-taper_length:] *= taper_window[::-1]
+        
+        freqax, psd = periodogram(data, fs=samprat)
+        
+        return freqax, psd
 
 ## Function to calculate the frequency response of a filter 
 ### Currently only support Butterworth filters
