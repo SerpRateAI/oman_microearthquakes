@@ -377,8 +377,11 @@ def bin_events_by_hour(events):
     return countdf
 
 ## Plot the number of detections for each station in Subarray A and B
-def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nights=False):
-    fig, axes = subplots(2, 1, sharex=True, figsize=(20, 12))
+def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nights=False, log=False, stations_highlight=["A04", "B04"]):
+    linewidth_highlight = 3
+    linewidth_normal = 1
+
+    fig, axes = subplots(4, 1, figsize=(40, 15), sharex=True)
 
     ### Plot blocks for days and nights
     if days_and_nights:
@@ -391,6 +394,8 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
 
             axes[0].axvspan(sunrise, sunset, color="lightyellow", alpha=0.5)
             axes[1].axvspan(sunrise, sunset, color="lightyellow", alpha=0.5)
+            axes[2].axvspan(sunrise, sunset, color="lightyellow", alpha=0.5)
+            axes[3].axvspan(sunrise, sunset, color="lightyellow", alpha=0.5)
 
         for i in range(len(nightsdf)):
             sunset = nightsdf["starttime"].iloc[i]
@@ -398,6 +403,8 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
 
             axes[0].axvspan(sunset, sunrise, color="lightblue", alpha=0.5)
             axes[1].axvspan(sunset, sunrise, color="lightblue", alpha=0.5)
+            axes[2].axvspan(sunset, sunrise, color="lightblue", alpha=0.5)
+            axes[3].axvspan(sunset, sunrise, color="lightblue", alpha=0.5)
 
     timeax = detnumdf["hour"].values
 
@@ -406,47 +413,91 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
         if individual_color:
             if station.startswith("A"):
                 if station in INNER_STATIONS:
-                    axes[0].plot(timeax, data, color="dodgerblue", label=station, linewidth=0.5)
+                    if station in stations_highlight:
+                        axes[0].plot(timeax, data, color="dodgerblue", linewidth=linewidth_highlight, label=station)
+                    else:
+                        axes[0].plot(timeax, data, color="dodgerblue", linewidth=linewidth_normal)
                 else:
-                    axes[0].plot(timeax, data, color="dodgerblue", label=station, linestyle=":", linewidth=0.5) 
+                    if station in stations_highlight:
+                        axes[1].plot(timeax, data, color="dodgerblue", linestyle=":", linewidth=linewidth_highlight, label=station)
+                    else:
+                        axes[1].plot(timeax, data, color="dodgerblue", linestyle=":", linewidth=linewidth_normal)
             else:
                 if station in INNER_STATIONS:
-                    axes[1].plot(timeax, data, color="darkorange", label=station, linewidth=0.5)
+                    if station in stations_highlight:
+                        axes[2].plot(timeax, data, color="darkorange", linewidth=linewidth_highlight, label=station)
+                    else:
+                        axes[2].plot(timeax, data, color="darkorange", linewidth=linewidth_normal)
                 else:
-                    axes[1].plot(timeax, data, color="darkorange", label=station, linestyle=":", linewidth=0.5)
+                    if station in stations_highlight:
+                        axes[3].plot(timeax, data, color="darkorange", linestyle=":", linewidth=linewidth_highlight, label=station)
+                    else:
+                        axes[3].plot(timeax, data, color="darkorange", linestyle=":", linewidth=linewidth_normal)
         else:
-            if station in INNER_STATIONS:
-                axes[0].plot(timeax, data, color="lightgray", label=station, linewidth=0.5)
-                axes[1].plot(timeax, data, color="lightgray", label=station, linewidth=0.5)
+            if station.startswith("A"):
+                if station in INNER_STATIONS:
+                    if station in stations_highlight:
+                        axes[0].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight)
+                    else:
+                        axes[0].plot(timeax, data, color="lightgray", linewidth=linewidth_normal)
+                else:
+                    if station in stations_highlight:
+                        axes[1].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_highlight)
+                    else:
+                        axes[1].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_normal)
             else:
-                axes[0].plot(timeax, data, color="lightgray", label=station, linestyle=":", linewidth=0.5)
-                axes[1].plot(timeax, data, color="lightgray", label=station, linestyle=":", linewidth=0.5)
+                if station in INNER_STATIONS:
+                    if station in stations_highlight:
+                        axes[2].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight)
+                    else:
+                        axes[2].plot(timeax, data, color="lightgray", linewidth=linewidth_normal)
+                else:
+                    if station in stations_highlight:
+                        axes[3].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_highlight)
+                    else:
+                        axes[3].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_normal)
+            
+    ## Set the y axes to log scale
+    if log:
+        axes[0].set_yscale("log")
+        axes[1].set_yscale("log")
+        axes[2].set_yscale("log")
+        axes[3].set_yscale("log")
 
-    axes[0].set_ylabel("Detections per hour", fontsize=15)
-    axes[1].set_ylabel("Detections per hour", fontsize=15)
+        axes[0].set_ylim(1e2, 1e4)
+        axes[1].set_ylim(1e2, 1e4)
+        axes[2].set_ylim(1e2, 1e4)
+        axes[3].set_ylim(1e2, 1e4)
 
-    axes[0].set_title("Array A", fontsize=18, fontweight="bold")
-    axes[1].set_title("Array B", fontsize=18, fontweight="bold")
+    axes[0].set_title("Array A, Inner", fontsize=18, fontweight="bold")
+    axes[1].set_title("Array A, Outer", fontsize=18, fontweight="bold")
+    axes[2].set_title("Array B, Inner", fontsize=18, fontweight="bold")
+    axes[3].set_title("Array B, Outer", fontsize=18, fontweight="bold")
 
     ## Set x ticks and labels
     axes[1].tick_params(axis='x', which='major', length=5)
     axes[1].xaxis.set_major_locator(DayLocator(interval=1))
     axes[1].xaxis.set_major_formatter(DateFormatter("%m-%d"))
 
-    for label in axes[1].get_xticklabels():
+    for label in axes[3].get_xticklabels():
         label.set_va('top')  # Vertical alignment for y-axis label
         label.set_ha('right')
-        label.set_rotation(15)
-        label.set_fontsize(12)
+        # label.set_rotation(15)
+        label.set_fontsize(14)
 
-    for label in axes[0].get_yticklabels():
-        label.set_fontsize(12)
+    for ax in axes:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(14)
 
-    for label in axes[1].get_yticklabels():
-        label.set_fontsize(12)
+    axes[3].set_xlabel("UTC Time", fontsize=17)
+    axes[3].set_xlim(STARTTIME, ENDTIME)
 
-    axes[1].set_xlabel("UTC Time", fontsize=15)
-    axes[1].set_xlim(STARTTIME, ENDTIME)
+    for ax in axes:
+        ax.set_ylabel("Number of Detections", fontsize=17)
+
+    ## Plot the legends
+    for ax in axes:
+        ax.legend(loc="upper right", fontsize=14)
 
     return fig, axes
 

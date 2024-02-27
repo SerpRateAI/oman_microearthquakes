@@ -189,6 +189,13 @@ class Matches:
         for event in self.events:
             event.append_to_file(fp)
 
+    def get_matches_by_criteria(self, avgcc_min, numsta_min):
+        matches = Matches()
+        for event in self.events:
+            if event.average_cc >= avgcc_min and event.num_of_stations >= numsta_min:
+                matches.append(event)
+        return matches
+
 ## Class for storing the cross-correlation result between the template and one matched event
 class MatchedEvent:
     def __init__(self, matchname, stations, ccvals, starttimes, tshifts, amprats_z, amprats_1, amprats_2):
@@ -977,7 +984,41 @@ def get_subarray_from_template_name(name):
     subarray = fields[0][-1]
 
     return subarray
-    
+
+## Get the frequency band from the suffix
+def get_freqband_from_suffix(suffix):
+    if "bandpass" in suffix:
+        pattern = r"bandpass(\d+)-(\d+)hz"
+        match = search(pattern, suffix)
+        if match:
+            freqmin = float(match.group(1))
+            freqmax = float(match.group(2))
+
+            return freqmin, freqmax
+        else:
+            raise ValueError("No frequency band information found in the suffix")
+    elif "highpass" in suffix:
+        pattern = r"highpass(\d+)hz"
+        match = search(pattern, suffix)
+        if match:
+            freqmin = float(match.group(1))
+            freqmax = None
+
+            return freqmin, freqmax
+        else:
+            raise ValueError("No frequency band information found in the suffix")
+    elif "lowpass" in suffix:
+        pattern = r"lowpass(\d+)hz"
+        match = search(pattern, suffix)
+        if match:
+            freqmin = 0
+            freqmax = float(match.group(1))
+
+            return freqmin, freqmax
+        else:
+            raise ValueError("No frequency band information found in the suffix")
+    else:
+        raise ValueError("No frequency band information found in the suffix")
 
 
 

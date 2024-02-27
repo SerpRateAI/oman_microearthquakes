@@ -94,12 +94,7 @@ def read_and_process_template_waveforms(template, freqmin, freqmax, rootdir=ROOT
             else:
                 components_active = components
             
-        print(components_active)
-        print(station)
-        print(rootdir)
-        print(timewin)
         for component in components_active:
-            print(component)
             pattern = join(rootdir, timewin, f"*{station}*{component}.SAC")
             stream_in += read(pattern)
 

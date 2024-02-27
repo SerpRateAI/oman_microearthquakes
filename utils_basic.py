@@ -7,14 +7,36 @@ from pandas import Timestamp, to_datetime
 
 ## Constants
 ROOTDIR = "/Volumes/OmanData/geophones_no_prefilt/data"
+DELTA = 0.001
+CENTER_LONGITUDE = 58.70034
+CENTER_LATITUDE =  22.881751
+
 INNER_STATIONS = ["A01", "A02", "A03", "A04", "A05", "A06", "B01", "B02", "B03", "B04", "B06"]
 INNER_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06"]
 INNER_STATIONS_B = ["B01", "B02", "B03", "B04", "B06"]
+
+EASTMIN_WHOLE = -115
+EASTMAX_WHOLE = 65
+NORTHMIN_WHOLE = -100
+NORTHMAX_WHOLE = 105
+
+EASTMIN_A = -20
+EASTMAX_A = 65
+NORTHMIN_A = -100
+NORTHMAX_A = 15
+
+EASTMIN_B = -115
+EASTMAX_B = 65
+NORTHMIN_B = 15
+NORTHMAX_B = 105
+
 DAYS_PATH = join(ROOTDIR, "days.csv")
 NIGHTS_PATH = join(ROOTDIR, "nights.csv")
 STATIONS_PATH = join(ROOTDIR, "stations.csv")
 STARTTIME = Timestamp("2020-01-10T00:00:00Z", tz="UTC")
 ENDTIME = Timestamp("2020-02-2T23:59:59Z", tz="UTC")
+HAMMER_DATE = "2020-01-25"
+
 
 
 ## Classes
