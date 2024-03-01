@@ -338,8 +338,8 @@ class MatchedEventWaveforms:
         self.waveforms = stream
 
     def __str__(self):
-        timestr = self.information.first_start_time.strftime("%Y-%m-%dT%H:%M:%S.%f")
-        return f"{self.information.name}, {timestr}, {self.match_info.num_of_stations} stations, {self.active_stations} active stations"
+        timestr = self.info.first_start_time.strftime("%Y-%m-%dT%H:%M:%S.%f")
+        return f"{self.info.name}, {timestr}, {self.info.num_of_stations} stations, {self.active_stations} active stations"
         
     def __repr__(self):
         return self.__str__()

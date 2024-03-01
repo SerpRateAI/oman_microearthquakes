@@ -447,23 +447,31 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
             if station.startswith("A"):
                 if station in INNER_STATIONS:
                     if station in stations_highlight:
-                        axes[0].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight)
+                        axes[0].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight, label=station)
                     else:
                         axes[0].plot(timeax, data, color="lightgray", linewidth=linewidth_normal)
                 else:
                     if station in stations_highlight:
-                        axes[1].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_highlight)
+                        if num_out_highlight_a == 0:
+                            axes[1].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight, linestyle="--", label=station)
+                        else:
+                            axes[1].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight, linestyle=":", label=station)
+                        num_out_highlight_a += 1
                     else:
                         axes[1].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_normal)
             else:
                 if station in INNER_STATIONS:
                     if station in stations_highlight:
-                        axes[2].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight)
+                        axes[2].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight, label=station)
                     else:
                         axes[2].plot(timeax, data, color="lightgray", linewidth=linewidth_normal)
                 else:
                     if station in stations_highlight:
-                        axes[3].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_highlight)
+                        if num_out_highlight_b == 0:
+                            axes[3].plot(timeax, data, color="lightgray", linewidth=linewidth_highlight, linestyle="--", label=station)
+                        else:
+                            axes[3].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_highlight, label=station)
+                        num_out_highlight_b += 1
                     else:
                         axes[3].plot(timeax, data, color="lightgray", linestyle=":", linewidth=linewidth_normal)
             

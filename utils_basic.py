@@ -37,7 +37,8 @@ STARTTIME = Timestamp("2020-01-10T00:00:00Z", tz="UTC")
 ENDTIME = Timestamp("2020-02-2T23:59:59Z", tz="UTC")
 HAMMER_DATE = "2020-01-25"
 
-
+VELOCITY_UNIT = "nm s$^{-1}$"
+DISPLACEMENT_UNIT = "nm"
 
 ## Classes
 

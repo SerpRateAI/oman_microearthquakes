@@ -2,7 +2,8 @@
 from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
 from scipy.signal import periodogram
-from numpy import amax, abs, pi, hanning
+from numpy import amax, abs, pi, hanning, cumsum
+from multitaper import MTSpec
 
 ## Function to calculate the spectrum of a signal
 def get_data_spectrum(data, samprat, taper=0.01):
@@ -57,4 +58,25 @@ def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
     freqax = omegaax * nyquist / pi
 
     return freqax, resp
+
+## Function for calculating the VELOCITY PSD of a VELOCITY signal using multitaper method
+def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    
+    mt = MTSpec(vel, nw=nw, dt=1/sampling_rate)
+    freqax, psd = mt.rspec()
     
+    return freqax, psd
+
+## Function for calculating the DISPLACEMENT PSD of a VELOCITY using multitaper method
+def get_disp_psd_mt(vel, sampling_rate=1000.0, nw=2):
+    disp = vel2disp(vel, sampling_rate)
+    
+    mt = MTSpec(disp, nw=nw, dt=1/sampling_rate)
+    freqax, psd = mt.rspec()
+    
+    return freqax, psd
+    
+## Convert velocity to displacement
+def vel2disp(vel, sampling_rate=1000.0):
+    disp = cumsum(vel) / sampling_rate
+
+    return disp
