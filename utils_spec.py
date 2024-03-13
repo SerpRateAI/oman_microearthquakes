@@ -1,44 +1,25 @@
 # Functions and classes for spectrum analysis   
 from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
-from scipy.signal import periodogram
-from numpy import amax, abs, pi, hanning, cumsum
+from scipy.signal import ShortTimeFFT
+from scipy.signal.windows import hann
+from numpy import amax, abs, pi, cumsum, log10
 from multitaper import MTSpec
 
-## Function to calculate the spectrum of a signal
-def get_data_spectrum(data, samprat, taper=0.01):
-   
-    numpts = len(data)
-    
-    # Apply taper to the data
-    taper_length = int(taper * numpts)
-    taper_window = hanning(taper_length)
-    data[:taper_length] *= taper_window
-    data[-taper_length:] *= taper_window[::-1]
-    
-    freqax = fftfreq(numpts, d=1/samprat)
-    spec = fft(data)
-    spec = spec[1:int(numpts/2)]
-    freqax = freqax[1:int(numpts/2)]
-    spec = abs(spec)
-    spec = spec / amax(spec)
-    
-    return freqax, spec
+## Function to compute the spectrogram of a signal using STFT
+## Returns spectrogram in dB
+def get_spectrogram_stft(signal, sampling_rate=1000.0, window_length=1.0, overlap=0.5):
+    window = hann(int(window_length * sampling_rate))
+    hop = int(window_length * sampling_rate * (1 - overlap))
+    stft = ShortTimeFFT(window, hop, sampling_rate, scale_to="psd")
+    freqax = stft.f
+    timeax = stft.t(len(signal))
 
-## Function to calculate the power spectral density of a signal
-def get_data_psd(data, samprat, taper=0.01):
-        
-        numpts = len(data)
-        
-        # Apply taper to the data
-        taper_length = int(taper * numpts)
-        taper_window = hanning(taper_length)
-        data[:taper_length] *= taper_window
-        data[-taper_length:] *= taper_window[::-1]
-        
-        freqax, psd = periodogram(data, fs=samprat)
-        
-        return freqax, psd
+    spec = stft.spectrogram(signal, detr="linear")
+    spec = spec / amax(spec)
+    spec = psd2db(spec)
+
+    return freqax, timeax, spec
 
 ## Function to calculate the frequency response of a filter 
 ### Currently only support Butterworth filters
@@ -80,3 +61,9 @@ def vel2disp(vel, sampling_rate=1000.0):
     disp = cumsum(vel) / sampling_rate
 
     return disp
+
+## Convert PSD to dB
+def psd2db(psd):
+    psd_db = 10 * log10(psd)
+
+    return psd_db

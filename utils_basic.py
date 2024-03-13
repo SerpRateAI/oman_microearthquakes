@@ -3,17 +3,40 @@
 ## Import libraries
 from os.path import join
 from numpy import sqrt, mean, square, amin
-from pandas import Timestamp, to_datetime
+from pandas import Timestamp, to_datetime, read_csv
 
 ## Constants
-ROOTDIR = "/Volumes/OmanData/geophones_no_prefilt/data"
-DELTA = 0.001
+
+ROOTDIR = "/Volumes/OmanData/data"
+ROOTDIR_GEO = "/Volumes/OmanData/data/geophones"
+ROOTDIR_HYDRO = "/Volumes/OmanData/data/hydrophones"
+ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
+PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
+
 CENTER_LONGITUDE = 58.70034
 CENTER_LATITUDE =  22.881751
+MIN_LONGITUDE = 58.6
+MAX_LONGITUDE = 58.8
+MIN_LATITUDE = 22.8
+MAX_LATITUDE = 23.0
 
-INNER_STATIONS = ["A01", "A02", "A03", "A04", "A05", "A06", "B01", "B02", "B03", "B04", "B06"]
+DELTA = 0.001
+
+NETWORK = "7F"
+
+HYDRO_STATIONS = ["A00", "B00"]
+HYDRO_LOCATIONS = ["01", "02", "03", "04", "05", "06"]
+
+GEO_COMPONENTS = ["Z", "1", "2"]
+GEO_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19"]
+GEO_STATIONS_B = ["B01", "B02", "B03", "B04", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20"]
+GEO_STATIONS = GEO_STATIONS_A + GEO_STATIONS_B
+
 INNER_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06"]
 INNER_STATIONS_B = ["B01", "B02", "B03", "B04", "B06"]
+INNER_STATIONS = INNER_STATIONS_A + INNER_STATIONS_B
+
+BROKEN_CHANNELS = ["A18.GH1"]
 
 EASTMIN_WHOLE = -115
 EASTMAX_WHOLE = 65
@@ -30,12 +53,19 @@ EASTMAX_B = 65
 NORTHMIN_B = 15
 NORTHMAX_B = 105
 
-DAYS_PATH = join(ROOTDIR, "days.csv")
-NIGHTS_PATH = join(ROOTDIR, "nights.csv")
-STATIONS_PATH = join(ROOTDIR, "stations.csv")
-STARTTIME = Timestamp("2020-01-10T00:00:00Z", tz="UTC")
-ENDTIME = Timestamp("2020-02-2T23:59:59Z", tz="UTC")
+DAYS_PATH = join(ROOTDIR_GEO, "days.csv")
+NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")
+STATIONS_PATH = join(ROOTDIR_GEO, "stations.csv")
+
+WINDOW_LENGTH_GEO = 3600 # in seconds
+STARTTIME_GEO = Timestamp("2020-01-10T03:00:00Z", tz="UTC")
+ENDTIME_GEO = Timestamp("2020-02-02T23:59:59Z", tz="UTC")
+STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00Z", tz="UTC")
+ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59Z", tz="UTC")
 HAMMER_DATE = "2020-01-25"
+
+COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
+DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to microPascals
 
 VELOCITY_UNIT = "nm s$^{-1}$"
 DISPLACEMENT_UNIT = "nm"
@@ -61,3 +91,19 @@ def local_to_utc(local_time):
     utc_time = local_time.tz_convert("UTC")
 
     return utc_time
+
+### Function to get the geophone station locations
+def get_geophone_locs():
+    inpath = join(ROOTDIR_GEO, "stations.csv")
+    stadf = read_csv(inpath)
+
+    return stadf
+
+### Function for saving a figure
+def save_figure(fig, filename, outdir=ROOTDIR, dpi=300):
+    fig.patch.set_alpha(0)
+
+    outpath = join(outdir, filename)
+
+    fig.savefig(outpath, dpi=dpi, bbox_inches='tight')
+    print(f"Figure saved to {outpath}")
