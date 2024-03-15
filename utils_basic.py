@@ -3,7 +3,7 @@
 ## Import libraries
 from os.path import join
 from numpy import sqrt, mean, square, amin
-from pandas import Timestamp, to_datetime, read_csv
+from pandas import Timestamp, Timedelta, to_datetime, read_csv
 
 ## Constants
 
@@ -67,16 +67,36 @@ HAMMER_DATE = "2020-01-25"
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
 DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to microPascals
 
-VELOCITY_UNIT = "nm s$^{-1}$"
-DISPLACEMENT_UNIT = "nm"
-
 ## Classes
 
-## Functions
+### Functions to get unique stations from a stream
+def get_unique_stations(stream):
+    stations = list(set([trace.stats.station for trace in stream]))
+
+    return stations
 
 ### Function for converting an array of days since the Unix epoch to an array of Pandas Timestamp objects
 def days_to_timestamps(days):
     timestamps = to_datetime(days, unit="D", origin="unix", utc=True)
+
+    return timestamps
+
+### Function for getting the timeax consisting of Pandas Timestamp objects from a Trace object
+def get_timeax_from_trace(trace):
+    timeax = trace.times("matplotlib")
+    timeax = days_to_timestamps(timeax)
+
+    return timeax
+
+### Funcion to convert an array of relative times in seconds to an array of Pandas Timestamp objects using a given start time
+def reltimes_to_timestamps(reltimes, starttime):
+    if not isinstance(starttime, Timestamp):
+        try:
+            starttime = Timestamp(starttime, tz="UTC")
+        except:
+            raise ValueError("Invalid start time format!")
+        
+    timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
 
     return timestamps
 
@@ -94,8 +114,8 @@ def local_to_utc(local_time):
 
 ### Function to get the geophone station locations
 def get_geophone_locs():
-    inpath = join(ROOTDIR_GEO, "stations.csv")
-    stadf = read_csv(inpath)
+    inpath = join(ROOTDIR, "stations.csv")
+    stadf = read_csv(inpath, index_col=0)
 
     return stadf
 

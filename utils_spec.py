@@ -6,20 +6,42 @@ from scipy.signal.windows import hann
 from numpy import amax, abs, pi, cumsum, log10
 from multitaper import MTSpec
 
-## Function to compute the spectrogram of a signal using STFT
+from utils_basic import reltimes_to_timestamps
+
+## Function to compute the spectrogram of a stream using STFT
 ## Returns spectrogram in dB
-def get_spectrogram_stft(signal, sampling_rate=1000.0, window_length=1.0, overlap=0.5):
+## A wrapper for the get_trace_spectrogram_stft function
+def get_stream_spectrogram_stft(stream, window_length=1.0, overlap=0.5):
+    specdict = {}
+    for trace in stream:
+        station = trace.stats.station
+        component = trace.stats.component
+
+        timeax, freqax, spec = get_trace_spectrogram_stft(trace, window_length, overlap)
+        specdict[(station, component)] = (timeax, freqax, spec)
+
+    return specdict
+
+## Function to compute the spectrogram of a trace using STFT
+## Returns spectrogram in dB
+def get_trace_spectrogram_stft(trace, window_length=1.0, overlap=0.5):
+    signal = trace.data
+    sampling_rate = trace.stats.sampling_rate
+    starttime = trace.stats.starttime
+    starttime = starttime.datetime
+
     window = hann(int(window_length * sampling_rate))
     hop = int(window_length * sampling_rate * (1 - overlap))
     stft = ShortTimeFFT(window, hop, sampling_rate, scale_to="psd")
     freqax = stft.f
     timeax = stft.t(len(signal))
+    timeax = reltimes_to_timestamps(timeax, starttime)
 
     spec = stft.spectrogram(signal, detr="linear")
     spec = spec / amax(spec)
     spec = psd2db(spec)
 
-    return freqax, timeax, spec
+    return timeax, freqax, spec
 
 ## Function to calculate the frequency response of a filter 
 ### Currently only support Butterworth filters
@@ -39,6 +61,10 @@ def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
     freqax = omegaax * nyquist / pi
 
     return freqax, resp
+
+## Get the time axis consisting of Pandas Timestamp objects from a Trace object
+def get_timeax_from_trace(trace):
+    timeax = trace.times("timestamp")
 
 ## Function for calculating the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    
