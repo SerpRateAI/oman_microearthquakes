@@ -2,8 +2,10 @@
 
 ## Import libraries
 from os.path import join
-from numpy import sqrt, mean, square, amin
+from numpy import amax, log10
+from scipy.stats import gmean
 from pandas import Timestamp, Timedelta, to_datetime, read_csv
+from obspy import UTCDateTime
 
 ## Constants
 
@@ -11,6 +13,7 @@ ROOTDIR = "/Volumes/OmanData/data"
 ROOTDIR_GEO = "/Volumes/OmanData/data/geophones"
 ROOTDIR_HYDRO = "/Volumes/OmanData/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
+
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 
 CENTER_LONGITUDE = 58.70034
@@ -20,7 +23,8 @@ MAX_LONGITUDE = 58.8
 MIN_LATITUDE = 22.8
 MAX_LATITUDE = 23.0
 
-DELTA = 0.001
+SAMPLING_RATE_GEO = 1000.0
+
 
 NETWORK = "7F"
 
@@ -28,7 +32,10 @@ HYDRO_STATIONS = ["A00", "B00"]
 HYDRO_LOCATIONS = ["01", "02", "03", "04", "05", "06"]
 
 GEO_COMPONENTS = ["Z", "1", "2"]
-GEO_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19"]
+PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
+WAVELET_COMPONENT_PAIRS = [("1", "2"), ("Z", "1"), ("Z", "2")]
+
+GEO_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A13", "A14", "A15", "A16", "A17", "A19"]
 GEO_STATIONS_B = ["B01", "B02", "B03", "B04", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20"]
 GEO_STATIONS = GEO_STATIONS_A + GEO_STATIONS_B
 
@@ -72,8 +79,21 @@ DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to micr
 ### Functions to get unique stations from a stream
 def get_unique_stations(stream):
     stations = list(set([trace.stats.station for trace in stream]))
+    stations.sort()
 
     return stations
+
+### Function to convert from ObsPy UTCDateTime objects to Pandas Timestamp objects
+def utcdatetime_to_timestamp(utcdatetime):
+    timestamp = to_datetime(utcdatetime.datetime)
+
+    return timestamp
+
+### Function to convert from Pandas Timestamp objects to ObsPy UTCDateTime objects
+def timestamp_to_utcdatetime(timestamp):
+    utcdatetime = UTCDateTime(to_datetime(timestamp).to_pydatetime())
+
+    return utcdatetime
 
 ### Function for converting an array of days since the Unix epoch to an array of Pandas Timestamp objects
 def days_to_timestamps(days):
@@ -112,6 +132,23 @@ def local_to_utc(local_time):
 
     return utc_time
 
+### Function to convert power to decibels
+### If reference is "mean", the reference is the geometric mean of the power values
+def power2db(power, reference_type="mean", **kwargs):
+    if reference_type == "mean":
+        reference = gmean(power, axis=None)
+    elif reference_type == "max":
+        reference = amax(power)
+    elif reference_type == "custom":
+        reference = kwargs["reference"]
+    else:
+        raise ValueError("Invalid reference type!")
+    
+    power = power / reference
+    db = 10 * log10(power)
+
+    return db
+
 ### Function to get the geophone station locations
 def get_geophone_locs():
     inpath = join(ROOTDIR, "stations.csv")
@@ -119,11 +156,22 @@ def get_geophone_locs():
 
     return stadf
 
-### Function for saving a figure
-def save_figure(fig, filename, outdir=ROOTDIR, dpi=300):
-    fig.patch.set_alpha(0)
+### Function to convert seconds to days
+def sec2day(seconds):
+    days = seconds / 86400
 
-    outpath = join(outdir, filename)
+    return days
 
-    fig.savefig(outpath, dpi=dpi, bbox_inches='tight')
-    print(f"Figure saved to {outpath}")
+### Function to convert a time string from input format to filename format
+def time2filename(input):
+    if isinstance(input, Timestamp):
+        timestamp = input
+    elif isinstance(input, str): 
+        timestamp = Timestamp(input)
+    else:
+        raise TypeError("Invalid input type!")
+    
+    output = timestamp.strftime("%Y%m%dT%H%M%S")
+
+    return output
+

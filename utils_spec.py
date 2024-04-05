@@ -3,10 +3,10 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
-from numpy import amax, abs, pi, cumsum, log10
+from numpy import amax, abs, pi, cumsum
 from multitaper import MTSpec
 
-from utils_basic import reltimes_to_timestamps
+from utils_basic import reltimes_to_timestamps, power2db
 
 ## Function to compute the spectrogram of a stream using STFT
 ## Returns spectrogram in dB
@@ -39,7 +39,7 @@ def get_trace_spectrogram_stft(trace, window_length=1.0, overlap=0.5):
 
     spec = stft.spectrogram(signal, detr="linear")
     spec = spec / amax(spec)
-    spec = psd2db(spec)
+    spec = power2db(spec)
 
     return timeax, freqax, spec
 
@@ -87,9 +87,3 @@ def vel2disp(vel, sampling_rate=1000.0):
     disp = cumsum(vel) / sampling_rate
 
     return disp
-
-## Convert PSD to dB
-def psd2db(psd):
-    psd_db = 10 * log10(psd)
-
-    return psd_db

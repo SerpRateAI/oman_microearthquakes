@@ -10,14 +10,17 @@ from obspy.signal.cross_correlation import correlate_template
 from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 
 from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
-from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS 
+from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, utcdatetime_to_timestamp, timestamp_to_utcdatetime
 
 ## Read and preprocess geophone waveforms in a time window
 ## Window length is in second
-def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4):
+def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
 
     if not isinstance(starttime, Timestamp):
-        raise TypeError("Error: starttime must be a Pandas Timestamp object!")
+        if type(starttime) is str:
+            starttime = Timestamp(starttime, tz="UTC")
+        else:
+            raise TypeError("Error: starttime must be a string or Pandas Timestamp object!")
 
     ### Read the waveforms
     stations_to_read = get_geo_stations_to_read(stations)
@@ -26,22 +29,39 @@ def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqma
     stream_in = Stream()
     endtime = starttime + Timedelta(seconds=dur)
     for station in stations_to_read:
+        stream_station = Stream()
+
         for channel in channels_to_read:
             stream = read_geo_waveforms_in_timewindow(starttime, endtime, station, channel)
-
-            if stream is not None:
-                stream_in += stream
+            
+            if stream is None:
+                print(f"Warning: No data found for {station}.{channel}!")
+                if all_components:
+                    break
+                else:
+                    continue
+            else:
+                stream_station += stream
+        
+        if len(stream_station) == len(channels_to_read):
+            stream_in += stream_station
+        else:
+            print(f"Warning: Not all components read for {station}! The station is skipped.")
+            continue
 
     ### Process the waveforms
-    stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners)
+    stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
 
     return stream_proc
 
 ## Read and preprocess hydrophone waveforms in a time window
 ## Window length is in second
-def read_and_process_windowed_hydro_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, locations=None, zerophase=False, corners=4):
+def read_and_process_windowed_hydro_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, locations=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10):
     if not isinstance(starttime, Timestamp):
-        raise TypeError("Error: starttime must be a Pandas Timestamp object!")
+        if type(starttime) is str:
+            starttime = Timestamp(starttime, tz="UTC")
+        else:   
+            raise TypeError("Error: starttime must be a Pandas Timestamp object!")
     
     ### Read the waveforms
     stations_to_read = get_hydro_stations_to_read(stations)
@@ -57,13 +77,13 @@ def read_and_process_windowed_hydro_waveforms(starttime, dur, freqmin=None, freq
                 stream_in += stream
 
     ### Process the waveforms
-    stream_proc = preprocess_hydro_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners)
+    stream_proc = preprocess_hydro_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
 
     return stream_proc
     
 
 ## Read and preprocess waveforms in a set of defined time windows
-def read_and_process_picked_geo_waveforms(pickdf, freqmin=None, freqmax=None, stations=None, components=None, begin=-0.01, end=0.2, reference="common", zerophase=False, corners=4):
+def read_and_process_picked_geo_waveforms(pickdf, freqmin=None, freqmax=None, stations=None, components=None, begin=-0.01, end=0.2, reference="common", zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10):
     
     ### Check if pickdf is a pandas dataframe
     if not isinstance(pickdf, DataFrame):
@@ -90,12 +110,12 @@ def read_and_process_picked_geo_waveforms(pickdf, freqmin=None, freqmax=None, st
                 else:
                     raise ValueError("Error: reference must be either 'individual' or 'common'!")
 
-                stream = read_waveforms_in_timewindow(starttime, endtime, station, channel)
+                stream = read_geo_waveforms_in_timewindow(starttime, endtime, station, channel)
                 if stream is not None:
                     stream_in += stream
     
     ### Process the waveforms
-    stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners)
+    stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
     
     return stream_proc
 
@@ -347,11 +367,11 @@ def read_geo_waveforms_in_timewindow(starttime, endtime, station, channel, rootd
     
         ### Read the waveforms
         pattern = join(rootdir, day, f"*{station}*{channel}.mseed")
-        starttime = UTCDateTime(to_datetime(starttime).to_pydatetime())
-        endtime =UTCDateTime(to_datetime(endtime).to_pydatetime())
+        starttime = timestamp_to_utcdatetime(starttime)
+        endtime = timestamp_to_utcdatetime(endtime)
         try:    
             stream = read(pattern, starttime=starttime, endtime=endtime)
-        except FileNotFoundError:
+        except:
             print(f"Warning: {pattern} not found!")
             return None
     
@@ -365,8 +385,8 @@ def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, ro
 
         ### Read the waveforms
         pattern = join(rootdir, day, f"7F.{station}.{location}.GDH.mseed")
-        starttime = UTCDateTime(to_datetime(starttime).to_pydatetime())
-        endtime =UTCDateTime(to_datetime(endtime).to_pydatetime())
+        starttime = timestamp_to_utcdatetime(starttime)
+        endtime = timestamp_to_utcdatetime(endtime)
         try:
             stream = read(pattern, starttime=starttime, endtime=endtime)
         except FileNotFoundError:
@@ -378,7 +398,7 @@ def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, ro
 
 ## Preprocess a stream object consisting of geophone data by removing the sensitivity, detrending, tapering, and filtering
 ## The output data will be in nm/s
-def preprocess_geo_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, path_meta=PATH_GEO_METADATA):
+def preprocess_geo_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10, path_meta=PATH_GEO_METADATA):
 
     ### Read the metadata
     metadat = read_inventory(path_meta)
@@ -386,6 +406,9 @@ def preprocess_geo_stream(stream_in, freqmin, freqmax, corners=4, zerophase=Fals
     ### Remove the sensitivity
     stream_out = stream_in.copy()
     stream_out.remove_sensitivity(inventory=metadat)
+
+    ### Reverse the polarity of the vertical components
+    stream_out = correct_geo_polarity(stream_out)
 
     ### Convert from m/s to nm/s
     for trace in stream_out:
@@ -402,12 +425,20 @@ def preprocess_geo_stream(stream_in, freqmin, freqmax, corners=4, zerophase=Fals
     elif freqmin is None and freqmax is not None:
         stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
 
+    ### Decimate the waveforms
+    if decimate:
+        stream_out.decimate(decimate_factor)
+
+    ### Normalize the waveforms
+    if normalize:
+        stream_out.normalize(global_max=True)
+
     return stream_out
 
 ## Preprocess a stream object consisting of hydrophone data by removing the sensitivity, detrending, tapering, and filtering
 ## The output data will be in Pa
 ## Given that the instrument response of the hydrophone data from SAGE is wrong, we use a customized response-removal procedure
-def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False):
+def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10):
 
     ### Remove the sensitivity
     stream_out = remove_hydro_response(stream_in)
@@ -426,8 +457,27 @@ def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=Fa
     elif freqmin is None and freqmax is not None:
         stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
 
+    ### Decimate the waveforms
+    if decimate:
+        stream_out.decimate(decimate_factor)
+
+    ### Normalize the waveforms
+    if normalize:
+        stream_out.normalize(global_max=True)
+
     return stream_out
-                          
+
+
+## Correct the polarity of the vertical-component geophone data
+def correct_geo_polarity(stream_in):
+    stream_out = stream_in.copy()
+
+    for trace in stream_out:
+        if trace.stats.channel[-1] == "Z":
+            trace.data = -1 * trace.data
+
+    return stream_out
+                        
 ## Remove the instrument response from a stream object consisting of hydrophone data using the instrument response information from Rob Sohn
 def remove_hydro_response(stream_in):
     stream_out = stream_in.copy()

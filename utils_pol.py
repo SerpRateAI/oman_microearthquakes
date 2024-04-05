@@ -13,13 +13,14 @@ import numpy as np
 
 ## Classes
 class PolParams:
-    def __init__(self, coord, strikes, dips, ellis, strengs, planars):
-        self.coordinate = coord
-        self.strike = strikes
-        self.dip = dips
-        self.ellipticity = ellis
-        self.strength = strengs
-        self.planarity = planars
+    def __init__(self, coordinate, window_length, strike, dip, ellipticity, strength, planarity):
+        self.coordinate = coordinate
+        self.window_length = window_length
+        self.strike = strike
+        self.dip = dip
+        self.ellipticity = ellipticity
+        self.strength = strength
+        self.planarity = planarity
 
     def __str__(self):
         return f"Coordinate system: {self.coordinate}\n Strike: {self.strike}\nDip: {self.dip}\nEllipticity: {self.ellipticity}\nStrength: {self.strength}\nPlanarity: {self.planarity}"
@@ -31,7 +32,7 @@ class PolParams:
 
 ### Get the polarization paramters of the the 3C data using the Vidale 1986 method
 ### Vertical component is positive UPWARD!
-def get_pol_vidale(data1, data2, data3, coord="ENZ", winlen=3):
+def get_pol_vidale(data1, data2, data3, coord="ENZ", window_length=3):
 
     #### Determine if the data vectors are numpy arrays
     if type(data1) != type(zeros(1)) or type(data2) != type(zeros(1)) or type(data3) != type(zeros(1)):
@@ -46,7 +47,7 @@ def get_pol_vidale(data1, data2, data3, coord="ENZ", winlen=3):
         raise ValueError("Mode must be either 'ENZ' or 'RTZ'!")
     
     #### Compute the covariance matrices of the analytic signals of the 3C data
-    cov_mats = get_cov_mats(data1, data2, data3, winlen=winlen)
+    cov_mats = get_cov_mats(data1, data2, data3, window_length=window_length)
 
     #### Compute the eigenvalues and eigenvectors of the covariance matrices
     eigvals, eigvecs = get_eigs(cov_mats)
@@ -56,12 +57,16 @@ def get_pol_vidale(data1, data2, data3, coord="ENZ", winlen=3):
     eigvecs_max = rotate_to_maxreal(eigvecs_max)
 
     #### Get the polarization parameters
-    pol_params = get_pol_from_eigs(eigvals, eigvecs_max, coord)
+    strikes, dips, ellis, strengths, planars = get_pol_from_eigs(eigvals, eigvecs_max)
+
+    #### Create a PolParams object
+    pol_dict = {"coordinate": coord, "window_length": window_length, "strike": strikes, "dip": dips, "ellipticity": ellis, "strength": strengths, "planarity": planars}
+    pol_params = PolParams(**pol_dict)
 
     return pol_params
 
 ### Get the covariance matrices of the the analytic signals of the 3C data
-def get_cov_mats(data1, data2, data3, winlen=3):
+def get_cov_mats(data1, data2, data3, window_length=3):
         
         #### Determine if the data vectors are the same length
         if len(data1) != len(data2) or len(data1) != len(data3):
@@ -72,11 +77,11 @@ def get_cov_mats(data1, data2, data3, winlen=3):
         data2 = hilbert(data2)
         data3 = hilbert(data3)
 
-        numpts = len(data1)-winlen+1
+        numpts = len(data1)-window_length+1
         cov_mats = zeros((3, 3, numpts), dtype=complex128)
 
         for i in range(numpts):
-            x = stack((data1[i:i+winlen], data2[i:i+winlen], data3[i:i+winlen]))
+            x = stack((data1[i:i+window_length], data2[i:i+window_length], data3[i:i+window_length]))
             cov_mats[:, :, i] = cov(x)
 
         return cov_mats
@@ -116,7 +121,7 @@ def rotate_to_maxreal(eigvecs_in):
 
 ### Get the polarization parameters from the eigenvectors in the ENZ coordinate system
 ### Vertical component is positive UPWARD!
-def get_pol_from_eigs(eigvals, eigvecs_max, coord="ENZ"):
+def get_pol_from_eigs(eigvals, eigvecs_max):
     
     npts = len(eigvals[0, :])
 
@@ -126,7 +131,7 @@ def get_pol_from_eigs(eigvals, eigvecs_max, coord="ENZ"):
     ellis = zeros(npts) # 1 means circular, 0 means linear
 
     #### Polarization strength and the degree of planarity
-    strengs = zeros(npts)
+    strengths = zeros(npts)
     planars = zeros(npts)
 
     #### Compute the polarization parameters
@@ -146,15 +151,12 @@ def get_pol_from_eigs(eigvals, eigvecs_max, coord="ENZ"):
     ellis = sqrt(1-realnorms**2)/realnorms
 
     ##### Polarization strength
-    strengs = 1-(eigvals_mid+eigvals_min)/eigvals_max
+    strengths = 1-(eigvals_mid+eigvals_min)/eigvals_max
 
     ##### Degree of planarity
     planars = 1-eigvals_min/eigvals_max
 
-    #### Return the polarization parameters
-    pol_params = PolParams(coord, strikes, dips, ellis, strengs, planars)
-
-    return pol_params
+    return strikes, dips, ellis, strengths, planars
 
 ### Get the strike angles of the real part of the eigenvectors of all data points
 def get_strikes(eigvecs):
@@ -199,7 +201,7 @@ def get_dips(eigvecs):
     return dips
 
 ### Plot the 3C waveforms and the polarization parameters as functions of time
-def plot_waveforms_and_pols(data1, data2, data3, pol_params, timeax, mode="ENZ", ampmax=1.05, winlen=3, station="A01"):
+def plot_waveforms_and_pols(data1, data2, data3, pol_params, timeax, mode="ENZ", ampmax=1.05, window_length=3, station="A01"):
         
         #### Determine if the data vectors are the same length
         if len(data1) != len(data2) or len(data1) != len(data3):
@@ -249,7 +251,7 @@ def plot_waveforms_and_pols(data1, data2, data3, pol_params, timeax, mode="ENZ",
         ax_wave.set_title(f"Station {station}", fontsize=16, fontweight="bold")
    
         #### Plot the strikes and dips in the second subplot
-        timeax_pol = timeax[winlen-1:] # This is to account for the window length used in the polarization analysis
+        timeax_pol = timeax[window_length-1:] # This is to account for the window length used in the polarization analysis
 
         ax_strike = axes[1]
         ax_strike.plot(timeax_pol, pol_params.strike, "mediumpurple", label="Strike")
@@ -304,7 +306,7 @@ def plot_waveforms_and_pols(data1, data2, data3, pol_params, timeax, mode="ENZ",
         return fig, axdict, timeax_pol
 
 ### Get the dip angles of the P particle motion from the polarization parameters
-def get_p_dip(polparams, timeax_pol, winlen=10, ptime=0.0):
+def get_p_dip(polparams, timeax_pol, window_length=10, ptime=0.0):
             
         #### Determine if the polarization parameters are a PolParams object
         if type(polparams) != type(PolParams("ENZ", zeros(1), zeros(1), zeros(1), zeros(1), zeros(1))):
@@ -321,7 +323,7 @@ def get_p_dip(polparams, timeax_pol, winlen=10, ptime=0.0):
         #### Extract the P dip
         sampint = timeax_pol[1]-timeax_pol[0]
         ibegin = round((ptime-timeax_pol[0])/sampint)+1
-        iend = ibegin+winlen+1
+        iend = ibegin+window_length+1
 
         if iend > len(timeax_pol):
             iend = len(timeax_pol)
@@ -340,7 +342,7 @@ def get_p_dip(polparams, timeax_pol, winlen=10, ptime=0.0):
         return dip_p
 
 ### Get the strike angles of the P and SV particle motion from the polarization parameters
-def get_psv_strike(polparams, timeax_pol, winlen=20, ptime=0.0):
+def get_psv_strike(polparams, timeax_pol, window_length=20, ptime=0.0):
         
         #### Determine if the polarization parameters are a PolParams object
         if type(polparams) != type(PolParams("ENZ", zeros(1), zeros(1), zeros(1), zeros(1), zeros(1))):
@@ -357,7 +359,7 @@ def get_psv_strike(polparams, timeax_pol, winlen=20, ptime=0.0):
         #### Extract the P and SV strikes
         sampint = timeax_pol[1]-timeax_pol[0]
         ibegin = round((ptime-timeax_pol[0])/sampint)+1
-        iend = ibegin+winlen+1
+        iend = ibegin+window_length+1
 
         if iend > len(timeax_pol):
             iend = len(timeax_pol)

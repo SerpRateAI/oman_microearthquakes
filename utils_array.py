@@ -7,7 +7,7 @@ from numpy.linalg import norm
 from utils_basic import GEO_COMPONENTS
 
 ## Function for computing the images of a seismic array
-def get_beam_images(stream_in, minslow=-0.003, maxslow=0.003, numslow=61, components=None):
+def get_beam_images(stream_in, minslow=-0.008, maxslow=0.008, numslow=61, components=None):
     ### Check if the input is a Stream object
     if not isinstance(stream_in, Stream):
         raise TypeError("Input must be a Stream object!")
