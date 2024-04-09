@@ -9,17 +9,17 @@ from matplotlib.patches import Rectangle
 from matplotlib import colormaps
 from matplotlib.dates import DateFormatter, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
 from matplotlib.ticker import MultipleLocator
-from matplotlib.dates import DateFormatter
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR, ROOTDIR_GEO, HYDRO_LOCATIONS
-from utils_basic import days_to_timestamps, get_geophone_locs, get_timeax_from_trace, get_unique_stations, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
-from utils_wavelet import mask_cross_phase, get_noise_power
+from utils_basic import days_to_timestamps, get_geophone_locs, get_datetime_axis_from_trace, get_unique_stations, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
+from utils_wavelet import mask_cross_phase
 
 GROUND_VELOCITY_UNIT = "nm s$^{-1}$"
 GROUND_VELOCITY_LABEL = f"Velocity (nm s$^{{-1}}$)"
 GROUND_VELOCITY_LABEL_SHORT = "Vel. (nm s$^{{-1}}$)"
 WAVE_VELOCITY_UNIT = "m s$^{-1}$"
 WAVE_SLOWNESS_UNIT = "s km$^{-1}$"
+PRESSURE_UNIT = "Pa"
 APPARENT_VELOCITY_UNIT = "m s$^{-1}$"
 X_SLOW_LABEL = "East slowness (s km$^{-1}$)"
 Y_SLOW_LABEL = "North slowness (s km$^{-1}$)"
@@ -59,7 +59,7 @@ class ParticleMotionData:
 
         return data1_plot, data2_plot
 
-## Function to make a plot the 3C seismograms of all stations in a given time window
+## Function to make a plot the 3C seismograms of all geophone stations in a given time window
 def plot_3c_seismograms(stream, stations=GEO_STATIONS, xdim_per_comp=25, ydim_per_sta=0.3, 
                         scale=1e-4, linewidth=0.5, major_tick_spacing=5, minor_tick_spacing=1,
                         station_label=True, station_label_size=12, axis_label_size=12, tick_label_size=12, title_size=15, scale_bar_amp=100):
@@ -97,7 +97,7 @@ def plot_3c_seismograms(stream, stations=GEO_STATIONS, xdim_per_comp=25, ydim_pe
                 axes[0].text(timeax[0] - dur / 50, i, station, fontsize=station_label_size, verticalalignment="center", horizontalalignment="right")
 
     ## Plot the scale bar
-    plot_amp_scale_bar(axes[0], timeax[0] + dur / 50, -1, scale_bar_amp, scale)
+    add_scalebar(axes[0], timeax[0] + dur / 50, -1, scale_bar_amp, scale)
     axes[0].text(timeax[0] + 2 * dur / 50, -1, f"{scale_bar_amp} {GROUND_VELOCITY_UNIT}", fontsize=station_label_size, verticalalignment="center", horizontalalignment="left")
 
     ## Set the x-axis limits
@@ -173,6 +173,207 @@ def plot_3c_seismograms(stream, stations=GEO_STATIONS, xdim_per_comp=25, ydim_pe
 
     return fig, axes
 
+## Plot the hydrophone waveforms of one borehole in a given time window
+def plot_windowed_hydro_waveforms(stream, station_df, 
+                                station_to_plot = "A00", locations_to_plot = None, normalize=False,
+                                scale = 1e-3, xdim = 10, ydim_per_loc = 2, 
+                                linewidth_wf = 1, linewidth_sb = 0.5,
+                                major_time_spacing = 5.0, minor_time_spacing = 1.0, major_depth_spacing=50.0, minor_depth_spacing=10.0,
+                                station_label_size = 12, axis_label_size = 12, tick_label_size = 12,
+                                depth_lim = (0.0, 420.0), location_label_offset = (0.05, -15), 
+                                scalebar_offset = (0.2, -15), scalebar_length = 0.2, scalebar_label_size=12):
+    unit = PRESSURE_UNIT
+
+    ### Get the number of locations
+    if locations_to_plot is None:
+        locations_to_plot = HYDRO_LOCATIONS
+    
+    numloc = len(locations_to_plot)
+    
+    ### Generate the figure and axes
+    fig, ax  = subplots(1, 1, figsize=(xdim, ydim_per_loc * numloc))
+
+    ### Plot each location
+    for location in locations_to_plot:
+        #### Plot the trace
+        try:
+            trace = stream.select(station=station_to_plot, location=location)[0]
+        except:
+            print(f"Could not find {station_to_plot}.{location}")
+            continue
+
+        data = trace.data
+        depth = station_df.loc[(station_df["station"] == station_to_plot) & (station_df["location"] == location), "depth"].values[0]
+        if normalize:
+            data = data / amax(abs(data))
+        
+        data = -data * scale + depth
+        timeax = get_datetime_axis_from_trace(trace)
+
+        ax.plot(timeax, data, color="darkviolet", linewidth=linewidth_wf)
+
+        #### Add the location label
+        offset_x = location_label_offset[0]
+        offset_y = location_label_offset[1]
+        label = f"{station_to_plot}.{location}"
+        ax.text(timeax[0] + Timedelta(seconds=offset_x), depth + offset_y, label, fontsize=station_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
+
+    ### Set axis limits
+    ax.set_xlim([timeax[0], timeax[-1]])
+    ax.set_ylim(depth_lim)
+
+    ### Reverse the y-axis
+    ax.invert_yaxis()
+
+    ### Plot the scale bar
+    if not normalize:
+        max_depth = ax.get_ylim()[0]
+        if major_time_spacing > 1.0:
+            scalebar_coord = (timeax[0] + Timedelta(seconds=scalebar_offset[0]), max_depth + scalebar_offset[1])
+        else:
+            scalebar_coord = (timeax[0] + scalebar_offset[0], max_depth + scalebar_offset[1])
+
+        add_scalebar(ax, scalebar_coord, scalebar_length, scale, linewidth=linewidth_sb)
+        ax.annotate(f"{scalebar_length} {unit}", scalebar_coord, xytext=(0.5, 0), textcoords="offset fontsize", fontsize=scalebar_label_size, ha="left", va="center")
+
+
+    ### Format the x-axis labels
+    ax  = format_datetime_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+
+    ### Format the y-axis labels
+    ax = format_depth_ylabels(ax, major_tick_spacing=major_depth_spacing, minor_tick_spacing=minor_depth_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+
+    return fig, ax     
+
+## Plot the hydrophone waveforms of one borehole in a given time window
+def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
+                                station_to_plot = "A00", locations_to_plot = None, 
+                                scale = 1e-3, xdim_per_win = 7, ydim_per_loc = 2, 
+                                linewidth_wf = 1, linewidth_sb = 0.5,
+                                major_time_spacing = 5.0, minor_time_spacing = 1.0, major_depth_spacing=50.0, minor_depth_spacing=10.0,
+                                station_label_size = 12, axis_label_size = 12, tick_label_size = 12,
+                                depth_lim = (0.0, 420.0), location_label_offset = (2, -15),
+                                box_y_offset = 10.0, linewidth_box = 1.5,
+                                scalebar_offset = (2, -15), scalebar_length = 0.2, scalebar_label_size=12):      
+
+    unit = PRESSURE_UNIT
+    min_depth = depth_lim[0]
+    max_depth = depth_lim[1]
+
+    ### Get the window parameters
+    starttimes = window_dict["starttimes"]
+    durations = window_dict["durations"]
+    major_time_spacings = window_dict["major_time_spacings"]
+    minor_time_spacings = window_dict["minor_time_spacings"]
+    
+    ### Determine if the numbers of windows are consistent
+    num_windows = len(starttimes)
+    if not all([len(starttimes) == num_windows, len(durations) == num_windows, len(major_time_spacings) == num_windows, len(minor_time_spacings) == num_windows]):
+        raise ValueError("Inconsistent number of windows!")
+
+    ### Convert the start times to Timestamp objects
+    for i, starttime in enumerate(starttimes):
+        if not isinstance(starttime, Timestamp):
+            if isinstance(starttime, str):
+                starttimes[i] = Timestamp(starttime, tz="UTC")
+            else:
+                raise ValueError("Invalid start time format!")
+            
+    starttime0 = starttimes[0]
+
+    ### Get the number of locations
+    if locations_to_plot is None:
+        locations_to_plot = HYDRO_LOCATIONS
+    
+    numloc = len(locations_to_plot)
+    
+    ### Generate the figure and axes
+    num_windows = len(starttimes)
+    fig, axes  = subplots(1, num_windows, figsize=(xdim_per_win * num_windows, ydim_per_loc * numloc), sharey=True)
+
+    ### Loop over each window
+    for i, starttime in enumerate(starttimes):
+        ax = axes[i]
+        endtime = starttime + Timedelta(seconds=durations[i])
+        duration = durations[i]
+        major_time_spacing = major_time_spacings[i]
+        minor_time_spacing = minor_time_spacings[i]
+
+        ### Loop over each location
+        for location in locations_to_plot:
+            #### Plot the trace
+            try:
+                trace = stream.select(station=station_to_plot, location=location)[0]
+            except:
+                print(f"Could not find {station_to_plot}.{location}")
+                continue
+
+            data = trace.data
+            depth = station_df.loc[(station_df["station"] == station_to_plot) & (station_df["location"] == location), "depth"].values[0]
+            data = -data * scale + depth
+
+            if major_time_spacing > 1.0:
+                timeax = get_datetime_axis_from_trace(trace)
+            else:
+                timeax = trace.times()
+                rel_time_start = (starttime - starttime0).total_seconds()
+                timeax = timeax - rel_time_start
+
+            ax.plot(timeax, data, color="darkviolet", linewidth=linewidth_wf)
+
+            #### Add the location label
+            if i == 0:
+                offset_x = location_label_offset[0]
+                offset_y = location_label_offset[1]
+                label = f"{station_to_plot}.{location}"
+
+                if major_time_spacing > 1.0:
+                    ax.text(timeax[0] + Timedelta(seconds=offset_x), depth + offset_y, label, fontsize=station_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
+                else:
+                    ax.text(timeax[0] + offset_x, depth + offset_y, label, fontsize=station_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
+
+        ### Set axis limits
+        if major_time_spacing > 1.0:
+            ax.set_xlim(starttime, endtime)
+        else:
+            ax.set_xlim(0, duration)
+
+        ax.set_ylim(depth_lim)
+
+        ### Reverse the y-axis
+        ax.invert_yaxis()
+
+        ### Plot the scale bar
+        if i == 0:
+            max_depth = ax.get_ylim()[0]
+            if major_time_spacing > 1.0:
+                scalebar_coord = (timeax[0] + Timedelta(seconds=scalebar_offset[0]), max_depth + scalebar_offset[1])
+            else:
+                scalebar_coord = (timeax[0] + scalebar_offset[0], max_depth + scalebar_offset[1])
+
+            add_scalebar(ax, scalebar_coord, scalebar_length, scale, linewidth=linewidth_sb)
+            ax.annotate(f"{scalebar_length} {unit}", scalebar_coord, xytext=(0.5, 0), textcoords="offset fontsize", fontsize=scalebar_label_size, ha="left", va="center")
+
+        ### Format the x-axis labels
+        if major_time_spacing > 1.0:
+            ax  = format_datetime_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+        else:
+            ax  = format_rel_time_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+
+        ### Format the y-axis labels
+        if i == 0:
+            ax = format_depth_ylabels(ax, major_tick_spacing=major_depth_spacing, minor_tick_spacing=minor_depth_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+
+        ### Plot the box
+        if i > 0:
+            box_height = max_depth - min_depth - 2 * box_y_offset
+            box = Rectangle((starttime, min_depth + box_y_offset), Timedelta(seconds=duration), box_height, edgecolor="crimson", facecolor="none", linestyle="-", linewidth=linewidth_box)
+            ax = axes[i - 1]
+            ax.add_patch(box)
+
+    return fig, axes
+         
+
 ## Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
 def plot_3c_waveforms_and_stfts(stream, specdict, 
                                        linewidth=0.1, xdim_per_comp=10, ydim_per_sta=3, ylim_wf=(-50, 50), dbmin=-50, dbmax=0, ylim_spec=(0, 200), 
@@ -191,7 +392,7 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
 
             ## Plot the waveforms
             signal = trace.data
-            timeax_wf = get_timeax_from_trace(trace)
+            timeax_wf = get_datetime_axis_from_trace(trace)
 
             ax = axes[2 * j, i]
             color = get_geo_component_color(component)
@@ -221,7 +422,7 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
             if i == 0:
                 ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
 
-    format_utc_xlabels(axes)
+    format_datetime_xlabels(axes)
 
     fig.patch.set_alpha(0.0)
 
@@ -251,7 +452,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
                 ax = axes[2 * j, i]
                 trace = stream.select(station=station, component=component)[0]
                 signal = trace.data
-                timeax_wf = get_timeax_from_trace(trace)
+                timeax_wf = get_datetime_axis_from_trace(trace)
     
                 ax = axes[2 * j, i]
                 color = get_geo_component_color(component)
@@ -294,7 +495,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
                 ax.yaxis.set_tick_params(labelsize=tick_label_size)
                 
     ### Format the x-axis labels
-    format_utc_xlabels(axes, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+    format_datetime_xlabels(axes, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
     ### Plot the colorbar at the bottom
     cax = fig.add_axes([0.35, 0.0, 0.3, 0.02])
@@ -341,7 +542,7 @@ def plot_cwt_powers(specs,
     ax = axes[0, 0]
     ax.set_ylim(freqlim)
     
-    format_utc_xlabels(axes, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+    format_datetime_xlabels(axes, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
     format_freq_ylabels(axes, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
 
     ### Add the colorbar
@@ -401,7 +602,7 @@ def plot_cascade_zoom_in_geo_waveforms_and_cwt_powers(stream, specs, window_dict
         ##### Plot the waveform
         trace = stream.select(station=station, component=component_to_plot)[0]
         waveform = trace.data
-        timeax = get_timeax_from_trace(trace)
+        timeax = get_datetime_axis_from_trace(trace)
         color = get_geo_component_color(component_to_plot)
         label = component_to_label(component_to_plot)
 
@@ -418,7 +619,7 @@ def plot_cascade_zoom_in_geo_waveforms_and_cwt_powers(stream, specs, window_dict
 
         major_time_spacing = major_time_spacings[0]
         minor_time_spacing = minor_time_spacings[0]
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
         
         if i == 0:
             format_vel_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_velocity_spacing, minor_tick_spacing=minor_velocity_spacing, tick_label_size=tick_label_size)
@@ -444,9 +645,9 @@ def plot_cascade_zoom_in_geo_waveforms_and_cwt_powers(stream, specs, window_dict
             minor_freq_spacing = minor_freq_spacings[j]
 
             if j < num_windows - 1:
-                format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing)
+                format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing)
             else:
-                format_utc_xlabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+                format_datetime_xlabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
             if i > 0:
                 format_freq_ylabels(ax, label=False, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -515,7 +716,7 @@ def plot_cascade_zoom_in_hydro_waveforms_and_cwt_powers(stream, specs, window_di
         ##### Plot the waveform
         trace = stream.select(station=station_to_plot, location=location)[0]
         waveform = trace.data
-        timeax = get_timeax_from_trace(trace)
+        timeax = get_datetime_axis_from_trace(trace)
         color = "darkviolet"
         label = trace.stats.location
 
@@ -532,7 +733,7 @@ def plot_cascade_zoom_in_hydro_waveforms_and_cwt_powers(stream, specs, window_di
 
         major_time_spacing = major_time_spacings[0]
         minor_time_spacing = minor_time_spacings[0]
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
         
         if i == 0:
             format_pressure_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_pressure_spacing, minor_tick_spacing=minor_pressure_spacing, tick_label_size=tick_label_size)
@@ -558,9 +759,9 @@ def plot_cascade_zoom_in_hydro_waveforms_and_cwt_powers(stream, specs, window_di
             minor_freq_spacing = minor_freq_spacings[j]
 
             if j < num_windows - 1:
-                format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing)
+                format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing)
             else:
-                format_utc_xlabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+                format_datetime_xlabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
             if i > 0:
                 format_freq_ylabels(ax, label=False, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -615,7 +816,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
         label = component_to_label(component)
         ax.text(component_label_x, component_label_y, label, fontsize=compoent_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -628,7 +829,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
         cmap.set_bad(color="darkgray")
         phase_color = ax.pcolormesh(timeax, freqs, phase, cmap=cmap, vmin=-pi, vmax=pi)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -644,7 +845,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
         ax = axes[2, i]
         cohe_color = ax.pcolormesh(timeax, freqs, coherence, cmap="viridis", vmin=cohemin, vmax=cohemax)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -660,7 +861,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
         if i == 0:
             ax.text(threshold_label_x, threshold_label_y, label, fontsize=threshold_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -721,7 +922,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
         label = f"{component_to_label(component1)}-{component_to_label(component2)}"
         ax.text(component_label_x, component_label_y, label, fontsize=compoent_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -734,7 +935,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
         cmap.set_bad(color="darkgray")
         phase_color = ax.pcolormesh(timeax, freqs, phase, cmap=cmap, vmin=-pi, vmax=pi)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -750,7 +951,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
         ax = axes[2, i]
         cohe_color = ax.pcolormesh(timeax, freqs, coherence, cmap="viridis", vmin=cohemin, vmax=cohemax)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -768,7 +969,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
 
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
-        format_utc_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -906,7 +1107,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
     for i, component in enumerate(components):
         trace = stream.select(station=station1, component=component)[0]
         waveform = trace.data
-        timeax = get_timeax_from_trace(trace)
+        timeax = get_datetime_axis_from_trace(trace)
         color = get_geo_component_color(component)
 
         ax = axes[0, i]
@@ -921,7 +1122,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         title = component_to_label(component)
         ax.set_title(title, fontsize=title_size, fontweight="bold")
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_vel_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_vel_spacing, minor_tick_spacing=minor_vel_spacing, tick_label_size=tick_label_size)
@@ -941,7 +1142,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         ax.set_xlim(timeax[0], timeax[-1])
         ax.set_ylim(freq_lim)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             format_freq_ylabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
@@ -953,7 +1154,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
     for i, component in enumerate(components):
         trace = stream.select(station=station2, component=component)[0]
         waveform = trace.data
-        timeax = get_timeax_from_trace(trace)
+        timeax = get_datetime_axis_from_trace(trace)
         color = get_geo_component_color(component)
 
         ax = axes[2, i]
@@ -962,7 +1163,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         ax.set_xlim(timeax[0], timeax[-1])
         ax.set_ylim(wf_lim)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
         if i == 0:
             ax.text(station_label_x, station_label_y, station2, fontsize=station_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
@@ -990,7 +1191,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         else:
             format_freq_ylabels(ax, label=False, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
 
-        format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+        format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
     ### Plot the cross-correlation functions
     for i, component in enumerate(components):
@@ -1142,14 +1343,14 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
     ax_aspect_phys = sec2day(dur_plot) / (freqmax -  freqmin) * ax_aspect_plot
     ax.set_aspect(ax_aspect_phys)
 
-    format_utc_xlabels(ax, label=False, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+    format_datetime_xlabels(ax, label=False, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
     format_freq_ylabels(ax, abbreviation=True, axis_label_size=axis_label_size, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
 
     ## Plot the waveforms
     for i, component in enumerate(components):
         trace = stream_plot.select(station=station, component=component)[0]
         data = trace.data
-        timeax = get_timeax_from_trace(trace)
+        timeax = get_datetime_axis_from_trace(trace)
         color = get_geo_component_color(component)
 
         ## Plot the waveform
@@ -1168,9 +1369,9 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
         ax.set_aspect(ax_aspect_phys)
 
         if i < len(components) - 1:
-            format_utc_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+            format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
         else:
-            format_utc_xlabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+            format_datetime_xlabels(ax, axis_label_size=axis_label_size, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
     ## Plot the particle motions
     for i, component_pair in enumerate(component_pairs):
@@ -1202,7 +1403,7 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
 
 
     # ## Plot the polarization analysis
-    # timeax = get_timeax_from_trace(stream_plot[0])
+    # timeax = get_datetime_axis_from_trace(stream_plot[0])
     # window_length = pol_params.window_length
     # timeax_pol = timeax[window_length - 1:]
 
@@ -1260,7 +1461,7 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
 
     # ## Format the x axis
     # # ax = axes[-1]
-    # # format_utc_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+    # # format_datetime_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
 
     ## Set the title
     title = f"{station}"
@@ -1318,18 +1519,17 @@ def get_windowed_pm_data(stream_in, window_length):
 
     return pm_data_list
 
-## Function to generate an amplitude scale bar
-def plot_amp_scale_bar(ax, x, y, amplitude, scale, linewidth=1):
-    ax.errorbar(x, y, yerr=amplitude * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
 
-    return ax
 
-## Function to format the x labels in UTC time
-def format_utc_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12, rotation=0, vertical_align="top", horizontal_align="center"):
+## Function to format the x labels in datetime
+def format_datetime_xlabels(ax, label=True, microsecond=False, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12, rotation=0, vertical_align="top", horizontal_align="center"):
     if label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
-    ax.xaxis.set_major_formatter(DateFormatter('%m-%dT%H:%M:%S'))
+    if microsecond:
+        ax.xaxis.set_major_formatter(DateFormatter('%m-%dT%H:%M:%S.%f'))
+    else:
+        ax.xaxis.set_major_formatter(DateFormatter('%m-%dT%H:%M:%S'))
 
     ax.xaxis.set_major_locator(MultipleLocator(sec2day(major_tick_spacing)))
     ax.xaxis.set_minor_locator(MultipleLocator(sec2day(minor_tick_spacing)))
@@ -1341,6 +1541,37 @@ def format_utc_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_spacing
         label.set_rotation(rotation)
 
     return ax
+
+## Function format the x labels in relative time
+def format_rel_time_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12):
+    if label:
+        ax.set_xlabel("Time (s)", fontsize=axis_label_size)
+
+    ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.xaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+
+    for label in ax.get_xticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('top')
+        label.set_horizontalalignment('center')
+
+    return ax
+
+## Function to format the y labels in depth
+def format_depth_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
+    if label:
+        ax.set_ylabel("Depth (m)", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+
+    for label in ax.get_yticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('center')
+        label.set_horizontalalignment('right')
+
+    return ax
+
 
 ## Function to format the y labels in frequency
 def format_freq_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=20, minor_tick_spacing=5, axis_label_size=12, tick_label_size=12):
@@ -1429,6 +1660,14 @@ def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_
 
     return cbar
 
+## Function to generate a scale bar
+def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
+    x = coordinates[0]
+    y = coordinates[1]
+    ax.errorbar(x, y, yerr=amplitude * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
+
+    return ax
+
 ### Function for getting the color for the three geophone components
 def get_geo_component_color(component):
     if component == "Z":
@@ -1454,6 +1693,19 @@ def component_to_label(component):
         raise ValueError("Invalid component name!")
 
     return title
+
+### Function to convert the frequency band to a label
+def freq_band_to_label(freqmin, freqmax):
+    if freqmin is not None and freqmax is not None:
+        label = f"Bandpass {freqmin}-{freqmax} Hz"
+    elif freqmin is not None and freqmax is None:
+        label = f"Highpass {freqmin} Hz"
+    elif freqmin is None and freqmax is not None:
+        label = f"Lowpass {freqmax} Hz"
+    else:
+        label = "Raw data"
+
+    return label
 
 ### Function for saving a figure
 def save_figure(fig, filename, outdir=ROOTDIR, dpi=300):

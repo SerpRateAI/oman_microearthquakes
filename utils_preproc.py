@@ -494,7 +494,7 @@ def correct_hydro_polarity(stream_in):
     stream_out = stream_in.copy()
 
     for trace in stream_out:
-        if trace.stats.location == "04":
+        if trace.stats.station == "B00" and trace.stats.location == "04":
             trace.data = -1 * trace.data
 
     return stream_out

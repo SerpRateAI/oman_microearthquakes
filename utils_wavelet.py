@@ -4,7 +4,7 @@ from scipy.stats import gmean
 from scipy.signal import convolve, convolve2d
 from pywt import wavelist, scale2frequency, cwt
 
-from utils_basic import SAMPLING_RATE_GEO, GEO_COMPONENTS, get_timeax_from_trace, get_unique_stations, power2db
+from utils_basic import SAMPLING_RATE_GEO, GEO_COMPONENTS, get_datetime_axis_from_trace, get_unique_stations, power2db
 from utils_basic import WAVELET_COMPONENT_PAIRS as component_pairs
 
 ## Class for storing the wavelet specgtra of multiple traces

@@ -102,7 +102,7 @@ def days_to_timestamps(days):
     return timestamps
 
 ### Function for getting the timeax consisting of Pandas Timestamp objects from a Trace object
-def get_timeax_from_trace(trace):
+def get_datetime_axis_from_trace(trace):
     timeax = trace.times("matplotlib")
     timeax = days_to_timestamps(timeax)
 
@@ -149,12 +149,19 @@ def power2db(power, reference_type="mean", **kwargs):
 
     return db
 
-### Function to get the geophone station locations
+### Function to get the geophone station coordinates
 def get_geophone_locs():
-    inpath = join(ROOTDIR, "stations.csv")
-    stadf = read_csv(inpath, index_col=0)
+    inpath = join(ROOTDIR, "geo_stations.csv")
+    sta_df = read_csv(inpath, index_col=0)
 
-    return stadf
+    return sta_df
+
+### Function to get the hydrophone station coordinates
+def get_hydrophone_coords():
+    inpath = join(ROOTDIR, "hydro_stations.csv")
+    sta_df = read_csv(inpath, index_col=0, dtype = {"location": str})
+
+    return sta_df
 
 ### Function to convert seconds to days
 def sec2day(seconds):
@@ -163,7 +170,7 @@ def sec2day(seconds):
     return days
 
 ### Function to convert a time string from input format to filename format
-def time2filename(input):
+def time2suffix(input):
     if isinstance(input, Timestamp):
         timestamp = input
     elif isinstance(input, str): 
@@ -174,4 +181,28 @@ def time2filename(input):
     output = timestamp.strftime("%Y%m%dT%H%M%S")
 
     return output
+
+### Function to generate a suffix for output filename from the input frequency limits
+def freq2suffix(freqmin, freqmax):
+    if freqmin is not None and freqmax is not None:
+        suffix = f"bp{freqmin:.0f}-{freqmax:.0f}hz"
+    elif freqmin is not None and freqmax is None:
+        suffix = f"hp{freqmin:.0f}hz"
+    elif freqmin is None and freqmax is not None:
+        suffix = f"lp{freqmax:.0f}hz"
+    else:
+        suffix = "no_filter"
+
+    return suffix
+
+### Function to generate a suffix for output filename from the normalization option
+def norm2suffix(normalize):
+    if normalize:
+        suffix = "normalized"
+    else:
+        suffix = "no_norm"
+    
+    return suffix
+    
+
 
