@@ -133,9 +133,10 @@ def local_to_utc(local_time):
     return utc_time
 
 ### Function to convert power to decibels
-### If reference is "mean", the reference is the geometric mean of the power values
-def power2db(power, reference_type="mean", **kwargs):
-    if reference_type == "mean":
+def power2db(power, reference_type=None, **kwargs):
+    if reference_type is None:
+        reference = 1.0
+    elif reference_type == "mean":
         reference = gmean(power, axis=None)
     elif reference_type == "max":
         reference = amax(power)
@@ -150,7 +151,7 @@ def power2db(power, reference_type="mean", **kwargs):
     return db
 
 ### Function to get the geophone station coordinates
-def get_geophone_locs():
+def get_geophone_coords():
     inpath = join(ROOTDIR, "geo_stations.csv")
     sta_df = read_csv(inpath, index_col=0)
 
@@ -163,11 +164,31 @@ def get_hydrophone_coords():
 
     return sta_df
 
+### Function to get the days of the geophone deployment
+def get_geophone_days():
+    inpath = join(ROOTDIR_GEO, "days.csv")
+    days_df = read_csv(inpath)
+    days = days_df["day"].values
+
+    return days
+
 ### Function to convert seconds to days
 def sec2day(seconds):
     days = seconds / 86400
 
     return days
+
+### Function to convert days to seconds
+def day2sec(days):
+    seconds = days * 86400
+
+    return seconds
+
+#### Function to convert hours to seconds
+def hour2sec(hours):
+    seconds = hours * 3600
+
+    return seconds
 
 ### Function to convert a time string from input format to filename format
 def time2suffix(input):

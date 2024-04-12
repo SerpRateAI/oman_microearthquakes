@@ -14,6 +14,43 @@ from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR
 
 ## Read and preprocess geophone waveforms in a time window
 ## Window length is in second
+def read_and_process_day_long_geo_waveforms(day, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
+
+    ### Read the waveforms
+    stations_to_read = get_geo_stations_to_read(stations)
+    channels_to_read = get_geo_channels_to_read(components)
+
+    stream_in = Stream()
+    for station in stations_to_read:
+        stream_station = Stream()
+
+        for channel in channels_to_read:
+            stream = read_geo_waveforms_on_day(day, station, channel)
+            
+            if stream is None:
+                print(f"Warning: No data found for {station}.{channel}!")
+                if all_components:
+                    break
+                else:
+                    continue
+            else:
+                stream_station += stream
+        
+        if len(stream_station) == len(channels_to_read):
+            stream_in += stream_station
+        else:
+            print(f"Warning: Not all components read for {station}! The station is skipped.")
+            continue
+
+    ### Process the waveforms
+    if len(stream_in) < 3 and all_components:
+        return None
+    else:
+        stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+        return stream_proc
+
+## Read and preprocess geophone waveforms in a time window
+## Window length is in second
 def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
 
     if not isinstance(starttime, Timestamp):
@@ -50,9 +87,11 @@ def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqma
             continue
 
     ### Process the waveforms
-    stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
-
-    return stream_proc
+    if len(stream_in) < 3 and all_components:
+        return None
+    else:
+        stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+        return stream_proc
 
 ## Read and preprocess hydrophone waveforms in a time window
 ## Window length is in second
@@ -353,6 +392,24 @@ def get_hydro_locations_to_read(locations):
             locations_to_read = locations
 
     return locations_to_read
+
+## Read the geophone waveforms of a day recorded on specific channels of a specific station
+def read_geo_waveforms_on_day(day, station, channel, rootdir=ROOTDIR_GEO):
+        
+            ### Check if the channel is broken
+            if f"{station}.{channel}" in BROKEN_CHANNELS:
+                print(f"Warning: {station}.{channel} is broken!")
+                return None
+    
+            ### Read the waveforms
+            pattern = join(rootdir, day, f"*{station}*{channel}.mseed")
+            try:
+                stream = read(pattern)
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                return None
+    
+            return stream
 
 ## Read the geophone waveforms in a timewindow recorded on specific channels of a specific station
 def read_geo_waveforms_in_timewindow(starttime, endtime, station, channel, rootdir=ROOTDIR_GEO):

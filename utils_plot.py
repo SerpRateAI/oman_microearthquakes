@@ -7,11 +7,11 @@ from scipy.stats import gmean
 from matplotlib.pyplot import subplots, Circle
 from matplotlib.patches import Rectangle
 from matplotlib import colormaps
-from matplotlib.dates import DateFormatter, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
+from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
 from matplotlib.ticker import MultipleLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR, ROOTDIR_GEO, HYDRO_LOCATIONS
-from utils_basic import days_to_timestamps, get_geophone_locs, get_datetime_axis_from_trace, get_unique_stations, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
+from utils_basic import days_to_timestamps, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
 GROUND_VELOCITY_UNIT = "nm s$^{-1}$"
@@ -23,6 +23,10 @@ PRESSURE_UNIT = "Pa"
 APPARENT_VELOCITY_UNIT = "m s$^{-1}$"
 X_SLOW_LABEL = "East slowness (s km$^{-1}$)"
 Y_SLOW_LABEL = "North slowness (s km$^{-1}$)"
+
+######
+# Classes
+######
 
 ## Class for storing the windowed particle-motion data
 class ParticleMotionData:
@@ -58,6 +62,12 @@ class ParticleMotionData:
         data2_plot = data2
 
         return data1_plot, data2_plot
+
+######
+# Functions
+######
+
+###### Functions for plotting waveforms ######
 
 ## Function to make a plot the 3C seismograms of all geophone stations in a given time window
 def plot_3c_seismograms(stream, stations=GEO_STATIONS, xdim_per_comp=25, ydim_per_sta=0.3, 
@@ -372,9 +382,10 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
             ax.add_patch(box)
 
     return fig, axes
-         
 
-## Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
+###### Functions for plotting STFT power spectrograms ######   
+
+# Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
 def plot_3c_waveforms_and_stfts(stream, specdict, 
                                        linewidth=0.1, xdim_per_comp=10, ydim_per_sta=3, ylim_wf=(-50, 50), dbmin=-50, dbmax=0, ylim_spec=(0, 200), 
                                        major_tick_spacing=5, minor_tick_spacing=1, station_label_size=12, axis_label_size=12, tick_label_size=12, title_size=15):
@@ -390,7 +401,7 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
         for j, station in enumerate(stations):
             trace = stream.select(station=station, component=component)[0]
 
-            ## Plot the waveforms
+            # Plot the waveforms
             signal = trace.data
             timeax_wf = get_datetime_axis_from_trace(trace)
 
@@ -409,7 +420,7 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
                 ax.text(0.01, 0.98, f"{station}", fontsize=station_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top") 
 
 
-            ## Plot the spectrograms
+            # Plot the spectrograms
             timeax_spec, freqax, spec = specdict[(station, component)]
             ax = axes[2 * j + 1, i]
             ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
@@ -427,6 +438,70 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
     fig.patch.set_alpha(0.0)
 
     return fig, axes
+
+# Function to plot the 3C long-term spectrograms computed using STFT of a station
+def plot_long_term_stft_spectrograms(specs,
+                            xdim = 15, ydim_per_comp= 5, 
+                            freq_lim=(0, 490), dbmin=0, dbmax=30,
+                            component_label_x = 0.01, component_label_y = 0.96,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing=24, minor_time_spacing=6, 
+                            major_freq_spacing=100, minor_freq_spacing=20,
+                            component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+    # Convert the power to dB
+    specs.to_db()
+
+    # Extract the data
+    spec_z = specs.get_spectra(component = "Z")[0]
+    spec_1 = specs.get_spectra(component = "1")[0]
+    spec_2 = specs.get_spectra(component = "2")[0]
+
+    timeax = spec_z.times
+    freqax = spec_z.freqs
+
+    data_z = spec_z.data
+    data_1 = spec_1.data
+    data_2 = spec_2.data
+
+    # Plot the spectrograms
+    fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
+
+    ax = axes[0]
+    power_color = ax.pcolormesh(timeax, freqax, data_z, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    label = component_to_label("Z")
+    ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+
+    ax = axes[1]
+    power_color = ax.pcolormesh(timeax, freqax, data_1, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    label = component_to_label("1")
+    ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+
+    ax = axes[2]
+    power_color = ax.pcolormesh(timeax, freqax, data_2, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    label = component_to_label("2")
+    ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+    
+    ax.set_ylim(freq_lim)
+
+    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
+    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+
+    # Add the colorbar
+    bbox = axes[2].get_position()
+    position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
+    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+
+    station = spec_z.station
+    fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
+
+    return fig, axes, cbar
+
+###### Functions for plotting CWT spectra ######
 
 ## Function to plot the 3C seismograms and spectrograms computed using CWT of a list of stations
 def plot_3c_waveforms_and_cwts(stream, specs, 
@@ -1007,7 +1082,7 @@ def plot_freq_phase_pairs(freq_phi_dict, station_pair, freq_lim=(0, 200),
     unit = WAVE_VELOCITY_UNIT
     components = GEO_COMPONENTS
 
-    loc_df = get_geophone_locs()
+    loc_df = get_geophone_coords()
     station1 = station_pair[0]
     station2 = station_pair[1]
 
@@ -1522,14 +1597,12 @@ def get_windowed_pm_data(stream_in, window_length):
 
 
 ## Function to format the x labels in datetime
-def format_datetime_xlabels(ax, label=True, microsecond=False, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12, rotation=0, vertical_align="top", horizontal_align="center"):
+def format_datetime_xlabels(ax, label=True, date_format = '%m-%dT%H:%M:%S', major_tick_spacing = 60, minor_tick_spacing = 15, axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
     if label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
-    if microsecond:
-        ax.xaxis.set_major_formatter(DateFormatter('%m-%dT%H:%M:%S.%f'))
-    else:
-        ax.xaxis.set_major_formatter(DateFormatter('%m-%dT%H:%M:%S'))
+
+    ax.xaxis.set_major_formatter(DateFormatter(date_format))
 
     ax.xaxis.set_major_locator(MultipleLocator(sec2day(major_tick_spacing)))
     ax.xaxis.set_minor_locator(MultipleLocator(sec2day(minor_tick_spacing)))
@@ -1711,7 +1784,7 @@ def freq_band_to_label(freqmin, freqmax):
 def save_figure(fig, filename, outdir=ROOTDIR, dpi=300):
     fig.patch.set_alpha(0)
 
-    outpath = join(outdir, filename)
+    outpath = join(outdir, "figures", filename)
 
     fig.savefig(outpath, dpi=dpi, bbox_inches='tight')
     print(f"Figure saved to {outpath}")
