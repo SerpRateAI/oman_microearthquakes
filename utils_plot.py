@@ -442,7 +442,7 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
 # Function to plot the 3C long-term spectrograms computed using STFT of a station
 def plot_long_term_stft_spectrograms(specs,
                             xdim = 15, ydim_per_comp= 5, 
-                            freq_lim=(0, 490), dbmin=0, dbmax=30,
+                            freq_lim=(0, 490), dbmin=-20.0, dbmax=20.0,
                             component_label_x = 0.01, component_label_y = 0.96,
                             date_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 

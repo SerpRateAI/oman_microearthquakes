@@ -13,11 +13,11 @@ from utils_preproc import read_and_process_day_long_geo_waveforms
 # Classes
 
 ## Class for storing the STFT spectra of multiple traces
-class STFTPowerSpectra:
+class StreamSTFTPSD:
     def __init__(self, spectra = None):
         if spectra is not None:
             if not isinstance(spectra, list):
-                raise TypeError("Invalid STFTPowerSpectra object!")
+                raise TypeError("Invalid StreamSTFTPSD object!")
             else:
                 self.spectra = spectra
         else:
@@ -36,8 +36,8 @@ class STFTPowerSpectra:
         del self.spectra[index]
     
     def append(self, stft_spectrum):
-        if not isinstance(stft_spectrum, STFTPowerSpectrum):
-            raise TypeError("Invalid STFTPowerSpectrum object!")
+        if not isinstance(stft_spectrum, TraceSTFTPSD):
+            raise TypeError("Invalid TraceSTFTPSD object!")
 
         self.spectra.append(stft_spectrum)
 
@@ -79,7 +79,7 @@ class STFTPowerSpectra:
             spec.to_db()
         
 ## Class for storing the STFT spectrum and associated parameters of a trace
-class STFTPowerSpectrum:
+class TraceSTFTPSD:
     def __init__(self, station, location, component, times, freqs, data, db=False):
         self.station = station
         self.location = location
@@ -158,11 +158,55 @@ def get_whole_deployment_spectrogram(station, days, window_length = 15.0, overla
         period_mat_1 = power2db(period_mat_1)
         period_mat_2 = power2db(period_mat_2)
 
-    spec_z = STFTPowerSpectrum(station, None, "Z", timeax_period, freqax_ds, period_mat_z)
-    spec_1 = STFTPowerSpectrum(station, None, "1", timeax_period, freqax_ds, period_mat_1)
-    spec_2 = STFTPowerSpectrum(station, None, "2", timeax_period, freqax_ds, period_mat_2)
+    spec_z = TraceSTFTPSD(station, None, "Z", timeax_period, freqax_ds, period_mat_z)
+    spec_1 = TraceSTFTPSD(station, None, "1", timeax_period, freqax_ds, period_mat_1)
+    spec_2 = TraceSTFTPSD(station, None, "2", timeax_period, freqax_ds, period_mat_2)
 
-    specs = STFTPowerSpectra([spec_z, spec_1, spec_2])
+    specs = StreamSTFTPSD([spec_z, spec_1, spec_2])
+
+    return specs
+
+## Funcion for computing the spectrogram of a station on a day
+## Window length is in SECONDS!
+def get_day_long_spectrogram(station, day, window_length = 100.0, overlap = 0.5, downsample_factor = 100, db=False):
+    print("######")
+    print(f"Computing spectrograms for {station} on {day}...")
+    print("######")
+
+    print(f"Reading the waveforms...")
+    stream = read_and_process_day_long_geo_waveforms(day, stations = [station])
+
+    if stream is None:
+        raise ValueError("Error: No data for the day!")
+
+    print(f"Computing the spectrograms...")
+    stft_dict = get_stream_spectrogram_stft(stream, window_length, overlap=overlap, db=db)
+
+    print(f"Downsampling the spectrograms...")
+    timeax = stft_dict[(station, "Z")][0]
+    freqax = stft_dict[(station, "Z")][1]
+    freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
+
+    day_mat_z = stft_dict[(station, "Z")][2]
+    day_mat_1 = stft_dict[(station, "1")][2]
+    day_mat_2 = stft_dict[(station, "2")][2]
+
+    day_mat_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
+    day_mat_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
+    day_mat_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)
+
+    print(f"Done processing day {day}.")
+
+    if db:
+        day_mat_z_ds = power2db(day_mat_z_ds)
+        day_mat_1_ds = power2db(day_mat_1_ds)
+        day_mat_2_ds = power2db(day_mat_2_ds)
+
+    spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax_ds, day_mat_z_ds)
+    spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax_ds, day_mat_1_ds)
+    spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax_ds, day_mat_2_ds)
+
+    specs = StreamSTFTPSD([spec_z, spec_1, spec_2])
 
     return specs
 
@@ -268,7 +312,7 @@ def save_geo_spectrogram(specs, outpath):
     except Exception as e:
         print(f"Error saving the spectrogram data: {e}")
 
-## Function to read the spectrogram data from a .npz file
+# Read the spectrogram data from a .npz file
 def read_geo_spectrogram(inpath):
     try:
         data = load(inpath, allow_pickle=True)
@@ -279,11 +323,11 @@ def read_geo_spectrogram(inpath):
         spec_1 = data["spectrogram_1"]
         spec_2 = data["spectrogram_2"]
 
-        spec_z = STFTPowerSpectrum(station, None, "Z", timeax, freqax, spec_z)
-        spec_1 = STFTPowerSpectrum(station, None, "1", timeax, freqax, spec_1)
-        spec_2 = STFTPowerSpectrum(station, None, "2", timeax, freqax, spec_2)
+        spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, spec_z)
+        spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, spec_1)
+        spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, spec_2)
 
-        specs = STFTPowerSpectra([spec_z, spec_1, spec_2])
+        specs = StreamSTFTPSD([spec_z, spec_1, spec_2])
 
         return specs
     except Exception as e:
@@ -291,14 +335,14 @@ def read_geo_spectrogram(inpath):
         return None
     
 
-## Function for calculating the VELOCITY PSD of a VELOCITY signal using multitaper method
+# Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    
     mt = MTSpec(vel, nw=nw, dt=1/sampling_rate)
     freqax, psd = mt.rspec()
     
     return freqax, psd
 
-## Function for calculating the DISPLACEMENT PSD of a VELOCITY using multitaper method
+# Calculate the DISPLACEMENT PSD of a VELOCITY using multitaper method
 def get_disp_psd_mt(vel, sampling_rate=1000.0, nw=2):
     disp = vel2disp(vel, sampling_rate)
     
@@ -307,8 +351,14 @@ def get_disp_psd_mt(vel, sampling_rate=1000.0, nw=2):
     
     return freqax, psd
     
-## Convert velocity to displacement
+# Convert velocity to displacement
 def vel2disp(vel, sampling_rate=1000.0):
     disp = cumsum(vel) / sampling_rate
 
-    return disp
+    return disp4
+
+# Compute the effective noise bandwith of a window
+def get_window_enbw(window, sampling_rate):
+    enbw = sampling_rate * (abs(window)**2).sum() / abs(window.sum()) ** 2
+
+    return enbw
