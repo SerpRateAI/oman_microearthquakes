@@ -2,17 +2,18 @@
 
 ## Import libraries
 from os.path import join
-from numpy import amax, log10
+from numpy import amax, array, log10
 from scipy.stats import gmean
 from pandas import Timestamp, Timedelta, to_datetime, read_csv
-from obspy import UTCDateTime
+from obspy import UTCDateTime, read_inventory
 
 ## Constants
 
-ROOTDIR = "/Volumes/OmanData/data"
-ROOTDIR_GEO = "/Volumes/OmanData/data/geophones"
+ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
 ROOTDIR_HYDRO = "/Volumes/OmanData/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
+SPECTROGRAM_DIR = "/fp/projects01/ec332/data/spectrograms"
+FIGURE_DIR = "/fp/projects01/ec332/data/figures"
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 
@@ -24,7 +25,6 @@ MIN_LATITUDE = 22.8
 MAX_LATITUDE = 23.0
 
 SAMPLING_RATE_GEO = 1000.0
-
 
 NETWORK = "7F"
 
@@ -117,6 +117,7 @@ def reltimes_to_timestamps(reltimes, starttime):
             raise ValueError("Invalid start time format!")
         
     timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
+    timestamps = array(timestamps)
 
     return timestamps
 
@@ -150,7 +151,17 @@ def power2db(power, reference_type=None, **kwargs):
 
     return db
 
-### Function to get the geophone station coordinates
+######
+# Functions for loading substantial data files
+######
+
+# Get the geophone metadata
+def get_geo_metadata():
+    inv = read_inventory(PATH_GEO_METADATA)
+
+    return inv
+    
+# Get the geophone station coordinates
 def get_geophone_coords():
     inpath = join(ROOTDIR, "geo_stations.csv")
     sta_df = read_csv(inpath, index_col=0)
@@ -172,25 +183,29 @@ def get_geophone_days():
 
     return days
 
-### Function to convert seconds to days
+######
+# Functions for handling times
+######
+
+# Function to convert seconds to days
 def sec2day(seconds):
     days = seconds / 86400
 
     return days
 
-### Function to convert days to seconds
+# Function to convert days to seconds
 def day2sec(days):
     seconds = days * 86400
 
     return seconds
 
-#### Function to convert hours to seconds
+# Function to convert hours to seconds
 def hour2sec(hours):
     seconds = hours * 3600
 
     return seconds
 
-### Function to convert a time string from input format to filename format
+# Function to convert a time string from input format to filename format
 def time2suffix(input):
     if isinstance(input, Timestamp):
         timestamp = input
@@ -202,6 +217,22 @@ def time2suffix(input):
     output = timestamp.strftime("%Y%m%dT%H%M%S")
 
     return output
+
+# Function to convert year-month-day to day of the year
+def to_day_of_year(date):
+    if not isinstance(date, Timestamp):
+        if isinstance(date, str):
+            date = Timestamp(date)
+        else:
+            raise TypeError("Invalid input type!")
+
+    day_of_year = str(date.day_of_year).zfill(3)
+
+    return day_of_year
+
+######
+# Functions for handling file names
+######
 
 ### Function to generate a suffix for output filename from the input frequency limits
 def freq2suffix(freqmin, freqmax):
