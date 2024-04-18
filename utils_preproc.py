@@ -10,13 +10,16 @@ from obspy.signal.cross_correlation import correlate_template
 from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 
 from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
-from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, utcdatetime_to_timestamp, timestamp_to_utcdatetime
+from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS
 
-## Read and preprocess geophone waveforms in a time window
-## Window length is in second
-def read_and_process_day_long_geo_waveforms(day, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
+from utils_basic import utcdatetime_to_timestamp, timestamp_to_utcdatetime, to_day_of_year
 
-    ### Read the waveforms
+# Read and preprocess geophone waveforms in a time window
+# Window length is in second
+def read_and_process_day_long_geo_waveforms(day, metadat, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
+
+    # Read the waveforms
+    print(f"Reading the waveforms for {day}")
     stations_to_read = get_geo_stations_to_read(stations)
     channels_to_read = get_geo_channels_to_read(components)
 
@@ -25,7 +28,7 @@ def read_and_process_day_long_geo_waveforms(day, freqmin=None, freqmax=None, sta
         stream_station = Stream()
 
         for channel in channels_to_read:
-            stream = read_geo_waveforms_on_day(day, station, channel)
+            stream = read_day_long_geo_waveforms(day, station, channel)
             
             if stream is None:
                 print(f"Warning: No data found for {station}.{channel}!")
@@ -42,11 +45,12 @@ def read_and_process_day_long_geo_waveforms(day, freqmin=None, freqmax=None, sta
             print(f"Warning: Not all components read for {station}! The station is skipped.")
             continue
 
-    ### Process the waveforms
+    # Process the waveforms
+    print("Preprocessing the waveforms...")
     if len(stream_in) < 3 and all_components:
         return None
     else:
-        stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+        stream_proc = preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
         return stream_proc
 
 ## Read and preprocess geophone waveforms in a time window
@@ -394,7 +398,7 @@ def get_hydro_locations_to_read(locations):
     return locations_to_read
 
 ## Read the geophone waveforms of a day recorded on specific channels of a specific station
-def read_geo_waveforms_on_day(day, station, channel, rootdir=ROOTDIR_GEO):
+def read_day_long_geo_waveforms(day, station, channel, rootdir=ROOTDIR_GEO):
         
             ### Check if the channel is broken
             if f"{station}.{channel}" in BROKEN_CHANNELS:
@@ -453,27 +457,25 @@ def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, ro
         return stream
 
 
-## Preprocess a stream object consisting of geophone data by removing the sensitivity, detrending, tapering, and filtering
-## The output data will be in nm/s
-def preprocess_geo_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10, path_meta=PATH_GEO_METADATA):
+# Preprocess a stream object consisting of geophone data by removing the sensitivity, detrending, tapering, and filtering
+# The output data will be in nm/s
+def preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10, path_meta=PATH_GEO_METADATA):
 
-    ### Read the metadata
-    metadat = read_inventory(path_meta)
-
-    ### Remove the sensitivity
-    stream_out = stream_in.copy()
+    # Remove the sensitivity
+    stream_out = stream_in
     stream_out.remove_sensitivity(inventory=metadat)
 
-    ### Reverse the polarity of the vertical components
+    # Reverse the polarity of the vertical components
     stream_out = correct_geo_polarity(stream_out)
 
-    ### Convert from m/s to nm/s
+    # Convert from m/s to nm/s
     for trace in stream_out:
         trace.data *= 1e9
 
-    ### Detrend, taper, and filter
-    stream_out.detrend("linear")
-    stream_out.taper(0.001)
+    # Detrend, taper, and filter
+    if freqmin is not None or freqmax is not None:
+        stream_out.detrend("linear")
+        stream_out.taper(0.001)
 
     if freqmin is not None and freqmax is not None:
         stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
@@ -482,11 +484,11 @@ def preprocess_geo_stream(stream_in, freqmin, freqmax, corners=4, zerophase=Fals
     elif freqmin is None and freqmax is not None:
         stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
 
-    ### Decimate the waveforms
+    # Decimate the waveforms
     if decimate:
         stream_out.decimate(decimate_factor)
 
-    ### Normalize the waveforms
+    # Normalize the waveforms
     if normalize:
         stream_out.normalize(global_max=True)
 

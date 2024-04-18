@@ -10,7 +10,7 @@ from matplotlib import colormaps
 from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
 from matplotlib.ticker import MultipleLocator
 
-from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR, ROOTDIR_GEO, HYDRO_LOCATIONS
+from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import days_to_timestamps, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
@@ -439,10 +439,10 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
 
     return fig, axes
 
-# Function to plot the 3C long-term spectrograms computed using STFT of a station
-def plot_long_term_stft_spectrograms(specs,
+# Plot the 3C long-term spectrograms computed using STFT of a station
+def plot_long_term_stft_spectrograms(stream_spec,
                             xdim = 15, ydim_per_comp= 5, 
-                            freq_lim=(0, 490), dbmin=-20.0, dbmax=20.0,
+                            freq_lim=(0, 490), dbmin=-20, dbmax=20,
                             component_label_x = 0.01, component_label_y = 0.96,
                             date_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
@@ -450,19 +450,19 @@ def plot_long_term_stft_spectrograms(specs,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
     # Convert the power to dB
-    specs.to_db()
+    stream_spec.to_db()
 
     # Extract the data
-    spec_z = specs.get_spectra(component = "Z")[0]
-    spec_1 = specs.get_spectra(component = "1")[0]
-    spec_2 = specs.get_spectra(component = "2")[0]
+    trace_spec_z = stream_spec.get_spectra(component = "Z")[0]
+    trace_spec_1 = stream_spec.get_spectra(component = "1")[0]
+    trace_spec_2 = stream_spec.get_spectra(component = "2")[0]
 
-    timeax = spec_z.times
-    freqax = spec_z.freqs
+    timeax = trace_spec_z.times
+    freqax = trace_spec_z.freqs
 
-    data_z = spec_z.data
-    data_1 = spec_1.data
-    data_2 = spec_2.data
+    data_z = trace_spec_z.data
+    data_1 = trace_spec_1.data
+    data_2 = trace_spec_2.data
 
     # Plot the spectrograms
     fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
@@ -495,8 +495,9 @@ def plot_long_term_stft_spectrograms(specs,
     bbox = axes[2].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
     cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+    cbar.set_label("Power spectral density (dB)")
 
-    station = spec_z.station
+    station = trace_spec_z.station
     fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
 
     return fig, axes, cbar
@@ -1781,7 +1782,7 @@ def freq_band_to_label(freqmin, freqmax):
     return label
 
 ### Function for saving a figure
-def save_figure(fig, filename, outdir=ROOTDIR, dpi=300):
+def save_figure(fig, filename, outdir=FIGURE_DIR, dpi=300):
     fig.patch.set_alpha(0)
 
     outpath = join(outdir, "figures", filename)
