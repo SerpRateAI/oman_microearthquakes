@@ -68,10 +68,12 @@ def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, s
             stream = read_day_long_hydro_waveforms(day, station, location)
             
             if stream is None:
-                print(f"Warning: No data is read for {station}.{channel}!")
+                print(f"Warning: No data is read for {station}.{location}!")
                 continue
             else:
                 stream_station += stream
+
+        stream_in += stream_station
 
     # Process the waveforms
     print("Preprocessing the waveforms...")

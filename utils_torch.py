@@ -90,7 +90,8 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
             stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)        
 
         stream_spec_out.extend(stream_spec)
-        stream_spec_ds_out.extend(stream_spec_ds)
+        if downsample:
+            stream_spec_ds_out.extend(stream_spec_ds)
 
         # Update the starttime
         starttime = endtime
@@ -171,6 +172,9 @@ def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = F
 # Compute the spectrogram in PSD of a trace using STFT
 def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.5, cuda = False):
     signal = trace.data
+    station = trace.stats.station
+    location = trace.stats.location
+    component = trace.stats.component
     sampling_rate = trace.stats.sampling_rate
     numpts = trace.stats.npts
     starttime = trace.stats.starttime

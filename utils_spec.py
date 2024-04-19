@@ -430,7 +430,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     components = GEO_COMPONENTS
     # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
-        raise ValueError("Error: Invalid number of spectrogram data!")
+        raise ValueError("Error: Invalid number of components!")
 
     if stream_spec[0].starttime != stream_spec[1].starttime or stream_spec[1].starttime != stream_spec[2].starttime:
         raise ValueError("Error: The spectrograms do not have the save start time!")
@@ -482,11 +482,12 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
 
 # Save all locations of a hydrophone station to a HDF5 file
 def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
-    locations = stream_spec.get_locations()
     # Verify the StreamSTFTPSD object
+    locations = stream_spec.get_locations()
     if len(stream_spec) != len(locations):
-        raise ValueError("Error: Invalid number of spectrogram data!")
-    
+        raise ValueError("Error: Number of locations is inconsistent with spectrograms!")
+
+    outpath = join(outdir, filename)
     # Save the data
     with File(outpath, 'w') as file:
         # Create the group for storing each location's spectrogram data
@@ -495,9 +496,14 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             trace_spec = stream_spec.select(location=location)[0]
             timeax = trace_spec.times
             freqax = trace_spec.freqs
+
+            # Convert the time axis to integer
+            timeax = Series(timeax)
+            timeax = timeax.astype('int64')
+            timeax = timeax.to_numpy()
             
             if i == 0:
-                starttime = trace_spec.starttime
+                starttime = timeax[0]
                 station = trace_spec.station
             else:
                 if starttime != trace_spec.starttime:
