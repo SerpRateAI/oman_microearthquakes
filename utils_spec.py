@@ -6,6 +6,7 @@ from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, ones, pi, savez
 from pandas import Series
+from h5py import File
 from multitaper import MTSpec
 
 from utils_basic import GEO_COMPONENTS
@@ -364,8 +365,38 @@ def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
 
     return freqax, resp
 
-# Save the 3C spectrogram data of a geophone station in a time range to a .npz file
+# # Save the 3C spectrogram data of a geophone station in a time range to a .npz file
+# def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
+#     if len(stream_spec) != 3:
+#         raise ValueError("Error: Invalid number of spectrogram data!")
+
+#     if stream_spec[0].starttime != stream_spec[1].starttime or stream_spec[1].starttime != stream_spec[2].starttime:
+#         raise ValueError("Error: The spectrograms do not have the save start time!")
+
+#     if stream_spec[0].station != stream_spec[1].station or stream_spec[1].station != stream_spec[2].station:
+#         raise ValueError("Error: The spectrograms do not belong to the same station!")
+    
+#     trace_spec_z = stream_spec.select(component="Z")[0]
+#     trace_spec_1 = stream_spec.select(component="1")[0]
+#     trace_spec_2 = stream_spec.select(component="2")[0]
+
+#     station = trace_spec_z.station
+#     timeax = trace_spec_z.times
+#     freqax = trace_spec_z.freqs
+#     data_z = trace_spec_z.data
+#     data_1 = trace_spec_1.data
+#     data_2 = trace_spec_2.data
+
+#     try:
+#         outpath = join(outdir, filename)
+#         savez(outpath, station = station, times = timeax, freqs = freqax, spectrogram_z = data_z, spectrogram_1 = data_1, spectrogram_2 = data_2)
+#         print(f"Spectrogram data saved to {outpath}.")
+#     except Exception as e:
+#         print(f"Error saving the spectrogram data: {e}")
+
+# Save the 3C spectrogram data of a geophone station to a HDF5 file
 def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
+    # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of spectrogram data!")
 
@@ -375,6 +406,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     if stream_spec[0].station != stream_spec[1].station or stream_spec[1].station != stream_spec[2].station:
         raise ValueError("Error: The spectrograms do not belong to the same station!")
     
+    # Extract the data from the StreamSTFTPSD object
     trace_spec_z = stream_spec.select(component="Z")[0]
     trace_spec_1 = stream_spec.select(component="1")[0]
     trace_spec_2 = stream_spec.select(component="2")[0]
@@ -386,10 +418,31 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     data_1 = trace_spec_1.data
     data_2 = trace_spec_2.data
 
+    # Convert the time axis to integer
+    timeax = Series(timeax)
+    timeax = timeax.astype('int64')
+    timeax = timeax.to_numpy()
+
+    # Save the data
+    outpath = join(outdir, filename)
     try:
-        outpath = join(outdir, filename)
-        savez(outpath, station = station, times = timeax, freqs = freqax, spectrogram_z = data_z, spectrogram_1 = data_1, spectrogram_2 = data_2)
-        print(f"Spectrogram data saved to {outpath}.")
+        with File(outpath, 'w') as file:
+            # Create the group for storing the headers and data
+            header_group = file.create_group('headers')
+            data_group = file.create_group('data')
+
+            # Save the header information
+            header_group.create_dataset('station', data=station)
+            header_group.create_dataset('components', data=GEO_COMPONENTS)
+            header_group.create_dataset('locations', data=None)
+            header_group.create_dataset('starttime', data=timeax[0])
+            header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
+            header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
+
+            # Save the spectrogram data
+            data_group.create_dataset('psd_z', data=data_z)
+            data_group.create_dataset('psd_1', data=data_1)
+            data_group.create_dataset('psd_2', data=data_2)
     except Exception as e:
         print(f"Error saving the spectrogram data: {e}")
 
