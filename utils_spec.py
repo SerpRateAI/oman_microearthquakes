@@ -4,8 +4,8 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, ones, pi, savez
-from pandas import Series
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, ones, pi, savez
+from pandas import Series, to_datetime
 from h5py import File
 from multitaper import MTSpec
 
@@ -396,6 +396,7 @@ def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
 
 # Save the 3C spectrogram data of a geophone station to a HDF5 file
 def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
+    components = GEO_COMPONENTS
     # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of spectrogram data!")
@@ -432,8 +433,12 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             data_group = file.create_group('data')
 
             # Save the header information
-            header_group.create_dataset('station', data = station)
-            header_group.create_dataset('components', data = GEO_COMPONENTS)
+            # Encode the strings
+            station_encode = station.encode("utf-8")
+            components_encode = [component.encode("utf-8") for component in components]
+            
+            header_group.create_dataset('station', data = station_encode)
+            header_group.create_dataset('components', data = components_encode)
             header_group.create_dataset('locations', data = [])
             header_group.create_dataset('starttime', data = timeax[0])
             header_group.create_dataset('time_interval', data = timeax[1] - timeax[0])
@@ -460,6 +465,9 @@ def read_geo_spectrograms(inpath):
             components = header_group["components"][:]
             locations = header_group["locations"][:]
 
+            # Decode the strings
+            station = station.decode("utf-8")
+
             # Read the spectrogram data
             data_group = file["data"]
             data_z = data_group["psd_z"][:]
@@ -469,8 +477,9 @@ def read_geo_spectrograms(inpath):
             # Create the StreamSTFTPSD object
             num_time = data_z.shape[1]
             timeax = Series(range(num_time)) * time_interval + starttime
-            timeax = timeax.astype('datetime64[ns]')
-            timeax = timeax.to_numpy()
+            timeax = to_datetime(timeax, unit='ns')
+            timeax = timeax.to_list()
+            print(type(timeax[0]))
 
             num_freq = data_z.shape[0]
             freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)

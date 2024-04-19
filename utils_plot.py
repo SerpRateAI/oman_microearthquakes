@@ -453,9 +453,9 @@ def plot_long_term_stft_spectrograms(stream_spec,
     stream_spec.to_db()
 
     # Extract the data
-    trace_spec_z = stream_spec.get_spectra(component = "Z")[0]
-    trace_spec_1 = stream_spec.get_spectra(component = "1")[0]
-    trace_spec_2 = stream_spec.get_spectra(component = "2")[0]
+    trace_spec_z = stream_spec.select(component = "Z")[0]
+    trace_spec_1 = stream_spec.select(component = "1")[0]
+    trace_spec_2 = stream_spec.select(component = "2")[0]
 
     timeax = trace_spec_z.times
     freqax = trace_spec_z.freqs
