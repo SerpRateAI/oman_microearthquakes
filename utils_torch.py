@@ -28,7 +28,7 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
         endtime = starttime + 3600.0
         stream_hour = stream_day.slice(starttime = starttime, endtime = endtime)
 
-        print(f"Computing the spectrograms for start time {starttime}...")
+        print(f"Computing the spectrograms for starttime {starttime}...")
         stft_dict = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
         timeax = stft_dict[(station, "Z")][0]
         freqax = stft_dict[(station, "Z")][1]

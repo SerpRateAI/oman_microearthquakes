@@ -432,17 +432,17 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             data_group = file.create_group('data')
 
             # Save the header information
-            header_group.create_dataset('station', data=station)
-            header_group.create_dataset('components', data=GEO_COMPONENTS)
-            header_group.create_dataset('locations', data=None)
-            header_group.create_dataset('starttime', data=timeax[0])
-            header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
-            header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
+            header_group.create_dataset('station', data = station)
+            header_group.create_dataset('components', data = GEO_COMPONENTS)
+            header_group.create_dataset('locations', data = "")
+            header_group.create_dataset('starttime', data = timeax[0])
+            header_group.create_dataset('time_interval', data = timeax[1] - timeax[0])
+            header_group.create_dataset('frequency_interval', data = freqax[1] - freqax[0])
 
             # Save the spectrogram data
-            data_group.create_dataset('psd_z', data=data_z)
-            data_group.create_dataset('psd_1', data=data_1)
-            data_group.create_dataset('psd_2', data=data_2)
+            data_group.create_dataset('psd_z', data = data_z)
+            data_group.create_dataset('psd_1', data = data_1)
+            data_group.create_dataset('psd_2', data = data_2)
     except Exception as e:
         print(f"Error saving the spectrogram data: {e}")
 
