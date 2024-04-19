@@ -16,7 +16,7 @@ from utils_preproc import read_and_process_day_long_geo_waveforms
 
 # Classes
 
-## Class for storing the STFT traces of multiple traces
+## Class for storing the STFT data of multiple traces
 class StreamSTFTPSD:
     def __init__(self, traces = None):
         if traces is not None:
@@ -112,6 +112,12 @@ class StreamSTFTPSD:
 
         return stations
 
+    def get_locations(self):
+        locations = list(set([trace.location for trace in self.traces]))
+        locations.sort()
+
+        return locations
+
     def get_starttimes(self):
         starttimes = list(set([trace.starttime for trace in self.traces]))
         starttimes.sort()
@@ -122,7 +128,7 @@ class StreamSTFTPSD:
         for trace in self.traces:
             trace.to_db()
         
-## Class for storing the STFT spectrum and associated parameters of a trace
+## Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
     def __init__(self, station, location, component, times, freqs, data, db=False):
         self.station = station
@@ -142,6 +148,9 @@ class TraceSTFTPSD:
         else:
             self.data = power2db(self.data)
             self.db = True
+
+    def copy(self):
+        return TraceSTFTPSD(self.station, self.location, self.component, self.times, self.freqs, self.data, self.db)
 
 ## Funcion for computing the spectrogram of a station during the entire deployment period
 ## Window length is in MINUTES!
@@ -214,39 +223,39 @@ def get_whole_deployment_spectrogram(station, days, window_length = 15.0, overla
     return specs
 
 
-# Compute the spectrogram in PSD of a stream using STFT
-# A wrapper for the get_trace_spectrogram_stft function
-def get_stream_spectrogram_stft(stream, window_length=1.0, overlap=0.5, db=True):
-    specdict = {}
-    for trace in stream:
-        station = trace.stats.station
-        component = trace.stats.component
+# # Compute the spectrogram in PSD of a stream using STFT
+# # A wrapper for the get_trace_spectrogram_stft function
+# def get_stream_spectrogram_stft(stream, window_length=1.0, overlap=0.5, db=True):
+#     specdict = {}
+#     for trace in stream:
+#         station = trace.stats.station
+#         component = trace.stats.component
 
-        timeax, freqax, spec = get_trace_spectrogram_stft(trace, window_length, overlap, db=db)
-        specdict[(station, component)] = (timeax, freqax, spec)
+#         timeax, freqax, spec = get_trace_spectrogram_stft(trace, window_length, overlap, db=db)
+#         specdict[(station, component)] = (timeax, freqax, spec)
 
-    return specdict
+#     return specdict
 
-# Compute the spectrogram in PSD of a trace using STFT
-def get_trace_spectrogram_stft(trace, window_length=1.0, overlap=0.5, db=True):
-    signal = trace.data
-    sampling_rate = trace.stats.sampling_rate
-    starttime = trace.stats.starttime
-    starttime = starttime.datetime
+# # Compute the spectrogram in PSD of a trace using STFT
+# def get_trace_spectrogram_stft(trace, window_length=1.0, overlap=0.5, db=True):
+#     signal = trace.data
+#     sampling_rate = trace.stats.sampling_rate
+#     starttime = trace.stats.starttime
+#     starttime = starttime.datetime
 
-    window = hann(int(window_length * sampling_rate))
-    hop = int(window_length * sampling_rate * (1 - overlap))
-    stft = ShortTimeFFT(window, hop, sampling_rate, scale_to="psd")
-    freqax = array(stft.f)
-    timeax = stft.t(len(signal))
-    timeax = reltimes_to_timestamps(timeax, starttime)
+#     window = hann(int(window_length * sampling_rate))
+#     hop = int(window_length * sampling_rate * (1 - overlap))
+#     stft = ShortTimeFFT(window, hop, sampling_rate, scale_to="psd")
+#     freqax = array(stft.f)
+#     timeax = stft.t(len(signal))
+#     timeax = reltimes_to_timestamps(timeax, starttime)
 
-    psd = stft.spectrogram(signal, detr="linear")
+#     psd = stft.spectrogram(signal, detr="linear")
 
-    if db:
-        psd = power2db(psd)
+#     if db:
+#         psd = power2db(psd)
 
-    return timeax, freqax, psd
+#     return timeax, freqax, psd
 
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!
@@ -322,20 +331,42 @@ def moving_average_2d(data, window_length, axis=0):
 
     return data
 
-# Downsample a STFT spectrogram by averaging over a given number of points along the frequency axis
-# Row axis is the frequency axis and column axis is the time axis!
-def downsample_stft_spec(spec, factor=1000):
-    numpts = spec.shape[0]
+# Downsample an STFT stream object along the frequency axis
+def downsample_stft_stream_freq(stream_in, factor=1000):
+    stream_out = StreamSTFTPSD()
+    for trace_in in stream_in:
+        trace_out = downsample_stft_trace_freq(trace_in, factor)
+        stream_out.append(trace_out)
+
+    return stream_out
+
+# Downsample an STFT trace object along the frequency axis
+def downsample_stft_trace_freq(trace_in, factor=1000):
+    trace_out = trace_in.copy()
+
+    freqax = trace_in.freqs
+    freqax_ds = downsample_stft_freqax(freqax, factor)
+    data = trace_in.data
+    data_ds = downsample_stft_data_freq(data, factor)
+
+    trace_out.freqs = freqax_ds
+    trace_out.data = data_ds
+
+    return trace_out
+
+# Downsample an STFT data matrix along the frequency axis by averaging over a given number of points along the frequency axis
+def downsample_stft_data_freq(data, factor=1000):
+    numpts = data.shape[0]
     numrows = numpts // factor
-    numcols = spec.shape[1]
+    numcols = data.shape[1]
 
-    spec = spec[:numrows * factor, :]
-    spec = spec.reshape((numrows, factor, numcols))
-    spec = spec.mean(axis=1)
+    data = data[:numrows * factor, :]
+    data = data.reshape((numrows, factor, numcols))
+    data = data.mean(axis=1)
 
-    return spec
+    return data
 
-# Function to down sample the frequency axis of a spectrogram
+# Downsample the frequency axis of an STFT data matrix
 def downsample_stft_freqax(freqax, factor=1000):
     numpts = len(freqax)
     numrows = numpts // factor
@@ -448,6 +479,47 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
                 comp_group.create_dataset("psd", data=data_1)
             elif component == "2":
                 comp_group.create_dataset("psd", data=data_2)
+
+# Save all locations of a hydrophone station to a HDF5 file
+def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
+    locations = stream_spec.get_locations()
+    # Verify the StreamSTFTPSD object
+    if len(stream_spec) != len(locations):
+        raise ValueError("Error: Invalid number of spectrogram data!")
+    
+    # Save the data
+    with File(outpath, 'w') as file:
+        # Create the group for storing each location's spectrogram data
+        data_group = file.create_group('data')  
+        for i, location in enumerate(locations):
+            trace_spec = stream_spec.select(location=location)[0]
+            timeax = trace_spec.times
+            freqax = trace_spec.freqs
+            
+            if i == 0:
+                starttime = trace_spec.starttime
+                station = trace_spec.station
+            else:
+                if starttime != trace_spec.starttime:
+                    raise ValueError("Error: The spectrograms do not have the same start time!")
+                
+                if station != trace_spec.station:
+                    raise ValueError("Error: The spectrograms do not belong to the same station!")
+
+            data = trace_spec.data
+            loc_group = data_group.create_group(location)
+            loc_group.create_dataset("psd", data=data)
+
+        # Create the group for storing the headers
+        header_group = file.create_group('headers')
+    
+        # Save the header information with encoding
+        header_group.create_dataset('station', data=station.encode("utf-8"))
+        header_group.create_dataset('locations', data=[location.encode("utf-8") for location in locations])
+    
+        header_group.create_dataset('starttime', data=timeax[0])
+        header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
+        header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
 
 # Read the spectrogram data from an HDF5 file
 def read_geo_spectrograms(inpath):

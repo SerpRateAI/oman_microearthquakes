@@ -6,7 +6,7 @@ from numpy import linspace
 from utils_basic import power2db, reltimes_to_timestamps
 from utils_preproc import read_and_process_day_long_geo_waveforms
 from utils_spec import StreamSTFTPSD, TraceSTFTPSD
-from utils_spec import downsample_stft_spec, downsample_stft_freqax
+from utils_spec import downsample_stft_stream_freq
 
 ######
 # Functions
@@ -29,19 +29,17 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
         stream_hour = stream_day.slice(starttime = starttime, endtime = endtime)
 
         print(f"Computing the spectrograms for starttime {starttime}...")
-        stft_dict = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
-        timeax = stft_dict[(station, "Z")][0]
-        freqax = stft_dict[(station, "Z")][1]
-        
-        hour_spec_z = stft_dict[(station, "Z")][2]
-        hour_spec_1 = stft_dict[(station, "1")][2]
-        hour_spec_2 = stft_dict[(station, "2")][2]
+        stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
         
         if downsample:
             print(f"Downsampling the spectrograms...")
-
+            freqax = stream_spec[0].freqax
             freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
-        
+
+            hour_spec_z = stream_spec[0].spec
+            hour_spec_1 = stream_spec[1].spec
+            hour_spec_2 = stream_spec[2].spec
+
             hour_spec_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
             hour_spec_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
             hour_spec_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)          
@@ -68,74 +66,107 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
 
     return stream_spec_out, stream_spec_ds_out
 
+# Compute hourly spectrograms for ALL locations of a hydrophone station from a day-long stream object
+def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.5, cuda = False, downsample = False, downsample_factor = None):
+    if downsample and downsample_factor is None:
+        raise ValueError("The downsample factor is not set!")
+
+    station = stream_day[0].stats.station
+    starttime_day = stream_day[0].stats.starttime
+    endttime_day = stream_day[0].stats.endtime
+    stream_spec_out = StreamSTFTPSD()
+    stream_spec_ds_out = StreamSTFTPSD()
+
+    starttime = starttime_day
+    while starttime < endttime_day:
+        endtime = starttime + 3600.0
+        stream_hour = stream_day.slice(starttime = starttime, endtime = endtime)
+
+        print(f"Computing the spectrograms for starttime {starttime}...")
+        stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
         
-# Compute a day-long spectrogram of a station and return BOTH the original and downsampled spectrograms
-# Window length is in SECONDS!
-def get_day_long_spectrograms(station, day, metadat):
-    print("######")
-    print(f"Computing spectrograms for {station} on {day}...")
-    print("######")
+        if downsample:
+            print(f"Downsampling the spectrograms...")
+            stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)        
 
-    print(f"Reading and processing the waveforms...")
-    stream = read_and_process_day_long_geo_waveforms(day, metadat, stations = [station])
+        stream_spec_out.extend(stream_spec)
+        stream_spec_ds_out.extend(stream_spec_ds)
 
-    if stream is None:
-        raise ValueError("Error: No data found for the day!")
+        # Update the starttime
+        starttime = endtime
 
-    print(f"Computing the spectrograms...")
-    stft_dict = get_stream_spectrograms(stream, window_length, overlap=overlap, cuda = cuda)
+    return stream_spec_out, stream_spec_ds_out
 
-    print(f"Downsampling the spectrograms...")
-    timeax = stft_dict[(station, "Z")][0]
-    freqax = stft_dict[(station, "Z")][1]
-    freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
-
-    day_mat_z = stft_dict[(station, "Z")][2]
-    day_mat_1 = stft_dict[(station, "1")][2]
-    day_mat_2 = stft_dict[(station, "2")][2]
-
-    day_mat_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
-    day_mat_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
-    day_mat_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)
-
-    if db:
-        day_mat_z = power2db(day_mat_z)
-        day_mat_1 = power2db(day_mat_1)
-        day_mat_2 = power2db(day_mat_2)
         
-        day_mat_z_ds = power2db(day_mat_z_ds)
-        day_mat_1_ds = power2db(day_mat_1_ds)
-        day_mat_2_ds = power2db(day_mat_2_ds)
+# # Compute a day-long spectrogram of a station and return BOTH the original and downsampled spectrograms
+# # Window length is in SECONDS!
+# def get_day_long_spectrograms(station, day, metadat):
+#     print("######")
+#     print(f"Computing spectrograms for {station} on {day}...")
+#     print("######")
 
-    # The original spectrograms
-    trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, day_mat_z, db = db)
-    trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, day_mat_1, db = db)
-    trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, day_mat_2, db = db)
+#     print(f"Reading and processing the waveforms...")
+#     stream = read_and_process_day_long_geo_waveforms(day, metadat, stations = [station])
 
-    stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+#     if stream is None:
+#         raise ValueError("Error: No data found for the day!")
+
+#     print(f"Computing the spectrograms...")
+#     stft_dict = get_stream_spectrograms(stream, window_length, overlap=overlap, cuda = cuda)
+
+#     print(f"Downsampling the spectrograms...")
+#     timeax = stft_dict[(station, "Z")][0]
+#     freqax = stft_dict[(station, "Z")][1]
+#     freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
+
+#     day_mat_z = stft_dict[(station, "Z")][2]
+#     day_mat_1 = stft_dict[(station, "1")][2]
+#     day_mat_2 = stft_dict[(station, "2")][2]
+
+#     day_mat_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
+#     day_mat_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
+#     day_mat_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)
+
+#     if db:
+#         day_mat_z = power2db(day_mat_z)
+#         day_mat_1 = power2db(day_mat_1)
+#         day_mat_2 = power2db(day_mat_2)
+        
+#         day_mat_z_ds = power2db(day_mat_z_ds)
+#         day_mat_1_ds = power2db(day_mat_1_ds)
+#         day_mat_2_ds = power2db(day_mat_2_ds)
+
+#     # The original spectrograms
+#     trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, day_mat_z, db = db)
+#     trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, day_mat_1, db = db)
+#     trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, day_mat_2, db = db)
+
+#     stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
     
-    # The downsampled spectrograms
-    trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax_ds, day_mat_z_ds, db = db)
-    trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax_ds, day_mat_1_ds, db = db)
-    trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax_ds, day_mat_2_ds, db = db)
+#     # The downsampled spectrograms
+#     trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax_ds, day_mat_z_ds, db = db)
+#     trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax_ds, day_mat_1_ds, db = db)
+#     trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax_ds, day_mat_2_ds, db = db)
 
-    stream_spec_ds = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+#     stream_spec_ds = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
 
-    print(f"Done processing day {day}.")
+#     print(f"Done processing day {day}.")
     
-    return stream_spec, stream_spec_ds
+#     return stream_spec, stream_spec_ds
     
 # Compute the spectrograms in PSD of a stream using STFT
 def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = False):
-    specdict = {}
+    stream_spec = StreamSTFTPSD()
+
     for trace in stream:
         station = trace.stats.station
+        location = trace.stats.location
         component = trace.stats.component
 
-        timeax, freqax, psd = get_trace_spectrogram(trace, window_length, overlap, cuda = cuda)
-        specdict[(station, component)] = (timeax, freqax, psd)
+        trace_spec = get_trace_spectrogram(trace, window_length, overlap, cuda = cuda)
+        stream_spec.append(trace_spec)
 
-    return specdict
+    return stream_spec
 
 # Compute the spectrogram in PSD of a trace using STFT
 def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.5, cuda = False):
@@ -169,6 +200,7 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.5, cuda = Fals
         
     psd = psd_tsr.numpy()
 
+    # Assemble the output TraceSTFTPSD object
     num_freq = psd.shape[0]
     nyfreq = sampling_rate / 2
     freqax = linspace(0, nyfreq, num_freq)
@@ -177,7 +209,9 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.5, cuda = Fals
     timeax = linspace(0, (numpts - 1) / sampling_rate, num_time)
     timeax = reltimes_to_timestamps(timeax, starttime)
 
-    return timeax, freqax, psd
+    trace_spec = TraceSTFTPSD(station, location, component, timeax, freqax, psd)
+
+    return trace_spec
     
 # Get the effective noise bandwidth of a window function
 def get_window_enbw(window, sampling_rate):

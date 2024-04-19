@@ -10,7 +10,7 @@ from obspy.signal.cross_correlation import correlate_template
 from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 
 from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
-from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS
+from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
 
 from utils_basic import utcdatetime_to_timestamp, timestamp_to_utcdatetime, to_day_of_year
 
@@ -57,38 +57,27 @@ def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, s
 
     # Read the waveforms
     print(f"Reading the waveforms for {day}")
-    stations_to_read = get_hydro
-    channels_to_read = get_geo_channels_to_read(components)
+    stations_to_read = get_hydro_stations_to_read(stations)
+    locations_to_read = get_hydro_locations_to_read(locations)
 
     stream_in = Stream()
     for station in stations_to_read:
         stream_station = Stream()
 
-        for channel in channels_to_read:
-            stream = read_day_long_geo_waveforms(day, station, channel)
+        for location in locations_to_read:
+            stream = read_day_long_hydro_waveforms(day, station, location)
             
             if stream is None:
-                print(f"Warning: No data found for {station}.{channel}!")
-                if all_components:
-                    break
-                else:
-                    continue
+                print(f"Warning: No data is read for {station}.{channel}!")
+                continue
             else:
                 stream_station += stream
-        
-        if len(stream_station) == len(channels_to_read):
-            stream_in += stream_station
-        else:
-            print(f"Warning: Not all components read for {station}! The station is skipped.")
-            continue
 
     # Process the waveforms
     print("Preprocessing the waveforms...")
-    if len(stream_in) < 3 and all_components:
-        return None
-    else:
-        stream_proc = preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
-        return stream_proc
+    stream_proc = preprocess_hydro_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+
+    return stream_proc
 
 ## Read and preprocess geophone waveforms in a time window
 ## Window length is in second
@@ -434,22 +423,40 @@ def get_hydro_locations_to_read(locations):
 
     return locations_to_read
 
-## Read the geophone waveforms of a day recorded on specific channels of a specific station
+# Read the day-long geophone waveforms recorded on specific channels of a specific station
 def read_day_long_geo_waveforms(day, station, channel, rootdir=ROOTDIR_GEO):
         
-            ### Check if the channel is broken
+            # Check if the channel is broken
             if f"{station}.{channel}" in BROKEN_CHANNELS:
                 print(f"Warning: {station}.{channel} is broken!")
                 return None
     
-            ### Read the waveforms
-            pattern = join(rootdir, day, f"*{station}*{channel}.mseed")
+            # Read the waveforms
+            pattern = join(rootdir, day, f"7F.{station}*{channel}.mseed")
             try:
                 stream = read(pattern)
             except Exception as e:
                 print(f"An error occurred: {e}")
                 return None
     
+            return stream
+
+# Read the day-long hydrophone waveforms recorded on a specific location of a specific station
+def read_day_long_hydro_waveforms(day, station, location, rootdir=ROOTDIR_HYDRO):
+        
+            # Check if the location is broken
+            if f"{station}.{location}" in BROKEN_LOCATIONS:
+                print(f"Warning: {station}.{location} is broken!")
+                return None
+    
+            # Read the waveforms
+            pattern = join(rootdir, day, f"7F.{station}.{location}.GDH.mseed")
+            try:
+                stream = read(pattern)
+            except FileNotFoundError:
+                print(f"Warning: {pattern} not found!")
+                return None
+            
             return stream
 
 ## Read the geophone waveforms in a timewindow recorded on specific channels of a specific station
@@ -534,7 +541,7 @@ def preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, corners=4, zerop
 ## Preprocess a stream object consisting of hydrophone data by removing the sensitivity, detrending, tapering, and filtering
 ## The output data will be in Pa
 ## Given that the instrument response of the hydrophone data from SAGE is wrong, we use a customized response-removal procedure
-def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10):
+def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=None):
 
     ### Remove the sensitivity
     stream_out = remove_hydro_response(stream_in)
@@ -543,8 +550,9 @@ def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=Fa
     stream_out = correct_hydro_polarity(stream_out)
 
     ### Detrend, taper, and filter
-    stream_out.detrend("linear")
-    stream_out.taper(0.001)
+    if freqmin is not None or freqmax is not None:
+        stream_out.detrend("linear")
+        stream_out.taper(0.001)
 
     if freqmin is not None and freqmax is not None:
         stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
