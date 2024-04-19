@@ -4,7 +4,8 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, cumsum, delete, load, pi, savez
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, ones, pi, savez
+from pandas import Series
 from multitaper import MTSpec
 
 from utils_basic import GEO_COMPONENTS
@@ -36,6 +37,9 @@ class StreamSTFTPSD:
 
     def __delitem__(self, index):
         del self.traces[index]
+
+    def __iter__(self):
+        return iter(self.traces)
     
     def append(self, trace_spec):
         if not isinstance(trace_spec, TraceSTFTPSD):
@@ -243,8 +247,82 @@ def get_trace_spectrogram_stft(trace, window_length=1.0, overlap=0.5, db=True):
 
     return timeax, freqax, psd
 
-## Downsample a STFT spectrogram by averaging over a given number of points along the frequency axis
-## Row axis is the frequency axis and column axis is the time axis!
+# Stitch spectrograms of multiple time periods together
+# Output window length is in SECOND!
+def stitch_spectrograms(stream_spec, average_window, overlap = 0.5):
+    if len(stream_spec) < 2:
+        raise ValueError("Error: Insufficient number of StreamSTFTPSD objects!")
+
+    station = stream_spec[0].station
+    component = stream_spec[0].component
+    location = stream_spec[0].location
+    freqax = stream_spec[0].freqs
+
+    # Stich the spectrograms together
+    for i, trace_spec in enumerate(stream_spec):
+        if trace_spec.station != station or trace_spec.component != component or trace_spec.location != location:
+            raise ValueError("Error: Inconsistent station, component or location in the StreamSTFTPSD objects!")
+        
+        if i == 0:
+            timeax_out = trace_spec.times
+            data_out = trace_spec.data
+        else:
+            timeax_in = trace_spec.times
+            data_in = trace_spec.data
+
+            if timeax_out[-1] >= timeax_in[0]:
+                timeax_out = delete(timeax_out, -1)
+                data_out = delete(data_out, -1, axis=1)
+
+            data_out = column_stack([data_out, data_in])
+            timeax_out = concatenate([timeax_out, timeax_in])
+
+    # Average the spectrogram over the given window
+    if average_window is not None:
+        data_out = moving_average_2d(data_out, average_window, axis=1)
+
+        timeax_sr = Series(timeax_out)
+        timeax_sr = timeax_sr.astype('int64')
+        timeax_out = timeax_sr.to_numpy()
+        timeax_out = moving_average(timeax_out, average_window)
+        timeax_sr = Series(timeax_out)
+        timeax_sr = timeax_sr.astype('datetime64[ns]')
+        timeax_out = timeax_sr.to_numpy()
+
+    # Save the stitched spectrogram to a new TraceSTFTPSD object
+    trace_spec = TraceSTFTPSD(station, location, component, timeax_out, freqax, data_out)
+
+    return trace_spec
+
+# Moving window average of a 1D array
+def moving_average(data, window_length):
+    if data.ndim != 1:
+        raise ValueError("Error: data must be a 1D numpy array")
+    
+    window = ones(window_length) / window_length
+    data = convolve(data, window, mode="same")
+
+    return data
+
+# Moving window average of a 2D array
+def moving_average_2d(data, window_length, axis=0):
+    if data.ndim != 2:
+        raise ValueError("Error: data must be a 2D numpy array")
+    
+    numrows, numcols = data.shape
+    window = ones(window_length) / window_length
+
+    if axis == 0:
+        for i in range(numcols):
+            data[:, i] = convolve(data[:, i], window, mode="same")
+    elif axis == 1:
+        for i in range(numrows):
+            data[i, :] = convolve(data[i, :], window, mode="same")
+
+    return data
+
+# Downsample a STFT spectrogram by averaging over a given number of points along the frequency axis
+# Row axis is the frequency axis and column axis is the time axis!
 def downsample_stft_spec(spec, factor=1000):
     numpts = spec.shape[0]
     numrows = numpts // factor
@@ -256,7 +334,7 @@ def downsample_stft_spec(spec, factor=1000):
 
     return spec
 
-## Function to down sample the frequency axis of a spectrogram
+# Function to down sample the frequency axis of a spectrogram
 def downsample_stft_freqax(freqax, factor=1000):
     numpts = len(freqax)
     numrows = numpts // factor
@@ -267,8 +345,8 @@ def downsample_stft_freqax(freqax, factor=1000):
 
     return freqax
 
-## Function to calculate the frequency response of a filter 
-### Currently only support Butterworth filters
+# Function to calculate the frequency response of a filter 
+# Currently only support Butterworth filters
 def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
     
     if freqmin >= freqmax:
