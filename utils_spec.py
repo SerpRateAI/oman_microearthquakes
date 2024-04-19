@@ -455,18 +455,33 @@ def read_geo_spectrograms(inpath):
             station = header_group["station"][()]
             time_interval = header_group["time_interval"][()]
             freq_interval = header_group["frequency_interval"][()]
-            components = header_group["components"][:]
-            locations = header_group["locations"][:]
             starttime = header_group["starttime"][()]
 
+            components = header_group["components"][:]
+            locations = header_group["locations"][:]
 
-                    data = data_set[:]  # Read the data into a numpy array
-                    print(data)
+            # Read the spectrogram data
+            data_group = file["data"]
+            data_z = data_group["psd_z"][:]
+            data_1 = data_group["psd_1"][:]
+            data_2 = data_group["psd_2"][:]
 
-                    # Access attributes of the dataset
-                    print("Attributes:")
-                    for attr_name, attr_value in data_set.attrs.items():
-                        print(f"{attr_name}: {attr_value}")
+            # Create the StreamSTFTPSD object
+            num_time = data_z.shape[1]
+            timeax = Series(range(num_time)) * time_interval + starttime
+            timeax = timeax.astype('datetime64[ns]')
+            timeax = timeax.to_numpy()
+
+            num_freq = data_z.shape[0]
+            freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+
+            trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, data_z)
+            trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, data_1)
+            trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, data_2)
+
+            stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+
+            return stream_spec
     except Exception as e:
         print(f"Error reading the spectrogram data: {e}")
         return None
