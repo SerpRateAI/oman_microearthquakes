@@ -430,7 +430,6 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
         with File(outpath, 'w') as file:
             # Create the group for storing the headers and data
             header_group = file.create_group('headers')
-            data_group = file.create_group('data')
 
             # Save the header information
             # Encode the strings
@@ -444,10 +443,16 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             header_group.create_dataset('time_interval', data = timeax[1] - timeax[0])
             header_group.create_dataset('frequency_interval', data = freqax[1] - freqax[0])
 
-            # Save the spectrogram data
-            data_group.create_dataset('psd_z', data = data_z)
-            data_group.create_dataset('psd_1', data = data_1)
-            data_group.create_dataset('psd_2', data = data_2)
+            # Create the group for storing each component's spectrogram data
+            for component in enumerate(components):
+                data_group = file.create_group(f'data/{component}')
+                name = f'psd_{component}'
+                if compoennt == "Z":
+                    data_group.create_dataset(name, data = data_z)
+                elif component == "1":
+                    data_group.create_dataset(name, data = data_1)
+                elif component == "2":
+                    data_group.create_dataset(name, data = data_2)
     except Exception as e:
         print(f"Error saving the spectrogram data: {e}")
 
@@ -467,12 +472,19 @@ def read_geo_spectrograms(inpath):
 
             # Decode the strings
             station = station.decode("utf-8")
+            components = [component.decode("utf-8") for component in components]
 
             # Read the spectrogram data
-            data_group = file["data"]
-            data_z = data_group["psd_z"][:]
-            data_1 = data_group["psd_1"][:]
-            data_2 = data_group["psd_2"][:]
+            for component in components:
+                data_group = file[f'data/{component}']
+                data = data_group[f'psd_{component}'][:]
+
+                if component == "Z":
+                    data_z = data
+                elif component == "1":
+                    data_1 = data
+                elif component == "2":
+                    data_2 = data
 
             # Create the StreamSTFTPSD object
             num_time = data_z.shape[1]
