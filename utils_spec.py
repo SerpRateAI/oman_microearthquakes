@@ -434,7 +434,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             # Save the header information
             header_group.create_dataset('station', data = station)
             header_group.create_dataset('components', data = GEO_COMPONENTS)
-            header_group.create_dataset('locations', data = "")
+            header_group.create_dataset('locations', data = [])
             header_group.create_dataset('starttime', data = timeax[0])
             header_group.create_dataset('time_interval', data = timeax[1] - timeax[0])
             header_group.create_dataset('frequency_interval', data = freqax[1] - freqax[0])
@@ -446,24 +446,27 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     except Exception as e:
         print(f"Error saving the spectrogram data: {e}")
 
-# Read the spectrogram data from a .npz file
+# Read the spectrogram data from an HDF5 file
 def read_geo_spectrograms(inpath):
     try:
-        data = load(inpath, allow_pickle=True)
-        station = data["station"]
-        timeax = data["times"]
-        freqax = data["freqs"]
-        spec_z = data["spectrogram_z"]
-        spec_1 = data["spectrogram_1"]
-        spec_2 = data["spectrogram_2"]
+        with File(inpath, 'r') as file:
+            # Read the header information
+            header_group = file["headers"]
+            station = header_group["station"][()]
+            time_interval = header_group["time_interval"][()]
+            freq_interval = header_group["frequency_interval"][()]
+            components = header_group["components"][:]
+            locations = header_group["locations"][:]
+            starttime = header_group["starttime"][()]
 
-        trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, spec_z)
-        trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, spec_1)
-        trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, spec_2)
 
-        stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+                    data = data_set[:]  # Read the data into a numpy array
+                    print(data)
 
-        return stream_spec
+                    # Access attributes of the dataset
+                    print("Attributes:")
+                    for attr_name, attr_value in data_set.attrs.items():
+                        print(f"{attr_name}: {attr_value}")
     except Exception as e:
         print(f"Error reading the spectrogram data: {e}")
         return None
