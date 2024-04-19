@@ -14,13 +14,50 @@ from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR
 
 from utils_basic import utcdatetime_to_timestamp, timestamp_to_utcdatetime, to_day_of_year
 
-# Read and preprocess geophone waveforms in a time window
-# Window length is in second
-def read_and_process_day_long_geo_waveforms(day, metadat, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
+# Read and preprocess day-long geophone waveforms
+def read_and_process_day_long_geo_waveforms(day, metadat, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=None, all_components=True):
 
     # Read the waveforms
     print(f"Reading the waveforms for {day}")
     stations_to_read = get_geo_stations_to_read(stations)
+    channels_to_read = get_geo_channels_to_read(components)
+
+    stream_in = Stream()
+    for station in stations_to_read:
+        stream_station = Stream()
+
+        for channel in channels_to_read:
+            stream = read_day_long_geo_waveforms(day, station, channel)
+            
+            if stream is None:
+                print(f"Warning: No data found for {station}.{channel}!")
+                if all_components:
+                    break
+                else:
+                    continue
+            else:
+                stream_station += stream
+        
+        if len(stream_station) == len(channels_to_read):
+            stream_in += stream_station
+        else:
+            print(f"Warning: Not all components read for {station}! The station is skipped.")
+            continue
+
+    # Process the waveforms
+    print("Preprocessing the waveforms...")
+    if len(stream_in) < 3 and all_components:
+        return None
+    else:
+        stream_proc = preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+        return stream_proc
+
+# Read and preprocess day-long hydrophone waveforms
+def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, stations=None, locations=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=None):
+
+    # Read the waveforms
+    print(f"Reading the waveforms for {day}")
+    stations_to_read = get_hydro
     channels_to_read = get_geo_channels_to_read(components)
 
     stream_in = Stream()

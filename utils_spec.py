@@ -6,7 +6,7 @@ from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, ones, pi, savez
 from pandas import Series, to_datetime
-from h5py import File
+from h5py import File, special_dtype
 from multitaper import MTSpec
 
 from utils_basic import GEO_COMPONENTS
@@ -426,86 +426,75 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
 
     # Save the data
     outpath = join(outdir, filename)
-    try:
-        with File(outpath, 'w') as file:
-            # Create the group for storing the headers and data
-            header_group = file.create_group('headers')
-
-            # Save the header information
-            # Encode the strings
-            station_encode = station.encode("utf-8")
-            components_encode = [component.encode("utf-8") for component in components]
-            
-            header_group.create_dataset('station', data = station_encode)
-            header_group.create_dataset('components', data = components_encode)
-            header_group.create_dataset('locations', data = [])
-            header_group.create_dataset('starttime', data = timeax[0])
-            header_group.create_dataset('time_interval', data = timeax[1] - timeax[0])
-            header_group.create_dataset('frequency_interval', data = freqax[1] - freqax[0])
-
-            # Create the group for storing each component's spectrogram data
-            for component in enumerate(components):
-                data_group = file.create_group(f'data/{component}')
-                name = f'psd_{component}'
-                if compoennt == "Z":
-                    data_group.create_dataset(name, data = data_z)
-                elif component == "1":
-                    data_group.create_dataset(name, data = data_1)
-                elif component == "2":
-                    data_group.create_dataset(name, data = data_2)
-    except Exception as e:
-        print(f"Error saving the spectrogram data: {e}")
+    with File(outpath, 'w') as file:
+        # Create the group for storing the headers and data
+        header_group = file.create_group('headers')
+    
+        # Save the header information with encoding
+        header_group.create_dataset('station', data=station.encode("utf-8"))
+        header_group.create_dataset('components', data=[component.encode("utf-8") for component in components])
+    
+        header_group.create_dataset('starttime', data=timeax[0])
+        header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
+        header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
+    
+        # Create the group for storing each component's spectrogram data
+        data_group = file.create_group('data')
+        for component in components:
+            comp_group = data_group.create_group(component)
+            if component == "Z":
+                comp_group.create_dataset("psd", data=data_z)
+            elif component == "1":
+                comp_group.create_dataset("psd", data=data_1)
+            elif component == "2":
+                comp_group.create_dataset("psd", data=data_2)
 
 # Read the spectrogram data from an HDF5 file
 def read_geo_spectrograms(inpath):
-    try:
-        with File(inpath, 'r') as file:
-            # Read the header information
-            header_group = file["headers"]
-            station = header_group["station"][()]
-            time_interval = header_group["time_interval"][()]
-            freq_interval = header_group["frequency_interval"][()]
-            starttime = header_group["starttime"][()]
+    with File(inpath, 'r') as file:
+        # Read the header information
+        header_group = file["headers"]
+        station = header_group["station"][()]
+        time_interval = header_group["time_interval"][()]
+        freq_interval = header_group["frequency_interval"][()]
+        starttime = header_group["starttime"][()]
 
-            components = header_group["components"][:]
-            locations = header_group["locations"][:]
+        components = header_group["components"][:]
 
-            # Decode the strings
-            station = station.decode("utf-8")
-            components = [component.decode("utf-8") for component in components]
+        # Decode the strings
+        station = station.decode("utf-8")
+        components = [component.decode("utf-8") for component in components]
 
-            # Read the spectrogram data
-            for component in components:
-                data_group = file[f'data/{component}']
-                data = data_group[f'psd_{component}'][:]
+        # Read the spectrogram data
+        data_group = file["data"]
+        for component in components:
+            comp_group = data_group[component]
+            data = comp_group["psd"][:]
 
-                if component == "Z":
-                    data_z = data
-                elif component == "1":
-                    data_1 = data
-                elif component == "2":
-                    data_2 = data
+            if component == "Z":
+                data_z = data
+            elif component == "1":
+                data_1 = data
+            elif component == "2":
+                data_2 = data
 
-            # Create the StreamSTFTPSD object
-            num_time = data_z.shape[1]
-            timeax = Series(range(num_time)) * time_interval + starttime
-            timeax = to_datetime(timeax, unit='ns')
-            timeax = timeax.to_list()
-            print(type(timeax[0]))
+        # Create the StreamSTFTPSD object
+        num_time = data_z.shape[1]
+        timeax = Series(range(num_time)) * time_interval + starttime
+        timeax = to_datetime(timeax, unit='ns')
+        timeax = timeax.to_list()
+        print(type(timeax[0]))
 
-            num_freq = data_z.shape[0]
-            freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+        num_freq = data_z.shape[0]
+        freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
 
-            trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, data_z)
-            trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, data_1)
-            trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, data_2)
+        trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, data_z)
+        trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, data_1)
+        trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, data_2)
 
-            stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+        stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
 
-            return stream_spec
-    except Exception as e:
-        print(f"Error reading the spectrogram data: {e}")
-        return None
+        return stream_spec
     
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
