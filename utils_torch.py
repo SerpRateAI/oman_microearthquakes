@@ -19,14 +19,14 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
 
     station = stream_day[0].stats.station
     starttime_day = stream_day[0].stats.starttime
-    endttime_day = stream_day[0].stats.endtime
+    starttime_day = starttime_day.replace(hour=0, minute=0, second=0, microsecond=0)
     stream_spec_out = StreamSTFTPSD()
     stream_spec_ds_out = StreamSTFTPSD()
 
-    starttime = starttime_day
-    while starttime < endttime_day:
-        endtime = starttime + 3600.0
-        stream_hour = stream_day.slice(starttime = starttime, endtime = endtime)
+    for hour in range(24):
+        starttime_hour = starttime_day + hour * 3600.0
+        endtime_hour = starttime + 3600.0
+        stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
 
         print(f"Computing the spectrograms for starttime {starttime}...")
         stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
@@ -67,6 +67,7 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
     return stream_spec_out, stream_spec_ds_out
 
 # Compute hourly spectrograms for ALL locations of a hydrophone station from a day-long stream object
+# Window length is in SECONDS!
 def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.5, cuda = False, downsample = False, downsample_factor = None):
     if downsample and downsample_factor is None:
         raise ValueError("The downsample factor is not set!")
