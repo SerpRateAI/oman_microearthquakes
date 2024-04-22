@@ -9,8 +9,8 @@ from obspy import UTCDateTime, read_inventory
 
 ## Constants
 
-ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
-ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
+ROOTDIR_GEO = "/Volumes/OmanData/data/geophones"
+ROOTDIR_HYDRO = "/Volumes/OmanData/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
 SPECTROGRAM_DIR = "/fp/projects01/ec332/data/spectrograms"
 FIGURE_DIR = "/fp/projects01/ec332/data/figures"

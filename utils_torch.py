@@ -28,41 +28,21 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
         endtime_hour = starttime + 3600.0
         stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
 
-        print(f"Computing the spectrograms for starttime {starttime}...")
+        if stream_hour is None:
+            print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
+            continue
+        elif len(stream_hour[0].data) < 3600000:
+            print(f"The length of the data is less than 1 hour for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
+            continue
+
+        print(f"Computing the spectrograms for starttime {starttime_hour}...")
         stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
+        stream_spec_out.extend(stream_spec)
         
         if downsample:
             print(f"Downsampling the spectrograms...")
-            freqax = stream_spec[0].freqax
-            freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
-
-            hour_spec_z = stream_spec[0].spec
-            hour_spec_1 = stream_spec[1].spec
-            hour_spec_2 = stream_spec[2].spec
-
-            hour_spec_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
-            hour_spec_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
-            hour_spec_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)          
-
-        # The original spectrograms
-        trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, hour_spec_z)
-        trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, hour_spec_1)
-        trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, hour_spec_2)
-
-        stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
-        stream_spec_out.extend(stream_spec)
-
-        # The downsampled spectrograms
-        if downsample:
-            trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax_ds, hour_spec_z_ds)
-            trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax_ds, hour_spec_1_ds)
-            trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax_ds, hour_spec_2_ds)
-
-            stream_spec_ds = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
-            stream_spec_ds_out.extend(stream_spec_ds)
-
-        # Update the starttime
-        starttime = endtime
+            stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)
+            stream_spec_ds_out.extend(stream_spec_ds)    
 
     return stream_spec_out, stream_spec_ds_out
 
