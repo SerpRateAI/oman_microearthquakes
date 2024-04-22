@@ -439,10 +439,10 @@ def plot_3c_waveforms_and_stfts(stream, specdict,
 
     return fig, axes
 
-# Plot the 3C long-term spectrograms computed using STFT of a station
-def plot_long_term_stft_spectrograms(stream_spec,
+# Plot the 3C long-term geophone spectrograms of a station computed using STFT
+def plot_long_term_geo_stft_spectrograms(stream_spec,
                             xdim = 15, ydim_per_comp= 5, 
-                            freq_lim=(0, 490), dbmin=-20, dbmax=20,
+                            freq_lim=(0, 490), dbmin=-30, dbmax=0,
                             component_label_x = 0.01, component_label_y = 0.96,
                             date_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
@@ -498,6 +498,55 @@ def plot_long_term_stft_spectrograms(stream_spec,
     cbar.set_label("Power spectral density (dB)")
 
     station = trace_spec_z.station
+    fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
+
+    return fig, axes, cbar
+
+# Plot the long-term spectrograms of all locations of a hydrophone station computed using STFT
+def plot_long_term_hydro_stft_spectrograms(stream_spec,
+                            xdim = 15, ydim_per_loc= 5, 
+                            freq_lim=(0, 490), dbmin=-30, dbmax=0,
+                            component_label_x = 0.01, component_label_y = 0.96,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing=24, minor_time_spacing=6, 
+                            major_freq_spacing=100, minor_freq_spacing=20,
+                            component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+    # Convert the power to dB
+    stream_spec.to_db()
+
+    # Get all locations
+    locations = stream_spec.get_locations()
+    num_loc = len(locations)
+
+    # Plot the spectrograms
+    fig, axes = subplots(num_loc, 1, figsize=(xdim, 3 * ydim_per_loc), sharex=True, sharey=True)
+
+    for i, location in enumerate(locations):
+        trace_spec = stream_spec.select(location = location)[0]
+        timeax = trace_spec.times
+        freqax = trace_spec.freqs
+        data = trace_spec.data
+        
+        ax = axes[i]
+        power_color = ax.pcolormesh(timeax, freqax, data, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+        label = location
+        ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+    
+    ax.set_ylim(freq_lim)
+
+    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
+    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+
+    # Add the colorbar
+    bbox = axes[num_loc - 1].get_position()
+    position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
+    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+    cbar.set_label("Power spectral density (dB)")
+
+    station = trace_spec.station
     fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
 
     return fig, axes, cbar

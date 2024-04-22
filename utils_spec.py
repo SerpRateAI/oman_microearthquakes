@@ -130,12 +130,13 @@ class StreamSTFTPSD:
         
 ## Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
-    def __init__(self, station, location, component, times, freqs, data, db=False):
+    def __init__(self, station, location, component, times, freqs, data, overlap=0, db=False):
         self.station = station
         self.location = location
         self.component = component
         self.times = times
         self.freqs = freqs
+        self.overlap = overlap
         self.data = data
         self.db = db
 
@@ -446,6 +447,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     station = trace_spec_z.station
     timeax = trace_spec_z.times
     freqax = trace_spec_z.freqs
+    overlap = trace_spec_z.overlap
     data_z = trace_spec_z.data
     data_1 = trace_spec_1.data
     data_2 = trace_spec_2.data
@@ -468,6 +470,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
         header_group.create_dataset('starttime', data=timeax[0])
         header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
         header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
+        header_group.create_dataset('overlap', data=overlap)
     
         # Create the group for storing each component's spectrogram data
         data_group = file.create_group('data')
@@ -479,6 +482,8 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
                 comp_group.create_dataset("psd", data=data_1)
             elif component == "2":
                 comp_group.create_dataset("psd", data=data_2)
+
+        print(f"Spectrograms saved to {outpath}")
 
 # Save all locations of a hydrophone station to a HDF5 file
 def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
@@ -496,6 +501,7 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             trace_spec = stream_spec.select(location=location)[0]
             timeax = trace_spec.times
             freqax = trace_spec.freqs
+            overlap = trace_spec.overlap
 
             # Convert the time axis to integer
             timeax = Series(timeax)
@@ -503,7 +509,7 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             timeax = timeax.to_numpy()
             
             if i == 0:
-                starttime = timeax[0]
+                starttime = trace_spec.starttime
                 station = trace_spec.station
             else:
                 if starttime != trace_spec.starttime:
@@ -526,8 +532,11 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
         header_group.create_dataset('starttime', data=timeax[0])
         header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
         header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
+        header_group.create_dataset('overlap', data=overlap)
 
-# Read the spectrogram data from an HDF5 file
+    print(f"Spectrograms saved to {outpath}")
+
+# Read the geophone spectrograms from an HDF5 file
 def read_geo_spectrograms(inpath):
     with File(inpath, 'r') as file:
         # Read the header information
@@ -535,6 +544,7 @@ def read_geo_spectrograms(inpath):
         station = header_group["station"][()]
         time_interval = header_group["time_interval"][()]
         freq_interval = header_group["frequency_interval"][()]
+        overlap = header_group["overlap"][()]
         starttime = header_group["starttime"][()]
 
         components = header_group["components"][:]
@@ -545,34 +555,60 @@ def read_geo_spectrograms(inpath):
 
         # Read the spectrogram data
         data_group = file["data"]
+        stream_spec = StreamSTFTPSD()
         for component in components:
             comp_group = data_group[component]
             data = comp_group["psd"][:]
 
-            if component == "Z":
-                data_z = data
-            elif component == "1":
-                data_1 = data
-            elif component == "2":
-                data_2 = data
+            num_freq = data.shape[0]
+            freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
 
-        # Create the StreamSTFTPSD object
-        num_time = data_z.shape[1]
-        timeax = Series(range(num_time)) * time_interval + starttime
-        timeax = to_datetime(timeax, unit='ns')
-        timeax = timeax.to_list()
-        print(type(timeax[0]))
-
-        num_freq = data_z.shape[0]
-        freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
-
-        trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, data_z)
-        trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, data_1)
-        trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, data_2)
-
-        stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+            num_time = data.shape[1]
+            timeax = Series(range(num_time)) * time_interval + starttime
+            timeax = to_datetime(timeax, unit='ns')
+            timeax = timeax.to_list()
+        
+            trace_spec = TraceSTFTPSD(station, None, component, timeax, freqax, data)
+            stream_spec.append(trace_spec)
 
         return stream_spec
+
+# Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
+def read_hydro_spectrograms(inpath):
+    with File(inpath, 'r') as file:
+        # Read the header information
+        header_group = file["headers"]
+        station = header_group["station"][()]
+        time_interval = header_group["time_interval"][()]
+        freq_interval = header_group["frequency_interval"][()]
+        overlap = header_group["overlap"][()]
+        starttime = header_group["starttime"][()]
+
+        locations = header_group["locations"][:]
+
+        # Decode the strings
+        station = station.decode("utf-8")
+        locations = [location.decode("utf-8") for location in locations]
+
+        # Read the spectrogram data
+        data_group = file["data"]
+        stream_spec = StreamSTFTPSD()
+        for location in locations:
+            loc_group = data_group[location]
+            data = loc_group["psd"][:]
+
+            num_freq = data.shape[0]
+            freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+            
+            num_time = data.shape[1]
+            timeax = Series(range(num_time)) * time_interval + starttime
+            timeax = to_datetime(timeax, unit='ns')
+            timeax = timeax.to_list()
+            trace_spec_z = TraceSTFTPSD(station, location, "H", timeax, freqax, data)
+
+            stream_spec.append(trace_spec_z)
+
+        return stream_spec    
     
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method

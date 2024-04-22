@@ -9,8 +9,8 @@ from obspy import UTCDateTime, read_inventory
 
 ## Constants
 
-ROOTDIR_GEO = "/Volumes/OmanData/data/geophones"
-ROOTDIR_HYDRO = "/Volumes/OmanData/data/hydrophones"
+ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
+ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
 SPECTROGRAM_DIR = "/fp/projects01/ec332/data/spectrograms"
 FIGURE_DIR = "/fp/projects01/ec332/data/figures"
@@ -114,6 +114,7 @@ def reltimes_to_timestamps(reltimes, starttime):
     if not isinstance(starttime, Timestamp):
         try:
             starttime = Timestamp(starttime, tz="UTC")
+            starttime = starttime.round("ms") # Round to the closest millisecond
         except:
             raise ValueError("Invalid start time format!")
         
