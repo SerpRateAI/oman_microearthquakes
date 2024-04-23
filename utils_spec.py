@@ -54,52 +54,52 @@ class StreamSTFTPSD:
 
         self.traces.extend(stream_spec.traces)
 
-    def select(self, station = None, location = None, component = None, starttime = None):
+    def select(self, station = None, location = None, component = None, time_label = None):
         traces = []
         if station is not None:
             if location is not None:
                 if component is not None:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.component == component and starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.component == component and time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.component == component]
                 else:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.station == station and trace.location == location]
             else:
                 if component is not None:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.component == component and trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.station == station and trace.component == component and trace.time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.station == station and trace.component == component]
                 else:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.station == station and trace.time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.station == station]
         else:
             if location is not None:
                 if component is not None:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.location == location and trace.component == component and trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.location == location and trace.component == component and trace.time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.location == location and trace.component == component]
                 else:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.location == location and trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.location == location and trace.time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.location == location]           
             else:
                 if component is not None:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.component == component and trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.component == component and trace.time_label == time_label]
                     else:
                         traces = [trace for trace in self.traces if trace.component == component]
                 else:
-                    if starttime is not None:
-                        traces = [trace for trace in self.traces if trace.starttime == starttime]
+                    if time_label is not None:
+                        traces = [trace for trace in self.traces if trace.time_label == time_label]
                     else:
                         traces = self.traces
                         
@@ -118,34 +118,28 @@ class StreamSTFTPSD:
 
         return locations
 
-    def get_starttimes(self):
-        starttimes = list(set([trace.starttime for trace in self.traces]))
-        starttimes.sort()
+    def get_time_labels(self):
+        time_labels = list(set([trace.time_label for trace in self.traces]))
+        time_labels.sort()
 
-        return starttimes
+        return time_labels
     
     def to_db(self):
         for trace in self.traces:
             trace.to_db()
-
-    def pad_to_length(self, length="day", value=nan):
-        for trace in self.traces:
-            trace.pad_to_length(length, value)
         
 ## Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
-    def __init__(self, station, location, component, times, freqs, data, overlap=0, db=False):
+    def __init__(self, station, location, component, time_label, times, freqs, data, overlap=0, db=False):
         self.station = station
         self.location = location
         self.component = component
+        self.time_label = time_label
         self.times = times
         self.freqs = freqs
         self.overlap = overlap
         self.data = data
         self.db = db
-
-        starttime = times[0]
-        self.starttime = starttime.strftime("%Y%m%d%H%M%S")
 
     def to_db(self):
         if self.db:
@@ -155,37 +149,7 @@ class TraceSTFTPSD:
             self.db = True
 
     def copy(self):
-        return TraceSTFTPSD(self.station, self.location, self.component, self.times, self.freqs, self.data, self.db)
-    
-    def pad_to_length(self, length="day", value=nan):
-        starttime_trace = self.times[0]
-        endtime_trace = self.times[-1]
-        # Determine the padding start and end times
-        if length == "day":
-            starttime_pad = starttime_trace.replace(hour=0, minute=0, second=0, microsecond=0)
-            endtime_pad = endtime_trace.replace(hour=23, minute=59, second=59, microsecond=999999)
-        elif length == "hour":
-            starttime_pad = starttime_trace.replace(minute=0, second=0, microsecond=0)
-            endtime_pad = endtime_trace.times.replace(minute=59, second=59, microsecond=999999)
-        else:
-            raise ValueError("Invalid length!")
-        
-        # Pad the data and time axis
-        if starttime_trace > starttime_pad:
-            time_interval = self.times[1] - self.times[0]
-            times_pad = date_range(start=starttime_pad, end=starttime_trace, freq=time_interval)
-            num_pad = len(times_pad)
-            data_pad = ones((len(self.freqs), num_pad)) * value
-            self.times = concatenate([times_pad, self.times])
-            self.data = column_stack([data_pad, self.data])
-        
-        if self.times[-1] < endtime_pad:
-            time_interval = self.times[-1] - self.times[-2]
-            times_pad = date_range(start=endtime_trace, end=endtime_pad, freq=time_interval)
-            num_pad = len(times_pad)
-            data_pad = ones((len(self.freqs), num_pad)) * value
-            self.times = concatenate([self.times, times_pad])
-            self.data = column_stack([self.data, data_pad])
+        return TraceSTFTPSD(self.station, self.location, self.component, self.time_label, self.times, self.freqs, self.data, self.db)
 
 ## Funcion for computing the spectrogram of a station during the entire deployment period
 ## Window length is in MINUTES!
@@ -467,7 +431,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of components!")
 
-    if stream_spec[0].starttime != stream_spec[1].starttime or stream_spec[1].starttime != stream_spec[2].starttime:
+    if stream_spec[0].time_label != stream_spec[1].time_label or stream_spec[1].time_label != stream_spec[2].time_label:
         raise ValueError("Error: The spectrograms do not have the save start time!")
 
     if stream_spec[0].station != stream_spec[1].station or stream_spec[1].station != stream_spec[2].station:
@@ -479,6 +443,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     trace_spec_2 = stream_spec.select(component="2")[0]
 
     station = trace_spec_z.station
+    time_label = trace_spec_z.time_label
     timeax = trace_spec_z.times
     freqax = trace_spec_z.freqs
     overlap = trace_spec_z.overlap
@@ -499,9 +464,10 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     
         # Save the header information with encoding
         header_group.create_dataset('station', data=station.encode("utf-8"))
+        header_group.create_dataset('time_label', data=time_label.encode("utf-8"))
         header_group.create_dataset('components', data=[component.encode("utf-8") for component in components])
-    
-        header_group.create_dataset('starttime', data=timeax[0])
+
+        header_group.create_dataset("start_time", data=timeax[0])
         header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
         header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
         header_group.create_dataset('overlap', data=overlap)
@@ -520,6 +486,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
         print(f"Spectrograms saved to {outpath}")
 
 # Save all locations of a hydrophone station to a HDF5 file
+# Each location has its own time axis!
 def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     # Verify the StreamSTFTPSD object
     locations = stream_spec.get_locations()
@@ -543,10 +510,10 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             timeax = timeax.to_numpy()
             
             if i == 0:
-                starttime = trace_spec.starttime
+                time_label = trace_spec.time_label
                 station = trace_spec.station
             else:
-                if starttime != trace_spec.starttime:
+                if time_label != trace_spec.time_label:
                     raise ValueError("Error: The spectrograms do not have the same start time!")
                 
                 if station != trace_spec.station:
@@ -555,16 +522,17 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             data = trace_spec.data
             loc_group = data_group.create_group(location)
             loc_group.create_dataset("psd", data=data)
+            loc_group.create_dataset('start_time', data=timeax[0])
+            loc_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
 
         # Create the group for storing the headers
         header_group = file.create_group('headers')
     
         # Save the header information with encoding
         header_group.create_dataset('station', data=station.encode("utf-8"))
+        header_group.create_dataset('time_label', data=time_label.encode("utf-8"))
         header_group.create_dataset('locations', data=[location.encode("utf-8") for location in locations])
-    
-        header_group.create_dataset('starttime', data=timeax[0])
-        header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
+
         header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
         header_group.create_dataset('overlap', data=overlap)
 
@@ -576,15 +544,17 @@ def read_geo_spectrograms(inpath):
         # Read the header information
         header_group = file["headers"]
         station = header_group["station"][()]
+        time_label = header_group["time_label"][()]
+        components = header_group["components"][:]
+        
+        starttime = header_group["start_time"][()]
         time_interval = header_group["time_interval"][()]
         freq_interval = header_group["frequency_interval"][()]
         overlap = header_group["overlap"][()]
-        starttime = header_group["starttime"][()]
-
-        components = header_group["components"][:]
-
+        
         # Decode the strings
         station = station.decode("utf-8")
+        time_label = time_label.decode("utf-8")
         components = [component.decode("utf-8") for component in components]
 
         # Read the spectrogram data
@@ -602,26 +572,27 @@ def read_geo_spectrograms(inpath):
             timeax = to_datetime(timeax, unit='ns')
             timeax = timeax.to_list()
         
-            trace_spec = TraceSTFTPSD(station, None, component, timeax, freqax, data)
+            trace_spec = TraceSTFTPSD(station, None, component, time_label, timeax, freqax, data)
             stream_spec.append(trace_spec)
 
         return stream_spec
 
 # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
+# Each location has its own time axis!
 def read_hydro_spectrograms(inpath):
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
         station = header_group["station"][()]
-        time_interval = header_group["time_interval"][()]
+        time_label = header_group["time_label"][()]
+        locations = header_group["locations"][:]
+
         freq_interval = header_group["frequency_interval"][()]
         overlap = header_group["overlap"][()]
-        starttime = header_group["starttime"][()]
-
-        locations = header_group["locations"][:]
 
         # Decode the strings
         station = station.decode("utf-8")
+        time_label = time_label.decode("utf-8")
         locations = [location.decode("utf-8") for location in locations]
 
         # Read the spectrogram data
@@ -630,6 +601,8 @@ def read_hydro_spectrograms(inpath):
         for location in locations:
             loc_group = data_group[location]
             data = loc_group["psd"][:]
+            starttime = loc_group["start_time"][()]
+            time_interval = loc_group["time_interval"][()]
 
             num_freq = data.shape[0]
             freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
@@ -638,7 +611,7 @@ def read_hydro_spectrograms(inpath):
             timeax = Series(range(num_time)) * time_interval + starttime
             timeax = to_datetime(timeax, unit='ns')
             timeax = timeax.to_list()
-            trace_spec_z = TraceSTFTPSD(station, location, "H", timeax, freqax, data)
+            trace_spec_z = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
 
             stream_spec.append(trace_spec_z)
 

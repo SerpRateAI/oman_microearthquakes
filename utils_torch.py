@@ -113,14 +113,29 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
 
-    # Pad the two ends of the spectrograms with NaNs
-    print(f"Padding the spectrograms...")
-    stream_spec.pad_to_length(length = "day")
-
     # Downsample the spectrograms
     if downsample:
         print(f"Downsampling the spectrograms...")
         stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
+    else:
+        stream_spec_ds = None
+    
+    return stream_spec, stream_spec_ds
+
+# Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
+# Window length is in SECONDS!
+
+def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
+    if downsample and downsample_factor is None:
+        raise ValueError("The downsample factor is not set!")
+    
+    # Compute the spectrograms
+    print(f"Computing the spectrograms...")
+    stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
+
+    # Downsample the spectrograms
+    if downsample:
+            stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
     else:
         stream_spec_ds = None
     
@@ -144,6 +159,7 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     # Downsample the spectrograms
     if downsample:
         print(f"Downsampling the spectrograms...")
+        stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
         stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
     else:
         stream_spec_ds = None
@@ -204,7 +220,9 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     timeax = linspace(0, (numpts - 1) / sampling_rate, num_time)
     timeax = reltimes_to_timestamps(timeax, starttime)
 
-    trace_spec = TraceSTFTPSD(station, location, component, timeax, freqax, psd, overlap = overlap, db = False)
+    time_label = timeax[0].replace(minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S")
+
+    trace_spec = TraceSTFTPSD(station, location, component, time_label, timeax, freqax, psd, overlap = overlap, db = False)
 
     return trace_spec
     

@@ -1834,7 +1834,7 @@ def freq_band_to_label(freqmin, freqmax):
 def save_figure(fig, filename, outdir=FIGURE_DIR, dpi=300):
     fig.patch.set_alpha(0)
 
-    outpath = join(outdir, "figures", filename)
+    outpath = join(outdir, filename)
 
     fig.savefig(outpath, dpi=dpi, bbox_inches='tight')
     print(f"Figure saved to {outpath}")
