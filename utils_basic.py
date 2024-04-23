@@ -5,7 +5,8 @@ from os.path import join
 from numpy import amax, array, log10
 from scipy.stats import gmean
 from pandas import Timestamp, Timedelta, DatetimeIndex
-from pandas import to_datetime, read_csv
+from pandas import Series
+from pandas import date_range, to_datetime, read_csv
 from obspy import UTCDateTime, read_inventory
 
 ## Constants
@@ -110,20 +111,6 @@ def get_datetime_axis_from_trace(trace):
 
     return timeax
 
-# Convert an array of relative times in seconds to a list of Pandas Timestamp objects using a given start time
-def reltimes_to_timestamps(reltimes, starttime):
-    if not isinstance(starttime, Timestamp):
-        try:
-            starttime = Timestamp(starttime, tz="UTC")
-            starttime = starttime.round("ms") # Round to the closest millisecond
-        except:
-            raise ValueError("Invalid start time format!")
-        
-    timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
-    timestamps = DatetimeIndex(timestamps)
-
-    return timestamps
-
 ### Function to convert UTC time to local time
 def utc_to_local(utc_time, timezone="Asia/Muscat"):
     local_time = utc_time.tz_convert(timezone)
@@ -222,7 +209,7 @@ def to_day_of_year(date):
     return day_of_year
 
 # Function to convert DateTimeIndex objects to a list of integers representing nanoseconds since the Unix epoch
-datetime2int(datetimes):
+def datetime2int(datetimes):
     if not isinstance(datetimes, DatetimeIndex):
         if isinstance(datetimes, list):
             datetimes = DatetimeIndex(datetimes)
@@ -232,15 +219,26 @@ datetime2int(datetimes):
     datetimes = datetimes.astype('int64')
     datetimes = datetimes.to_numpy()
 
-    return timeax
+    return datetimes
+
+# Convert an array of relative times in seconds to a Pandas DatetimeIndex objects using a given start time
+def reltimes_to_timestamps(reltimes, starttime):
+    if not isinstance(starttime, Timestamp):
+        try:
+            starttime = Timestamp(starttime, tz="UTC")
+            starttime = starttime.round("ms") # Round to the closest millisecond
+        except:
+            raise ValueError("Invalid start time format!")
+        
+    timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
+    timestamps = DatetimeIndex(timestamps)
+
+    return timestamps
 
 # Assemble a time axis of DateTimeIndex type from integers representing nanoseconds since the Unix epoch
-assemble_timeax_from_ints(starttime, num_time, time_step):
-    if not isinstance(starttime, int):
-        raise TypeError("The start time must be an integer representing nanoseconds since the Unix epoch!")
-    
-    timeax = Series(range(num_time)) * time_step + starttime
-    timeax = to_datetime(timeax, unit='ns')
+def assemble_timeax_from_ints(starttime, num_time, time_step):
+    starttime = to_datetime(starttime, unit='ns') 
+    timeax = date_range(start=starttime, periods=num_time, freq=f'{time_step}ns')
 
     return timeax
 

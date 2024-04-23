@@ -30,6 +30,8 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
         endtime_hour = starttime_hour + 3600.0
         stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
 
+        print(f"Computing the spectrograms for starttime {starttime_hour}...")
+        
         if stream_hour is None:
             print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
             continue
@@ -37,7 +39,6 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
             print(f"The length of the data is less than 1 hour for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
             continue
 
-        print(f"Computing the spectrograms for starttime {starttime_hour}...")
         stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
         stream_spec_out.extend(stream_spec)
         
@@ -70,6 +71,8 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
         stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
         skip_hour = False
 
+        print(f"Computing the spectrograms for starttime {starttime_hour}...")
+
         # Examine the intergrity of the data of the hour
         if stream_hour is None:
             print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! The hour is skipped.")
@@ -90,8 +93,6 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
             continue
 
         # Compute the spectrograms for the hour
-        print(f"Computing the spectrograms for starttime {starttime_hour}...")
-        
         stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
         stream_spec_out.extend(stream_spec)
 
@@ -112,7 +113,12 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
-
+    
+    # Trim the spectrograms to the begin and end of the day
+    print(f"Trimming the spectrograms to the begin and end of the day...")
+    stream_spec.trim_to_day()
+    
+    stream_spec.trim_to_day()
     # Downsample the spectrograms
     if downsample:
         print(f"Downsampling the spectrograms...")

@@ -133,9 +133,9 @@ class StreamSTFTPSD:
             trace.to_db()
 
     # Trim the spectrograms to a given time range
-    def trim_to_range(self, starttime = None, endtime = None):
+    def trim(self, starttime = None, endtime = None):
         for trace in self.traces:
-            trace.trim_to_range(starttime, endtime)
+            trace.trim(starttime, endtime)
 
     # Trim the spectrograms to the begin and end of the day
     def trim_to_day(self):
@@ -168,7 +168,7 @@ class TraceSTFTPSD:
         return TraceSTFTPSD(self.station, self.location, self.component, self.time_label, self.times, self.freqs, self.data, self.db)
 
     # Trim the spectrogram to a given time range
-    def trim(self, starttime = None, endtime = None)
+    def trim(self, starttime = None, endtime = None):
         timeax = self.times
     
         if starttime is not None:
