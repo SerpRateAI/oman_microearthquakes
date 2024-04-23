@@ -43,7 +43,7 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
         
         if downsample:
             print(f"Downsampling the spectrograms...")
-            stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)
+            stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
             stream_spec_ds_out.extend(stream_spec_ds)    
 
     return stream_spec_out, stream_spec_ds_out
@@ -98,7 +98,7 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
         # Downsample the spectrograms
         if downsample:
             print(f"Downsampling the spectrograms...")
-            stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)
+            stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
             stream_spec_ds_out.extend(stream_spec_ds)    
 
     return stream_spec_out, stream_spec_ds_out
@@ -118,10 +118,9 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     stream_spec.pad_to_length(length = "day")
 
     # Downsample the spectrograms
-    print(f"Downsampling the spectrograms...")
     if downsample:
         print(f"Downsampling the spectrograms...")
-        stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)
+        stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
     else:
         stream_spec_ds = None
     
