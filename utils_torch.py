@@ -113,10 +113,6 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
 
-    # Pad the two ends of the spectrograms with NaNs
-    print(f"Padding the spectrograms...")
-    stream_spec.pad_to_length(length = "day")
-
     # Downsample the spectrograms
     if downsample:
         print(f"Downsampling the spectrograms...")
@@ -136,10 +132,6 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
-
-    # Pad the two ends of the spectrograms with NaNs
-    print(f"Padding the spectrograms...")
-    stream_spec.pad_to_length(length = "day")
 
     # Downsample the spectrograms
     if downsample:
@@ -204,7 +196,9 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     timeax = linspace(0, (numpts - 1) / sampling_rate, num_time)
     timeax = reltimes_to_timestamps(timeax, starttime)
 
-    trace_spec = TraceSTFTPSD(station, location, component, timeax, freqax, psd, overlap = overlap, db = False)
+    time_label = timeax[0].replace(minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S")
+
+    trace_spec = TraceSTFTPSD(station, location, component, time_label, timeax, freqax, psd, overlap = overlap, db = False)
 
     return trace_spec
     
