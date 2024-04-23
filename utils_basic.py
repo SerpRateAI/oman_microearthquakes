@@ -109,7 +109,7 @@ def get_datetime_axis_from_trace(trace):
 
     return timeax
 
-### Funcion to convert an array of relative times in seconds to an array of Pandas Timestamp objects using a given start time
+# Convert an array of relative times in seconds to a list of Pandas Timestamp objects using a given start time
 def reltimes_to_timestamps(reltimes, starttime):
     if not isinstance(starttime, Timestamp):
         try:
@@ -119,7 +119,6 @@ def reltimes_to_timestamps(reltimes, starttime):
             raise ValueError("Invalid start time format!")
         
     timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
-    timestamps = array(timestamps)
 
     return timestamps
 
@@ -207,18 +206,6 @@ def hour2sec(hours):
 
     return seconds
 
-# Function to convert a time string from input format to filename format
-def time2suffix(input):
-    if isinstance(input, Timestamp):
-        timestamp = input
-    elif isinstance(input, str): 
-        timestamp = Timestamp(input)
-    else:
-        raise TypeError("Invalid input type!")
-    
-    output = timestamp.strftime("%Y%m%dT%H%M%S")
-
-    return output
 
 # Function to convert year-month-day to day of the year
 def to_day_of_year(date):
@@ -257,6 +244,26 @@ def norm2suffix(normalize):
         suffix = "no_norm"
     
     return suffix
+
+# Convert a time string from input format to filename format
+def time2suffix(input):
+    if isinstance(input, Timestamp):
+        timestamp = input
+    elif isinstance(input, str): 
+        timestamp = Timestamp(input)
+    else:
+        raise TypeError("Invalid input type!")
+    
+    output = timestamp.strftime("%Y%m%dT%H%M%S")
+
+    return output
+
+# Convert a day string to a filename suffix
+def day2suffix(day):
+    suffix = day.replace("-", "")
+
+    return suffix
+
     
 
 

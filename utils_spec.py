@@ -4,8 +4,8 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import iirfilter, sosfilt, freqz
 from scipy.signal import ShortTimeFFT
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, ones, pi, savez
-from pandas import Series, to_datetime
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
+from pandas import Series, to_datetime, date_range
 from h5py import File, special_dtype
 from multitaper import MTSpec
 
@@ -127,6 +127,10 @@ class StreamSTFTPSD:
     def to_db(self):
         for trace in self.traces:
             trace.to_db()
+
+    def pad_to_length(self, length="day", value=nan):
+        for trace in self.traces:
+            trace.pad_to_length(length, value)
         
 ## Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
@@ -152,6 +156,34 @@ class TraceSTFTPSD:
 
     def copy(self):
         return TraceSTFTPSD(self.station, self.location, self.component, self.times, self.freqs, self.data, self.db)
+    
+    def pad_to_length(self, length="day", value=nan):
+        # Determine the padding start and end times
+        if length == "day":
+            starttime_pad = self.times.replace(hour=0, minute=0, second=0, microsecond=0)
+            endtime_pad = self.times.replace(hour=23, minute=59, second=59, microsecond=999999)
+        elif length == "hour":
+            starttime_pad = self.times.replace(minute=0, second=0, microsecond=0)
+            endtime_pad = self.times.replace(minute=59, second=59, microsecond=999999)
+        else:
+            raise ValueError("Invalid length!")
+        
+        # Pad the data and time axis
+        if self.times[0] > starttime_pad:
+            time_interval = self.times[1] - self.times[0]
+            times_pad = date_range(start=starttime_pad, end=self.times[0], freq=time_interval)
+            num_pad = len(times_pad)
+            data_pad = ones((len(self.freqs), num_pad)) * value
+            self.times = concatenate([times_pad, self.times])
+            self.data = column_stack([data_pad, self.data])
+        
+        if self.times[-1] < endtime_pad:
+            time_interval = self.times[-1] - self.times[-2]
+            times_pad = date_range(start=self.times[-1], end=endtime_pad, freq=time_interval)
+            num_pad = len(times_pad)
+            data_pad = ones((len(self.freqs), num_pad)) * value
+            self.times = concatenate([self.times, times_pad])
+            self.data = column_stack([self.data, data_pad])
 
 ## Funcion for computing the spectrogram of a station during the entire deployment period
 ## Window length is in MINUTES!

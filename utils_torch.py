@@ -14,6 +14,7 @@ from utils_spec import downsample_stft_stream_freq
 
 # Compute hourly spectrograms of a geophone station from a day-long stream object
 # Window length is in SECONDS!
+# Hours with missing data on ANY of the components are skipped
 def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
     if downsample and downsample_factor is None:
         raise ValueError("The downsample factor is not set!")
@@ -49,6 +50,7 @@ def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overl
 
 # Compute hourly spectrograms for ALL locations of a hydrophone station from a day-long stream object
 # Window length is in SECONDS!
+# Hours with missing data on ANY of the locations are skipped
 def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
     if downsample and downsample_factor is None:
         raise ValueError("The downsample factor is not set!")
@@ -58,7 +60,6 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
     station = stream_day[0].stats.station
     starttime_day = stream_day[0].stats.starttime
     starttime_day = starttime_day.replace(hour=0, minute=0, second=0, microsecond=0)
-    endttime_day = stream_day[0].stats.endtime
     stream_spec_out = StreamSTFTPSD()
     stream_spec_ds_out = StreamSTFTPSD()
 
@@ -69,7 +70,7 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
         stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
         skip_hour = False
 
-        # Examine the intergrity of the hour of data
+        # Examine the intergrity of the data of the hour
         if stream_hour is None:
             print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! The hour is skipped.")
             continue
@@ -102,71 +103,35 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
 
     return stream_spec_out, stream_spec_ds_out
         
-# # Compute a day-long spectrogram of a station and return BOTH the original and downsampled spectrograms
-# # Window length is in SECONDS!
-# def get_day_long_spectrograms(station, day, metadat):
-#     print("######")
-#     print(f"Computing spectrograms for {station} on {day}...")
-#     print("######")
-
-#     print(f"Reading and processing the waveforms...")
-#     stream = read_and_process_day_long_geo_waveforms(day, metadat, stations = [station])
-
-#     if stream is None:
-#         raise ValueError("Error: No data found for the day!")
-
-#     print(f"Computing the spectrograms...")
-#     stft_dict = get_stream_spectrograms(stream, window_length, overlap=overlap, cuda = cuda)
-
-#     print(f"Downsampling the spectrograms...")
-#     timeax = stft_dict[(station, "Z")][0]
-#     freqax = stft_dict[(station, "Z")][1]
-#     freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
-
-#     day_mat_z = stft_dict[(station, "Z")][2]
-#     day_mat_1 = stft_dict[(station, "1")][2]
-#     day_mat_2 = stft_dict[(station, "2")][2]
-
-#     day_mat_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
-#     day_mat_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
-#     day_mat_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)
-
-#     if db:
-#         day_mat_z = power2db(day_mat_z)
-#         day_mat_1 = power2db(day_mat_1)
-#         day_mat_2 = power2db(day_mat_2)
-        
-#         day_mat_z_ds = power2db(day_mat_z_ds)
-#         day_mat_1_ds = power2db(day_mat_1_ds)
-#         day_mat_2_ds = power2db(day_mat_2_ds)
-
-#     # The original spectrograms
-#     trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax, day_mat_z, db = db)
-#     trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax, day_mat_1, db = db)
-#     trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax, day_mat_2, db = db)
-
-#     stream_spec = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+# Compute a day-long spectrogram of a geophone station and return BOTH the original and downsampled spectrograms
+# Window length is in SECONDS!
+def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
+    if downsample and downsample_factor is None:
+        raise ValueError("The downsample factor is not set!")
     
-#     # The downsampled spectrograms
-#     trace_spec_z = TraceSTFTPSD(station, None, "Z", timeax, freqax_ds, day_mat_z_ds, db = db)
-#     trace_spec_1 = TraceSTFTPSD(station, None, "1", timeax, freqax_ds, day_mat_1_ds, db = db)
-#     trace_spec_2 = TraceSTFTPSD(station, None, "2", timeax, freqax_ds, day_mat_2_ds, db = db)
+    # Compute the spectrograms
+    print(f"Computing the spectrograms...")
+    stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
 
-#     stream_spec_ds = StreamSTFTPSD([trace_spec_z, trace_spec_1, trace_spec_2])
+    # Pad the two ends of the spectrograms with NaNs
+    print(f"Padding the spectrograms...")
+    stream_spec.pad_to_length(length = "day")
 
-#     print(f"Done processing day {day}.")
+    # Downsample the spectrograms
+    print(f"Downsampling the spectrograms...")
+    if downsample:
+        print(f"Downsampling the spectrograms...")
+        stream_spec_ds = downsample_stft_stream_freq(stream_spec, downsample_factor = downsample_factor)
+    else:
+        stream_spec_ds = None
     
-#     return stream_spec, stream_spec_ds
+    return stream_spec, stream_spec_ds
     
 # Compute the spectrograms in PSD of a stream using STFT
 def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = False):
     stream_spec = StreamSTFTPSD()
 
     for trace in stream:
-        station = trace.stats.station
-        location = trace.stats.location
-        component = trace.stats.component
-
         trace_spec = get_trace_spectrogram(trace, window_length, overlap, cuda = cuda)
         stream_spec.append(trace_spec)
 
