@@ -4,7 +4,8 @@
 from os.path import join
 from numpy import amax, array, log10
 from scipy.stats import gmean
-from pandas import Timestamp, Timedelta, to_datetime, read_csv
+from pandas import Timestamp, Timedelta, DatetimeIndex
+from pandas import to_datetime, read_csv
 from obspy import UTCDateTime, read_inventory
 
 ## Constants
@@ -119,6 +120,7 @@ def reltimes_to_timestamps(reltimes, starttime):
             raise ValueError("Invalid start time format!")
         
     timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
+    timestamps = DatetimeIndex(timestamps)
 
     return timestamps
 
@@ -218,6 +220,29 @@ def to_day_of_year(date):
     day_of_year = str(date.day_of_year).zfill(3)
 
     return day_of_year
+
+# Function to convert DateTimeIndex objects to a list of integers representing nanoseconds since the Unix epoch
+datetime2int(datetimes):
+    if not isinstance(datetimes, DatetimeIndex):
+        if isinstance(datetimes, list):
+            datetimes = DatetimeIndex(datetimes)
+        else:
+            raise TypeError("Invalid input type!")
+
+    datetimes = datetimes.astype('int64')
+    datetimes = datetimes.to_numpy()
+
+    return timeax
+
+# Assemble a time axis of DateTimeIndex type from integers representing nanoseconds since the Unix epoch
+assemble_timeax_from_ints(starttime, num_time, time_step):
+    if not isinstance(starttime, int):
+        raise TypeError("The start time must be an integer representing nanoseconds since the Unix epoch!")
+    
+    timeax = Series(range(num_time)) * time_step + starttime
+    timeax = to_datetime(timeax, unit='ns')
+
+    return timeax
 
 ######
 # Functions for handling file names

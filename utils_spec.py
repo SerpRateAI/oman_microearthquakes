@@ -11,7 +11,7 @@ from multitaper import MTSpec
 
 from utils_basic import GEO_COMPONENTS
 from utils_basic import SPECTROGRAM_DIR 
-from utils_basic import reltimes_to_timestamps, power2db
+from utils_basic import assemble_timeax_from_ints, datetime2int, reltimes_to_timestamps, power2db
 from utils_preproc import read_and_process_day_long_geo_waveforms
 
 # Classes
@@ -106,27 +106,41 @@ class StreamSTFTPSD:
         stream = StreamSTFTPSD(traces)
         return stream
     
+    # Get the list of stations in the stream
     def get_stations(self):
         stations = list(set([trace.station for trace in self.traces]))
         stations.sort()
 
         return stations
 
+    # Get the list of locations in the stream
     def get_locations(self):
         locations = list(set([trace.location for trace in self.traces]))
         locations.sort()
 
         return locations
 
+    # Get the list of time labels in the stream
     def get_time_labels(self):
         time_labels = list(set([trace.time_label for trace in self.traces]))
         time_labels.sort()
 
         return time_labels
     
+    # Convert the power spectrograms to dB
     def to_db(self):
         for trace in self.traces:
             trace.to_db()
+
+    # Trim the spectrograms to a given time range
+    def trim_to_range(self, starttime = None, endtime = None):
+        for trace in self.traces:
+            trace.trim_to_range(starttime, endtime)
+
+    # Trim the spectrograms to the begin and end of the day
+    def trim_to_day(self):
+        for trace in self.traces:
+            trace.trim_to_day()
         
 ## Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
@@ -141,6 +155,7 @@ class TraceSTFTPSD:
         self.data = data
         self.db = db
 
+    # Convert the power spectrogram to dB
     def to_db(self):
         if self.db:
             return
@@ -148,8 +163,37 @@ class TraceSTFTPSD:
             self.data = power2db(self.data)
             self.db = True
 
+    # Make a deep copy of the object
     def copy(self):
         return TraceSTFTPSD(self.station, self.location, self.component, self.time_label, self.times, self.freqs, self.data, self.db)
+
+    # Trim the spectrogram to a given time range
+    def trim(self, starttime = None, endtime = None)
+        timeax = self.times
+    
+        if starttime is not None:
+            start_index = timeax.searchsorted(starttime)
+        else:
+            start_index = 0
+
+        if endtime is not None:
+            end_index = timeax.searchsorted(endtime)
+        else:
+            end_index = len(timeax)
+
+        self.times = timeax[start_index:end_index]
+        self.data = self.data[:, start_index:end_index]
+
+    # Trim the spectrogram to the begin and end of the day
+    def trim_to_day(self):
+        timeax = self.times
+        num_time = len(timeax)
+        ref_time = timeax[num_time // 2]
+        start_of_day = ref_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = ref_time.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        self.trim(start_of_day, end_of_day)
+
 
 ## Funcion for computing the spectrogram of a station during the entire deployment period
 ## Window length is in MINUTES!
@@ -452,9 +496,7 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     data_2 = trace_spec_2.data
 
     # Convert the time axis to integer
-    timeax = Series(timeax)
-    timeax = timeax.astype('int64')
-    timeax = timeax.to_numpy()
+    timeax = datetime2int(timeax)
 
     # Save the data
     outpath = join(outdir, filename)
@@ -505,9 +547,7 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
             overlap = trace_spec.overlap
 
             # Convert the time axis to integer
-            timeax = Series(timeax)
-            timeax = timeax.astype('int64')
-            timeax = timeax.to_numpy()
+            timeax = datetime2int(timeax)
             
             if i == 0:
                 time_label = trace_spec.time_label
@@ -568,9 +608,7 @@ def read_geo_spectrograms(inpath):
             freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
 
             num_time = data.shape[1]
-            timeax = Series(range(num_time)) * time_interval + starttime
-            timeax = to_datetime(timeax, unit='ns')
-            timeax = timeax.to_list()
+            timeax = assemble_timeax_from_ints(starttime, num_time, time_interval)
         
             trace_spec = TraceSTFTPSD(station, None, component, time_label, timeax, freqax, data)
             stream_spec.append(trace_spec)
@@ -608,12 +646,10 @@ def read_hydro_spectrograms(inpath):
             freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
             
             num_time = data.shape[1]
-            timeax = Series(range(num_time)) * time_interval + starttime
-            timeax = to_datetime(timeax, unit='ns')
-            timeax = timeax.to_list()
-            trace_spec_z = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
-
-            stream_spec.append(trace_spec_z)
+            timeax = assemble_timeax_from_ints(starttime, num_time, time_interval)
+            
+            trace_spec = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
+            stream_spec.append(trace_spec)
 
         return stream_spec    
     

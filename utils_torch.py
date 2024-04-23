@@ -124,7 +124,6 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
 
 # Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
 # Window length is in SECONDS!
-
 def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
     if downsample and downsample_factor is None:
         raise ValueError("The downsample factor is not set!")
@@ -132,6 +131,10 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
+
+    # Trim the spectrograms to the begin and end of the day
+    print(f"Trimming the spectrograms to the begin and end of the day...")
+    stream_spec.trim_to_day()
 
     # Downsample the spectrograms
     if downsample:
@@ -143,7 +146,6 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
 
 # Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
 # Window length is in SECONDS!
-
 def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
     if downsample and downsample_factor is None:
         raise ValueError("The downsample factor is not set!")
@@ -152,9 +154,9 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
 
-    # Pad the two ends of the spectrograms with NaNs
-    print(f"Padding the spectrograms...")
-    stream_spec.pad_to_length(length = "day")
+    # Trim the spectrograms to the begin and end of the day
+    print(f"Trimming the spectrograms to the begin and end of the day...")
+    stream_spec.trim_to_day()
 
     # Downsample the spectrograms
     if downsample:
