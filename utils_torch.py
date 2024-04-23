@@ -125,6 +125,30 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
         stream_spec_ds = None
     
     return stream_spec, stream_spec_ds
+
+# Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
+# Window length is in SECONDS!
+
+def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
+    if downsample and downsample_factor is None:
+        raise ValueError("The downsample factor is not set!")
+    
+    # Compute the spectrograms
+    print(f"Computing the spectrograms...")
+    stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
+
+    # Pad the two ends of the spectrograms with NaNs
+    print(f"Padding the spectrograms...")
+    stream_spec.pad_to_length(length = "day")
+
+    # Downsample the spectrograms
+    if downsample:
+        print(f"Downsampling the spectrograms...")
+        stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
+    else:
+        stream_spec_ds = None
+    
+    return stream_spec, stream_spec_ds
     
 # Compute the spectrograms in PSD of a stream using STFT
 def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = False):
