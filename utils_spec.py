@@ -158,20 +158,22 @@ class TraceSTFTPSD:
         return TraceSTFTPSD(self.station, self.location, self.component, self.times, self.freqs, self.data, self.db)
     
     def pad_to_length(self, length="day", value=nan):
+        starttime_trace = self.times[0]
+        endtime_trace = self.times[-1]
         # Determine the padding start and end times
         if length == "day":
-            starttime_pad = self.times.replace(hour=0, minute=0, second=0, microsecond=0)
-            endtime_pad = self.times.replace(hour=23, minute=59, second=59, microsecond=999999)
+            starttime_pad = starttime_trace.replace(hour=0, minute=0, second=0, microsecond=0)
+            endtime_pad = endtime_trace.replace(hour=23, minute=59, second=59, microsecond=999999)
         elif length == "hour":
-            starttime_pad = self.times.replace(minute=0, second=0, microsecond=0)
-            endtime_pad = self.times.replace(minute=59, second=59, microsecond=999999)
+            starttime_pad = starttime_trace.replace(minute=0, second=0, microsecond=0)
+            endtime_pad = endtime_trace.times.replace(minute=59, second=59, microsecond=999999)
         else:
             raise ValueError("Invalid length!")
         
         # Pad the data and time axis
-        if self.times[0] > starttime_pad:
+        if starttime_trace > starttime_pad:
             time_interval = self.times[1] - self.times[0]
-            times_pad = date_range(start=starttime_pad, end=self.times[0], freq=time_interval)
+            times_pad = date_range(start=starttime_pad, end=starttime_trace, freq=time_interval)
             num_pad = len(times_pad)
             data_pad = ones((len(self.freqs), num_pad)) * value
             self.times = concatenate([times_pad, self.times])
@@ -179,7 +181,7 @@ class TraceSTFTPSD:
         
         if self.times[-1] < endtime_pad:
             time_interval = self.times[-1] - self.times[-2]
-            times_pad = date_range(start=self.times[-1], end=endtime_pad, freq=time_interval)
+            times_pad = date_range(start=endtime_trace, end=endtime_pad, freq=time_interval)
             num_pad = len(times_pad)
             data_pad = ones((len(self.freqs), num_pad)) * value
             self.times = concatenate([self.times, times_pad])
