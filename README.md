@@ -1,6 +1,11 @@
 # Documentation 
+*Authors*
+
 *Tianze Liu* <tianzeliu@gmail.com>
+
 *John Mark Aiken* <john@xal.no>
+
+*Last modified: 2024-04-24*
 
 
 ## Spectrograms
@@ -55,6 +60,6 @@ Geophone and hydrophone spectrograms are read into Python as `utils_spec.StreamS
 Work in progress...
 
 ### Plotting spectrograms
-Geophone and hydrophone spectrograms can be plotted using `utils_plot.plot_long_term_geo_stft_spectrograms()` and `utils_plot._long_term_hydro_stft_spectrograms`, respectively, which take `StreamSTFTPSD` objects of a single geophone/hydrophon station as inputs. The current setting is to plot all three components of the geophone station and all locations of the hydrophone station. The functions automatically convert the data to dB before plotting.
+Geophone and hydrophone spectrograms can be plotted using `utils_plot.plot_long_term_geo_stft_spectrograms()` and `utils_plot._long_term_hydro_stft_spectrograms()`, respectively, which take `StreamSTFTPSD` objects of a single geophone/hydrophon station as inputs. The current setting is to plot all three components of the geophone station and all locations of the hydrophone station. The functions automatically convert the data to dB before plotting.
 
 **Note:** Do not feed full-resolution daily spectrograms to the functions as it will take forever to plot them.
