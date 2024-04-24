@@ -1,4 +1,4 @@
-# Documentation for the codes developed for analyzing geophone and hydrophone data collected at the Oman Multi-borehole Observatory
+# Documentation 
 *Tianze Liu* <tianzeliu@gmail.com>
 *John Mark Aiken* <john@xal.no>
 
@@ -8,7 +8,7 @@
 Spectrograms are the main data products of the project and are computed using short-time Fourier transform (STFT). To speed up the computation, we use the STFT function of PyTorch to utilize its CPU- and GPU-based parallel computing capacities.
 
 ### Computing spectrograms
-To be done...
+Work in process...
 
 ### Reading and writing spectrograms
 #### How spectrograms are stored
@@ -51,6 +51,10 @@ Geophone and hydrophone spectrograms are read into Python as `utils_spec.StreamS
 
 `db`: Whether the `data` is in dB (`True`) or not (`False`).
 
-
+#### How to save spectrograms
+Work in progress...
 
 ### Plotting spectrograms
+Geophone and hydrophone spectrograms can be plotted using `utils_plot.plot_long_term_geo_stft_spectrograms()` and `utils_plot._long_term_hydro_stft_spectrograms`, respectively, which take `StreamSTFTPSD` objects of a single geophone/hydrophon station as inputs. The current setting is to plot all three components of the geophone station and all locations of the hydrophone station. The functions automatically convert the data to dB before plotting.
+
+**Note:** Do not feed full-resolution daily spectrograms to the functions as it will take forever to plot them.
