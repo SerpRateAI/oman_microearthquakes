@@ -1,11 +1,11 @@
 # Functions and classes for spectrum analysis
 from os.path import join
 from scipy.fft import fft, fftfreq
-from scipy.signal import iirfilter, sosfilt, freqz
-from scipy.signal import ShortTimeFFT
+from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
-from pandas import Series, to_datetime, date_range
+from pandas import Series, DataFrame
+from pandas import to_datetime, date_range
 from h5py import File, special_dtype
 from multitaper import MTSpec
 
@@ -14,9 +14,11 @@ from utils_basic import SPECTROGRAM_DIR
 from utils_basic import assemble_timeax_from_ints, datetime2int, reltimes_to_timestamps, power2db
 from utils_preproc import read_and_process_day_long_geo_waveforms
 
+######
 # Classes
+######
 
-## Class for storing the STFT data of multiple traces
+# Class for storing the STFT data of multiple traces
 class StreamSTFTPSD:
     def __init__(self, traces = None):
         if traces is not None:
@@ -142,7 +144,7 @@ class StreamSTFTPSD:
         for trace in self.traces:
             trace.trim_to_day()
         
-## Class for storing the STFT data and associated parameters of a trace
+# Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
     def __init__(self, station, location, component, time_label, times, freqs, data, overlap=0, db=False):
         self.station = station
@@ -194,111 +196,84 @@ class TraceSTFTPSD:
 
         self.trim(start_of_day, end_of_day)
 
+    # Find spectral peaks satisfying the given criteria
+    # The power threshold is in dB!
+    def find_spectral_peaks(self, power_threshold, qf_threshold, freqmin = None, freqmax = None):
+        # Convert to dB
+        self.to_db()
 
-## Funcion for computing the spectrogram of a station during the entire deployment period
-## Window length is in MINUTES!
-def get_whole_deployment_spectrogram(station, days, window_length = 15.0, overlap = 0.5, downsample_factor = 1000, db=False):
-    print("######")
-    print(f"Computing spectrograms for {station}...")
-    print("######")
+        # Trim the data to the given frequency range
+        if freqmin is None:
+            freqmin = self.freqs[0]
 
-    timeax_period = array([])
-    window_length = window_length * 60 # Convert to seconds
+        if freqmax is None:
+            freqmax = self.freqs[-1]
 
-    for i, day in enumerate(days):
-        print(f"Processing day {day}...")
+        freq_inds = (self.freqs >= freqmin) & (self.freqs <= freqmax)
+        freqax = self.freqs[freq_inds]
+        data = self.data[freq_inds, :]
 
-        print(f"Reading the waveforms...")
-        stream = read_and_process_day_long_geo_waveforms(day, stations = [station])
+        # Find the spectral peaks
+        peak_freqs = []
+        peak_times = []
+        peak_powers = []
+        peak_qfs = []
+        for i, time in enumerate(self.times):
+            power = data[:, i]
+            peak_inds, _ = find_peaks(power, height=power_threshold)
 
-        if stream is None:
-            print(f"No data for day {day}!")
-            continue
+            for j in peak_inds:
+                freq = freqax[j]
+                qf = get_quality_factor(freqax, power, freq)
+                if qf >= qf_threshold:
+                    peak_freqs.append(freq)
+                    peak_times.append(time)
+                    peak_powers.append(power[j])
+                    peak_qfs.append(qf)
+        
+        peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "quality_factor": peak_qfs})
 
-        print(f"Computing the spectrograms...")
-        stft_dict = get_stream_spectrogram_stft(stream, window_length, overlap=overlap, db=db)
+        return peak_df
 
-        print(f"Downsampling the spectrograms...")
-        timeax_day = stft_dict[(station, "Z")][0]
-        if i == 0:
-            freqax = stft_dict[(station, "Z")][1]
-            freqax_ds = downsample_stft_freqax(freqax, downsample_factor)
+######
+# Functions
+######
 
-        day_mat_z = stft_dict[(station, "Z")][2]
-        day_mat_1 = stft_dict[(station, "1")][2]
-        day_mat_2 = stft_dict[(station, "2")][2]
+### Functions for handling STFT spectrograms ###
 
-        day_mat_z_ds = downsample_stft_spec(day_mat_z, downsample_factor)
-        day_mat_1_ds = downsample_stft_spec(day_mat_1, downsample_factor)
-        day_mat_2_ds = downsample_stft_spec(day_mat_2, downsample_factor)
+# Find spectral peaks in the spectrograms of a geophone station
+# A Pandas DataFrame containing the frequency, time, power, and quality factor of each peak is returned
+# The power threshold is in dB!
+def find_geo_station_spectral_peaks(stream_spec, freqmin, freqmax, power_threshold = 0.0, qf_threshold = 200.0, freqmin = None, freqmax = None):
+    # Verify the StreamSTFTPSD object
+    if len(stream_spec) != 3:
+        raise ValueError("Error: Invalid number of components!")
 
-        if i > 0:
-            if timeax_day[0] <= timeax_period[-1]:
-                timeax_period = delete(timeax_period, -1)
-                period_mat_z = delete(period_mat_z, -1, axis=1)
-                period_mat_1 = delete(period_mat_1, -1, axis=1)
-                period_mat_2 = delete(period_mat_2, -1, axis=1)
+    # Convert the power spectrograms to dB
+    stream_spec.to_db()
 
-        timeax_period = concatenate([timeax_period, timeax_day])
+    # Extract the data from the StreamSTFTPSD object
+    trace_spec_z = stream_spec.select(component="Z")[0]
+    trace_spec_1 = stream_spec.select(component="1")[0]
+    trace_spec_2 = stream_spec.select(component="2")[0]
 
-        if i == 0:
-            period_mat_z = day_mat_z_ds
-            period_mat_1 = day_mat_1_ds
-            period_mat_2 = day_mat_2_ds
-        else:
-            period_mat_z = column_stack([period_mat_z, day_mat_z_ds])
-            period_mat_1 = column_stack([period_mat_1, day_mat_1_ds])
-            period_mat_2 = column_stack([period_mat_2, day_mat_2_ds])
+    station = trace_spec_z.station
+    time_label = trace_spec_z.time_label
+    timeax = trace_spec_z.times
+    freqax = trace_spec_z.freqs
+    data_z = trace_spec_z.data
+    data_1 = trace_spec_1.data
+    data_2 = trace_spec_2.data
 
-        print(f"Done processing day {day}.")
+    # Compute the total power spectrogram
+    data_total = data_z + data_1 + data_2
+    trace_spec_total = TraceSTFTPSD(station, None, None, time_label, timeax, freqax, data_total)
 
-    if db:
-        period_mat_z = power2db(period_mat_z)
-        period_mat_1 = power2db(period_mat_1)
-        period_mat_2 = power2db(period_mat_2)
+    # Find the spectral peaks in each component
+    peak_df = trace_spec_total.find_spectral_peaks(power_threshold, qf_threshold, freqmin = freqmin, freqmax = freqmax)
 
-    spec_z = TraceSTFTPSD(station, None, "Z", timeax_period, freqax_ds, period_mat_z)
-    spec_1 = TraceSTFTPSD(station, None, "1", timeax_period, freqax_ds, period_mat_1)
-    spec_2 = TraceSTFTPSD(station, None, "2", timeax_period, freqax_ds, period_mat_2)
+    return peak_df
 
-    specs = StreamSTFTPSD([spec_z, spec_1, spec_2])
-
-    return specs
-
-
-# # Compute the spectrogram in PSD of a stream using STFT
-# # A wrapper for the get_trace_spectrogram_stft function
-# def get_stream_spectrogram_stft(stream, window_length=1.0, overlap=0.5, db=True):
-#     specdict = {}
-#     for trace in stream:
-#         station = trace.stats.station
-#         component = trace.stats.component
-
-#         timeax, freqax, spec = get_trace_spectrogram_stft(trace, window_length, overlap, db=db)
-#         specdict[(station, component)] = (timeax, freqax, spec)
-
-#     return specdict
-
-# # Compute the spectrogram in PSD of a trace using STFT
-# def get_trace_spectrogram_stft(trace, window_length=1.0, overlap=0.5, db=True):
-#     signal = trace.data
-#     sampling_rate = trace.stats.sampling_rate
-#     starttime = trace.stats.starttime
-#     starttime = starttime.datetime
-
-#     window = hann(int(window_length * sampling_rate))
-#     hop = int(window_length * sampling_rate * (1 - overlap))
-#     stft = ShortTimeFFT(window, hop, sampling_rate, scale_to="psd")
-#     freqax = array(stft.f)
-#     timeax = stft.t(len(signal))
-#     timeax = reltimes_to_timestamps(timeax, starttime)
-
-#     psd = stft.spectrogram(signal, detr="linear")
-
-#     if db:
-#         psd = power2db(psd)
-
-#     return timeax, freqax, psd
 
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!
@@ -438,35 +413,6 @@ def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
     freqax = omegaax * nyquist / pi
 
     return freqax, resp
-
-# # Save the 3C spectrogram data of a geophone station in a time range to a .npz file
-# def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
-#     if len(stream_spec) != 3:
-#         raise ValueError("Error: Invalid number of spectrogram data!")
-
-#     if stream_spec[0].starttime != stream_spec[1].starttime or stream_spec[1].starttime != stream_spec[2].starttime:
-#         raise ValueError("Error: The spectrograms do not have the save start time!")
-
-#     if stream_spec[0].station != stream_spec[1].station or stream_spec[1].station != stream_spec[2].station:
-#         raise ValueError("Error: The spectrograms do not belong to the same station!")
-    
-#     trace_spec_z = stream_spec.select(component="Z")[0]
-#     trace_spec_1 = stream_spec.select(component="1")[0]
-#     trace_spec_2 = stream_spec.select(component="2")[0]
-
-#     station = trace_spec_z.station
-#     timeax = trace_spec_z.times
-#     freqax = trace_spec_z.freqs
-#     data_z = trace_spec_z.data
-#     data_1 = trace_spec_1.data
-#     data_2 = trace_spec_2.data
-
-#     try:
-#         outpath = join(outdir, filename)
-#         savez(outpath, station = station, times = timeax, freqs = freqax, spectrogram_z = data_z, spectrogram_1 = data_1, spectrogram_2 = data_2)
-#         print(f"Spectrogram data saved to {outpath}.")
-#     except Exception as e:
-#         print(f"Error saving the spectrogram data: {e}")
 
 # Save the 3C spectrogram data of a geophone station to a HDF5 file
 def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
@@ -675,3 +621,35 @@ def vel2disp(vel, sampling_rate=1000.0):
     disp = cumsum(vel) / sampling_rate
 
     return disp
+
+### Basic functions ###
+
+# Get the quality factor of a peak in a power spectrum
+def get_quality_factor(freqax, power, freq0, db=False):
+    if not db:
+        power = power2db(power)
+
+    # Find the peak point
+    ipeak = freqax.searchsorted(freq0)
+    power0 = power[ipeak]
+    power3db = power0 - 3.0
+
+    # Find the points where power drops below the 3 dB level
+    for i in range(ipeak, len(power)):
+        if power[i] < power3db:
+            break
+    freq_high = freqax[i]
+
+    for i in range(ipeak, 0, -1):
+        if power[i] < power3db:
+            break
+    freq_low = freqax[i]
+
+    quality_factor = freq0 / (freq_high - freq_low)
+
+    return quality_factor
+
+
+
+
+    return quality_factor
