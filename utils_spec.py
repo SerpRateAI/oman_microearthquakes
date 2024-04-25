@@ -216,7 +216,7 @@ class TraceSTFTPSD:
 
     # Find spectral peaks satisfying the given criteria
     # The power threshold is in dB!
-    def find_spectral_peaks(self, power_threshold, qf_threshold, freqmin = None, freqmax = None):
+    def find_spectral_peaks(self, prom_threshold, rbw_threshold, freqmin = None, freqmax = None):
         # Convert to dB
         self.to_db()
 
@@ -235,21 +235,21 @@ class TraceSTFTPSD:
         peak_freqs = []
         peak_times = []
         peak_powers = []
-        peak_qfs = []
+        peak_rbws = []
         for i, time in enumerate(self.times):
             power = data[:, i]
-            peak_inds, _ = find_peaks(power, height=power_threshold)
+            peak_inds, _ = find_peaks(power, prominence = prom_threshold)
 
             for j in peak_inds:
                 freq = freqax[j]
-                qf = get_quality_factor(freqax, power, freq)
-                if qf >= qf_threshold:
+                _, rbw = get_quality_factor(freqax, power, freq)
+                if rbw >= rbw_threshold:
                     peak_freqs.append(freq)
                     peak_times.append(time)
                     peak_powers.append(power[j])
-                    peak_qfs.append(qf)
+                    peak_rbws .append(rbw)
         
-        peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "quality_factor": peak_qfs})
+        peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
 
         return peak_df
 
@@ -262,7 +262,7 @@ class TraceSTFTPSD:
 # Find spectral peaks in the spectrograms of a geophone station
 # A Pandas DataFrame containing the frequency, time, power, and quality factor of each peak is returned
 # The power threshold is in dB!
-def find_geo_station_spectral_peaks(stream_spec, power_threshold = 0.0, qf_threshold = 200.0, freqmin = None, freqmax = None):
+def find_geo_station_spectral_peaks(stream_spec, rbw_threshold = 0.2, prom_threshold = 5, freqmin = None, freqmax = None):
     # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of components!")
@@ -271,7 +271,7 @@ def find_geo_station_spectral_peaks(stream_spec, power_threshold = 0.0, qf_thres
     trace_spec_total = stream_spec.get_total_power()
 
     # Find the spectral peaks in each component
-    peak_df = trace_spec_total.find_spectral_peaks(power_threshold, qf_threshold, freqmin = freqmin, freqmax = freqmax)
+    peak_df = trace_spec_total.find_spectral_peaks(prom_threshold, rbw_threshold, freqmin = freqmin, freqmax = freqmax)
 
     return peak_df, trace_spec_total
 
@@ -615,7 +615,7 @@ def vel2disp(vel, sampling_rate=1000.0):
 
 ###### Basic functions ######
 
-# Get the quality factor of a peak in a power spectrum
+# Get the quality factor and resonance width of a peak in a power spectrum
 # The input power must be in dB!
 def get_quality_factor(freqax, power_in_db, freq0):
     
@@ -635,9 +635,11 @@ def get_quality_factor(freqax, power_in_db, freq0):
             break
     freq_low = freqax[i]
 
-    quality_factor = freq0 / (freq_high - freq_low)
+    bandwidth =  freq_high - freq_low
+    rbw = 1 / bandwidth
+    quality_factor = freq0 * rbw
 
-    return quality_factor
+    return quality_factor, rbw
 
 
 

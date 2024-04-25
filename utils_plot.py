@@ -8,7 +8,7 @@ from matplotlib.pyplot import subplots, Circle
 from matplotlib.patches import Rectangle
 from matplotlib import colormaps
 from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, Normalize
 from matplotlib.ticker import MultipleLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
@@ -445,11 +445,12 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
                             xdim = 15, ydim_per_comp= 5, 
                             freq_lim=(0, 490), dbmin=-30, dbmax=0,
                             component_label_x = 0.01, component_label_y = 0.96,
-                            date_format = "%Y-%m-%d",
+                            datetime_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
-                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right",
+                            plot_total_psd = False, **kwargs):
     # Convert the power to dB
     stream_spec.to_db()
 
@@ -466,7 +467,10 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
     data_2 = trace_spec_2.data
 
     # Plot the spectrograms
-    fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
+    if plot_total_psd:
+        fig, axes = subplots(4, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
+    else:
+        fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
 
     ax = axes[0]
     power_color = ax.pcolormesh(timeax, freqax, data_z, cmap = "inferno", vmin = dbmin, vmax = dbmax)
@@ -485,15 +489,25 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
     label = component_to_label("2")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+
+    if plot_total_psd:
+        ax = axes[3]
+        trace_total = kwargs["total_psd_trace"]
+        trace_total.to_db()
+        data_total = trace_total.data
+        power_color = ax.pcolormesh(timeax, freqax, data_total, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+        label = "Total"
+        ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
     
     ax.set_ylim(freq_lim)
 
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar
-    bbox = axes[2].get_position()
+    bbox = axes[-1].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
     cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
     cbar.set_label("Power spectral density (dB)")
@@ -508,7 +522,7 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
                             xdim = 15, ydim_per_loc= 5, 
                             freq_lim=(0, 490), dbmin=-30, dbmax=0,
                             component_label_x = 0.01, component_label_y = 0.96,
-                            date_format = "%Y-%m-%d",
+                            datetime_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -539,7 +553,7 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
 
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar
     bbox = axes[num_loc - 1].get_position()
@@ -555,9 +569,10 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
 # Plot the total PSD of a geophone station and the detected spectral peaks
 def plot_geo_total_psd_and_peaks(trace_total, peak_df,
                             xdim = 15, ydim_per_row = 5, 
-                            freq_lim=(0, 490), dbmin=-30, dbmax=0, qfmin=200, qfmax=20000,
+                            freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
+                            marker_size = 5,
                             panel_label_x = 0.01, panel_label_y = 0.96,
-                            date_format = "%Y-%m-%d",
+                            datetime_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -572,10 +587,12 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     # Plot the total PSD
     ax = axes[0]
 
+    color_norm = Normalize(vmin=dbmin, vmax=dbmax)
+
     timeax = trace_total.times
     freqax = trace_total.freqs
     power = trace_total.data
-    power_color = ax.pcolormesh(timeax, freqax, power, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    power_color = ax.pcolormesh(timeax, freqax, power, cmap = "inferno", norm = color_norm)
 
     label = "Total PSD"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
@@ -589,7 +606,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     peak_powers = peak_df["power"]
 
     ax.set_facecolor("lightgray")
-    ax.scatter(peak_times, peak_freqs, c = peak_powers, s = 5, cmap = "inferno", vmin = dbmin, vmax = dbmax, edgecolors = None)
+    ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", norm = color_norm, edgecolors = None)
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the power colorbar
@@ -597,24 +614,24 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
     power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
-    # Plot the spectral peak quality factor
+    # Plot the spectral peak reversed bandwidths
     ax = axes[2]
 
-    peak_qf = peak_df["quality_factor"]
+    peak_rbw = peak_df["reverse_bandwidth"]
     ax.set_facecolor("lightgray")
-    ax.scatter(peak_times, peak_freqs, c = peak_qf, cmap = "viridis", norm=LogNorm())
+    rbw_color = ax.scatter(peak_times, peak_freqs, c = peak_rbw, s = marker_size, cmap = "viridis", norm=LogNorm(vmin = rbwmin, vmax = rbwmax))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
-    # # Plot the quality factor colorbar
-    # bbox = ax.get_position()
-    # position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    # qf_cbar = add_power_colorbar(fig, power_color, position, tick_label_size=tick_label_size) 
+    # Plot the reversed-bandwidth colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    qf_cbar = add_rbw_colorbar(fig, rbw_color, position, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Format the x-axis labels
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
-                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Set the y-axis limits
     ax.set_ylim(freq_lim)
@@ -1721,12 +1738,12 @@ def get_windowed_pm_data(stream_in, window_length):
 
 
 ## Function to format the x labels in datetime
-def format_datetime_xlabels(ax, label=True, date_format = '%m-%dT%H:%M:%S', major_tick_spacing = 60, minor_tick_spacing = 15, axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
+def format_datetime_xlabels(ax, label=True, datetime_format = '%m-%dT%H:%M:%S', major_tick_spacing = 60, minor_tick_spacing = 15, axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
     if label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
 
-    ax.xaxis.set_major_formatter(DateFormatter(date_format))
+    ax.xaxis.set_major_formatter(DateFormatter(datetime_format))
 
     ax.xaxis.set_major_locator(MultipleLocator(sec2day(major_tick_spacing)))
     ax.xaxis.set_minor_locator(MultipleLocator(sec2day(minor_tick_spacing)))
@@ -1824,7 +1841,7 @@ def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spaci
 
     return ax
 
-## Add a power colorbar to the plot
+# Add a power colorbar to the plot
 def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=12, tick_label_size=12):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
@@ -1835,7 +1852,7 @@ def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spac
 
     return cbar
 
-## Add a phase colorbar to the plot
+# Add a phase colorbar to the plot
 def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spacing=pi/2, axis_label_size=12, tick_label_size=12):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
@@ -1846,7 +1863,7 @@ def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spac
 
     return cbar
 
-## Add a coherence colorbar to the plot
+# Add a coherence colorbar to the plot
 def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_spacing=0.1, axis_label_size=12, tick_label_size=12):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
@@ -1856,6 +1873,15 @@ def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_
     cbar.update_ticks() 
 
     return cbar
+
+# Add a reversed-bandwidth colorbar to the plot
+def add_rbw_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=12):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("$Q/f_0$ (Hz$^{-1}$)", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    #cbar.locator = MultipleLocator(tick_spacing)
+    cbar.update_ticks() 
 
 ## Function to generate a scale bar
 def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
