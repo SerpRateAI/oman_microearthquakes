@@ -399,9 +399,9 @@ def downsample_stft_freqax(freqax, factor=1000):
 def assemble_spec_filename(range_type, sensor_type, time_label, station, window_length, overlap, downsample, **kwargs):
     if downsample:
         downsample_factor = kwargs["downsample_factor"]
-        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_{window_length:.0f}s_{overlap:.1f}_downsample{downsample_factor:d}.h5"
+        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
     else:
-        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_{window_length}s_{overlap}.h5"
+        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
 
     return filename
 
@@ -616,23 +616,22 @@ def vel2disp(vel, sampling_rate=1000.0):
 ###### Basic functions ######
 
 # Get the quality factor of a peak in a power spectrum
-def get_quality_factor(freqax, power, freq0, db=False):
-    if not db:
-        power = power2db(power)
-
+# The input power must be in dB!
+def get_quality_factor(freqax, power_in_db, freq0):
+    
     # Find the peak point
     ipeak = freqax.searchsorted(freq0)
-    power0 = power[ipeak]
+    power0 = power_in_db[ipeak]
     power3db = power0 - 3.0
 
     # Find the points where power drops below the 3 dB level
-    for i in range(ipeak, len(power)):
-        if power[i] < power3db:
+    for i in range(ipeak, len(power_in_db)):
+        if power_in_db[i] < power3db:
             break
     freq_high = freqax[i]
 
     for i in range(ipeak, 0, -1):
-        if power[i] < power3db:
+        if power_in_db[i] < power3db:
             break
     freq_low = freqax[i]
 

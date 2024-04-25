@@ -585,28 +585,30 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     ax = axes[1]
 
     peak_times = peak_df["time"]
-    peak_freqs = peak_df["frequeny"]
+    peak_freqs = peak_df["frequency"]
     peak_powers = peak_df["power"]
 
-    ax.scatter(peak_times, peak_freqs, c = peak_powers, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    ax.set_facecolor("lightgray")
+    ax.scatter(peak_times, peak_freqs, c = peak_powers, s = 5, cmap = "inferno", vmin = dbmin, vmax = dbmax, edgecolors = None)
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the power colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the spectral peak quality factor
     ax = axes[2]
 
     peak_qf = peak_df["quality_factor"]
-    ax.scatter(peak_times, peak_freqs, c = peak_qf, cmap = "viridis", vmin = qfmin, vmax = qfmax, norm=LogNorm())
+    ax.set_facecolor("lightgray")
+    ax.scatter(peak_times, peak_freqs, c = peak_qf, cmap = "viridis", norm=LogNorm())
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
-    # Plot the quality factor colorbar
-    bbox = ax.get_position()
-    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    qf_cbar = add_power_colorbar(fig, power_color, position, tick_label_size=tick_label_size) 
+    # # Plot the quality factor colorbar
+    # bbox = ax.get_position()
+    # position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    # qf_cbar = add_power_colorbar(fig, power_color, position, tick_label_size=tick_label_size) 
 
     # Format the x-axis labels
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
@@ -621,7 +623,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     station = trace_total.station
     fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
 
-    return fig, axes, power_cbar, qf_cbar
+    return fig, axes
 
 ###### Functions for plotting CWT spectra ######
 
