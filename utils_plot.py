@@ -8,6 +8,7 @@ from matplotlib.pyplot import subplots, Circle
 from matplotlib.patches import Rectangle
 from matplotlib import colormaps
 from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
+from matplotlib.colors import LogNorm
 from matplotlib.ticker import MultipleLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
@@ -550,6 +551,77 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
     fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
 
     return fig, axes, cbar
+
+# Plot the total PSD of a geophone station and the detected spectral peaks
+def plot_geo_total_psd_and_peaks(trace_total, peak_df,
+                            xdim = 15, ydim_per_row = 5, 
+                            freq_lim=(0, 490), dbmin=-30, dbmax=0, qfmin=200, qfmax=20000,
+                            panel_label_x = 0.01, panel_label_y = 0.96,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing=24, minor_time_spacing=6, 
+                            major_freq_spacing=100, minor_freq_spacing=20,
+                            panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+
+    # Convert the power to dB
+    trace_total.to_db()
+
+    # Generate the figure and axes
+    fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_row), sharex=True, sharey=True)
+
+    # Plot the total PSD
+    ax = axes[0]
+
+    timeax = trace_total.times
+    freqax = trace_total.freqs
+    power = trace_total.data
+    power_color = ax.pcolormesh(timeax, freqax, power, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+
+    label = "Total PSD"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the spectral peak power
+    ax = axes[1]
+
+    peak_times = peak_df["time"]
+    peak_freqs = peak_df["frequeny"]
+    peak_powers = peak_df["power"]
+
+    ax.scatter(peak_times, peak_freqs, c = peak_powers, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the power colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+
+    # Plot the spectral peak quality factor
+    ax = axes[2]
+
+    peak_qf = peak_df["quality_factor"]
+    ax.scatter(peak_times, peak_freqs, c = peak_qf, cmap = "viridis", vmin = qfmin, vmax = qfmax, norm=LogNorm())
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the quality factor colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    qf_cbar = add_power_colorbar(fig, power_color, position, tick_label_size=tick_label_size) 
+
+    # Format the x-axis labels
+    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
+    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+
+    # Set the y-axis limits
+    ax.set_ylim(freq_lim)
+
+    # Set the title
+    station = trace_total.station
+    fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
+
+    return fig, axes, power_cbar, qf_cbar
 
 ###### Functions for plotting CWT spectra ######
 

@@ -143,6 +143,24 @@ class StreamSTFTPSD:
     def trim_to_day(self):
         for trace in self.traces:
             trace.trim_to_day()
+
+    # Get the total power spectrogram of the geophone station
+    def get_total_power(self):
+        if len(self.traces) != 3:
+            raise ValueError("Error: Invalid number of components!")
+        
+        if self.traces[0].station != self.traces[1].station or self.traces[1].station != self.traces[2].station:
+            raise ValueError("Error: Inconsistent station names!")
+        
+        if self.traces[0].db or self.traces[1].db or self.traces[2].db:
+            raise ValueError("Error: The power spectrograms must be in linear scale!")
+
+        data_total = self.traces[0].data + self.traces[1].data + self.traces[2].data
+        trace_total = self.traces[0].copy()
+        trace_total.data = data_total
+        trace_total.component = None
+
+        return trace_total
         
 # Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
@@ -239,41 +257,23 @@ class TraceSTFTPSD:
 # Functions
 ######
 
-### Functions for handling STFT spectrograms ###
+###### Functions for handling STFT spectrograms ######
 
 # Find spectral peaks in the spectrograms of a geophone station
 # A Pandas DataFrame containing the frequency, time, power, and quality factor of each peak is returned
 # The power threshold is in dB!
-def find_geo_station_spectral_peaks(stream_spec, freqmin, freqmax, power_threshold = 0.0, qf_threshold = 200.0, freqmin = None, freqmax = None):
+def find_geo_station_spectral_peaks(stream_spec, power_threshold = 0.0, qf_threshold = 200.0, freqmin = None, freqmax = None):
     # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of components!")
 
-    # Convert the power spectrograms to dB
-    stream_spec.to_db()
-
-    # Extract the data from the StreamSTFTPSD object
-    trace_spec_z = stream_spec.select(component="Z")[0]
-    trace_spec_1 = stream_spec.select(component="1")[0]
-    trace_spec_2 = stream_spec.select(component="2")[0]
-
-    station = trace_spec_z.station
-    time_label = trace_spec_z.time_label
-    timeax = trace_spec_z.times
-    freqax = trace_spec_z.freqs
-    data_z = trace_spec_z.data
-    data_1 = trace_spec_1.data
-    data_2 = trace_spec_2.data
-
     # Compute the total power spectrogram
-    data_total = data_z + data_1 + data_2
-    trace_spec_total = TraceSTFTPSD(station, None, None, time_label, timeax, freqax, data_total)
+    trace_spec_total = stream_spec.get_total_power()
 
     # Find the spectral peaks in each component
     peak_df = trace_spec_total.find_spectral_peaks(power_threshold, qf_threshold, freqmin = freqmin, freqmax = freqmax)
 
-    return peak_df
-
+    return peak_df, trace_spec_total
 
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!
@@ -395,24 +395,15 @@ def downsample_stft_freqax(freqax, factor=1000):
 
     return freqax
 
-# Function to calculate the frequency response of a filter 
-# Currently only support Butterworth filters
-def get_filter_response(freqmin, freqmax, samprat, numpts, order=4):
-    
-    if freqmin >= freqmax:
-        raise ValueError("Error: freqmin must be smaller than freqmax!")
-    
-    nyquist = samprat / 2
-    low = freqmin / nyquist
-    high = freqmax / nyquist
-    b, a = iirfilter(order, [low, high], btype="bandpass", ftype="butter")
-    omegaax, resp = freqz(b, a, worN=numpts)
+# Assemble the name of a spectrogram file
+def assemble_spec_filename(range_type, sensor_type, time_label, station, window_length, overlap, downsample, **kwargs):
+    if downsample:
+        downsample_factor = kwargs["downsample_factor"]
+        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_{window_length:.0f}s_{overlap:.1f}_downsample{downsample_factor:d}.h5"
+    else:
+        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_{window_length}s_{overlap}.h5"
 
-    resp = abs(resp)
-    resp = resp / amax(resp)
-    freqax = omegaax * nyquist / pi
-
-    return freqax, resp
+    return filename
 
 # Save the 3C spectrogram data of a geophone station to a HDF5 file
 def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
@@ -622,7 +613,7 @@ def vel2disp(vel, sampling_rate=1000.0):
 
     return disp
 
-### Basic functions ###
+###### Basic functions ######
 
 # Get the quality factor of a peak in a power spectrum
 def get_quality_factor(freqax, power, freq0, db=False):
