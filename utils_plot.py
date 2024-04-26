@@ -384,7 +384,7 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
 
     return fig, axes
 
-###### Functions for plotting STFT power spectrograms ######   
+###### Functions for plotting STFT power spectrograms and related data ######   
 
 # Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
 def plot_3c_waveforms_and_stfts(stream, specdict, 
@@ -622,7 +622,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     rbw_color = ax.scatter(peak_times, peak_freqs, c = peak_rbw, s = marker_size, cmap = "viridis", norm=LogNorm(vmin = rbwmin, vmax = rbwmax))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
-    # Plot the reversed-bandwidth colorbar
+    # Plot the reverse-bandwidth colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
     qf_cbar = add_rbw_colorbar(fig, rbw_color, position, tick_label_size=tick_label_size, orientation = "vertical")
@@ -641,6 +641,40 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
 
     return fig, axes
+
+# Plot array spectral-peak detection counts
+def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, counts,
+                            xdim = 15, ydim = 5, 
+                            freq_lim=(0, 490), min_count = 0, max_count = 35,
+                            datetime_format = "%Y-%m-%dT%H:%M:%S",
+                            major_time_spacing=6, minor_time_spacing=1, 
+                            major_freq_spacing=100, minor_freq_spacing=20,
+                            panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                            time_tick_rotation=5, time_tick_va="top", time_tick_ha="right"):
+
+    # Plot the detection counts
+    fig, ax = subplots(1, 1, figsize=(xdim, ydim))
+    count_color = ax.pcolormesh(time_bin_centers, freq_bin_centers, counts, cmap = "gray", vmin = min_count, vmax = max_count)
+
+    # Format the frequency axis
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Format the time axis
+    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
+    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+
+    # Add the colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    cbar = add_count_colorbar(fig, count_color, position, tick_label_size=tick_label_size, orientation = "vertical")
+
+    # Add the title
+    day = time_bin_centers[0].strftime("%Y-%m-%d")
+    ax.set_title(day, fontsize = title_size, fontweight = "bold")
+
+    return fig, ax, cbar
 
 ###### Functions for plotting CWT spectra ######
 
@@ -1853,7 +1887,7 @@ def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spac
     return cbar
 
 # Add a phase colorbar to the plot
-def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spacing=pi/2, axis_label_size=12, tick_label_size=12):
+def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spacing=pi/2, axis_label_size=12, tick_label_size=10):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
     cbar.set_label("Phase (rad)", fontsize=axis_label_size)
@@ -1864,7 +1898,7 @@ def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spac
     return cbar
 
 # Add a coherence colorbar to the plot
-def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_spacing=0.1, axis_label_size=12, tick_label_size=12):
+def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_spacing=0.1, axis_label_size=12, tick_label_size=10):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
     cbar.set_label("Coherence", fontsize=axis_label_size)
@@ -1874,14 +1908,22 @@ def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_
 
     return cbar
 
-# Add a reversed-bandwidth colorbar to the plot
-def add_rbw_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=12):
+# Add a reverse-bandwidth colorbar to the plot
+def add_rbw_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
     cbar.set_label("$Q/f_0$ (Hz$^{-1}$)", fontsize=axis_label_size)
     cbar.ax.tick_params(labelsize=tick_label_size)
-    #cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
+    cbar.update_ticks()
+
+# Add a count colorbar to the plot
+def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spacing=10, axis_label_size=12, tick_label_size=10):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("Count", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(tick_spacing)
+    cbar.update_ticks()
 
 ## Function to generate a scale bar
 def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
