@@ -161,6 +161,20 @@ class StreamSTFTPSD:
         trace_total.component = None
 
         return trace_total
+
+    # Verify if the traces have the same station name, time labels, and the three components (what called a block)
+    def verify_block(self):
+        if len(self.traces) != 3:
+            raise ValueError("Error: Invalid number of components!")
+        
+        if self.traces[0].station != self.traces[1].station or self.traces[1].station != self.traces[2].station:
+            raise ValueError("Error: Inconsistent station names!")
+        
+        if self.traces[0].time_label != self.traces[1].time_label or self.traces[1].time_label != self.traces[2].time_label:
+            raise ValueError("Error: Inconsistent time labels!")
+        
+        if self.traces[0].component != "Z" or self.traces[1].component != "1" or self.traces[2].component != "2":
+            raise ValueError("Error: Invalid component names!")
         
 # Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
@@ -397,37 +411,62 @@ def downsample_stft_freqax(freqax, factor=1000):
 
 # Assemble the name of a spectrogram file
 def assemble_spec_filename(range_type, sensor_type, time_label, station, window_length, overlap, downsample, **kwargs):
-    if downsample:
-        downsample_factor = kwargs["downsample_factor"]
-        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
+    if time_label is None:
+        if downsample:
+            downsample_factor = kwargs["downsample_factor"]
+            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
+        else:
+            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
     else:
-        filename = f"{range_type}_{sensor_type}_spectrograms_{time_label}_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
+        if downsample:
+            downsample_factor = kwargs["downsample_factor"]
+            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
+        else:
+            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
 
     return filename
 
-# Save the 3C spectrogram data of a geophone station to a HDF5 file
-def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
+# Create a spectrogram file for a geophone station and save the header information
+def create_geo_spectrogram_file(range_type, station, window_length, overlap, block_type, freq_interval, outdir = SPECTROGRAM_DIR):
+    filename = assemble_spec_filename("range_type", "geophone", time_label, station, window_length, overlap)
+    outpath = join(outdir, filename)
+    
+    file = File(outpath, 'w')
+    # Create the group for storing the headers
+    header_group = file.create_group('headers')
+
+    # Save the header information with encoding
+    header_group.create_dataset('station', data=station.encode("utf-8"))
+    header_group.create_dataset('window_length', data=window_length)
+    header_group.create_dataset('overlap', data=overlap)
+    header_group.create_dataset('block_type', data=block_type.encode("utf-8"))
+    header_group.create_dataset('frequency_interval', data=freq_interval)
+
+    # Create the group for storing the spectrogram data (blocks)
+    data_group = file.create_group('data')
+
+    print(f"Created spectrogram file {outpath}")
+
+    return file
+
+# Save one geophone spectrogram data block to an opened HDF5 file
+def save_geo_spectrogram_block(file, stream_spec, filename, outdir = SPECTROGRAM_DIR, close_file = True):
     components = GEO_COMPONENTS
+
     # Verify the StreamSTFTPSD object
-    if len(stream_spec) != 3:
-        raise ValueError("Error: Invalid number of components!")
-
-    if stream_spec[0].time_label != stream_spec[1].time_label or stream_spec[1].time_label != stream_spec[2].time_label:
-        raise ValueError("Error: The spectrograms do not have the save start time!")
-
-    if stream_spec[0].station != stream_spec[1].station or stream_spec[1].station != stream_spec[2].station:
-        raise ValueError("Error: The spectrograms do not belong to the same station!")
+    stream_spec.verify_block()
     
     # Extract the data from the StreamSTFTPSD object
     trace_spec_z = stream_spec.select(component="Z")[0]
     trace_spec_1 = stream_spec.select(component="1")[0]
     trace_spec_2 = stream_spec.select(component="2")[0]
 
-    station = trace_spec_z.station
+    # Verify the station name
+    if trace_spec_z.station != file["headers"]["station"][()].decode("utf-8"):
+        raise ValueError("Error: Inconsistent station name!")
+
     time_label = trace_spec_z.time_label
     timeax = trace_spec_z.times
-    freqax = trace_spec_z.freqs
-    overlap = trace_spec_z.overlap
     data_z = trace_spec_z.data
     data_1 = trace_spec_1.data
     data_2 = trace_spec_2.data
@@ -435,34 +474,30 @@ def save_geo_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
     # Convert the time axis to integer
     timeax = datetime2int(timeax)
 
-    # Save the data
-    outpath = join(outdir, filename)
-    with File(outpath, 'w') as file:
-        # Create the group for storing the headers and data
-        header_group = file.create_group('headers')
-    
-        # Save the header information with encoding
-        header_group.create_dataset('station', data=station.encode("utf-8"))
-        header_group.create_dataset('time_label', data=time_label.encode("utf-8"))
-        header_group.create_dataset('components', data=[component.encode("utf-8") for component in components])
+    # Create a new block
+    data_group = file["data"]
+    block_group = data_group.create_group(time_label)
+    block_group.create_dataset("start_time", data=timeax[0])
+    comp_group = block_group.create_group("components")
 
-        header_group.create_dataset("start_time", data=timeax[0])
-        header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
-        header_group.create_dataset('frequency_interval', data=freqax[1] - freqax[0])
-        header_group.create_dataset('overlap', data=overlap)
-    
+    for component in components:
         # Create the group for storing each component's spectrogram data
-        data_group = file.create_group('data')
-        for component in components:
-            comp_group = data_group.create_group(component)
-            if component == "Z":
-                comp_group.create_dataset("psd", data=data_z)
-            elif component == "1":
-                comp_group.create_dataset("psd", data=data_1)
-            elif component == "2":
-                comp_group.create_dataset("psd", data=data_2)
+        psd_group = comp_group.create_group(component)
+        if component == "Z":
+            data = data_z
+        elif component == "1":
+            data = data_1
+        elif component == "2":
+            data = data_2
+        
+        psd_group.create_dataset("psd", data=data)
 
-        print(f"Spectrograms saved to {outpath}")
+    print(f"Spectrogram block {time_label} saved to {outpath}")
+
+    # Close the file
+    if close_file:
+        file.close()
+        print(f"Closed spectrogram file {outpath}")
 
 # Save all locations of a hydrophone station to a HDF5 file
 # Each location has its own time axis!

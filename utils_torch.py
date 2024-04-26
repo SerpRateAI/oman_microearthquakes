@@ -103,7 +103,7 @@ def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, ove
             stream_spec_ds_out.extend(stream_spec_ds)    
 
     return stream_spec_out, stream_spec_ds_out
-        
+
 # Compute a day-long spectrogram of a geophone station and return BOTH the original and downsampled spectrograms
 # Window length is in SECONDS!
 def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
@@ -175,17 +175,17 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     return stream_spec, stream_spec_ds
     
 # Compute the spectrograms in PSD of a stream using STFT
-def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = False):
+def get_stream_spectrograms(stream, range_type = "hour", window_length = 1.0, overlap = 0.5, cuda = False):
     stream_spec = StreamSTFTPSD()
 
     for trace in stream:
-        trace_spec = get_trace_spectrogram(trace, window_length, overlap, cuda = cuda)
+        trace_spec = get_trace_spectrogram(trace, range_type, window_length, overlap, cuda = cuda)
         stream_spec.append(trace_spec)
 
     return stream_spec
 
 # Compute the spectrogram in PSD of a trace using STFT
-def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = False):
+def get_trace_spectrogram(trace, range_type = "hour", window_length = 1.0, overlap = 0.0, cuda = False):
     signal = trace.data
     station = trace.stats.station
     location = trace.stats.location
@@ -228,7 +228,10 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     timeax = linspace(0, (numpts - 1) / sampling_rate, num_time)
     timeax = reltimes_to_timestamps(timeax, starttime)
 
-    time_label = timeax[0].replace(minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S")
+    if range_type == "hour":
+        time_label = timeax[0].replace(minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S%f")
+    elif range_type == "day":
+        time_label = timeax[0].replace(hour = 0, minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S%f")
 
     trace_spec = TraceSTFTPSD(station, location, component, time_label, timeax, freqax, psd, overlap = overlap, db = False)
 
