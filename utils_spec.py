@@ -4,7 +4,7 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
-from pandas import Series, DataFrame
+from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import to_datetime, date_range
 from h5py import File, special_dtype
 from multitaper import MTSpec
@@ -410,28 +410,40 @@ def downsample_stft_freqax(freqax, factor=1000):
     return freqax
 
 # Assemble the name of a spectrogram file
-def assemble_spec_filename(range_type, sensor_type, time_label, station, window_length, overlap, downsample, **kwargs):
+def assemble_spec_filename(range_type, block_type, sensor_type, time_label, station, window_length, overlap, downsample, **kwargs):
+    if block_type == "day":
+        block_type = "daily"
+    elif block_type == "hour":
+        block_type = "hourly"
+    
     if time_label is None:
         if downsample:
             downsample_factor = kwargs["downsample_factor"]
-            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
+            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
         else:
-            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
+            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
     else:
         if downsample:
             downsample_factor = kwargs["downsample_factor"]
-            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
+            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
         else:
-            filename = f"{range_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
+            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
 
     return filename
 
 # Create a spectrogram file for a geophone station and save the header information
-def create_geo_spectrogram_file(range_type, station, window_length, overlap, block_type, freq_interval, outdir = SPECTROGRAM_DIR):
-    filename = assemble_spec_filename("range_type", "geophone", time_label, station, window_length, overlap)
+def create_geo_spectrogram_file(station, range_type = "whole_deployment", block_type = "day", window_length = 60.0, overlap = 0.0, freq_interval = 1.0, downsample = False, outdir = SPECTROGRAM_DIR, **kwargs):
+
+    if not downsample:
+        filename = assemble_spec_filename(range_type, block_type, "geo", None, station, window_length, overlap, downsample)
+    else:
+        downsample_factor = kwargs['downsample_factor']
+        filename = assemble_spec_filename(range_type, block_type, "geo", None, station, window_length, overlap, downsample, downsample_factor = downsample_factor)
+
+    # Create the output file
     outpath = join(outdir, filename)
-    
     file = File(outpath, 'w')
+    
     # Create the group for storing the headers
     header_group = file.create_group('headers')
 
@@ -450,7 +462,7 @@ def create_geo_spectrogram_file(range_type, station, window_length, overlap, blo
     return file
 
 # Save one geophone spectrogram data block to an opened HDF5 file
-def save_geo_spectrogram_block(file, stream_spec, filename, outdir = SPECTROGRAM_DIR, close_file = True):
+def write_geo_spectrogram_block(file, stream_spec, outdir = SPECTROGRAM_DIR, close_file = True):
     components = GEO_COMPONENTS
 
     # Verify the StreamSTFTPSD object
@@ -478,11 +490,10 @@ def save_geo_spectrogram_block(file, stream_spec, filename, outdir = SPECTROGRAM
     data_group = file["data"]
     block_group = data_group.create_group(time_label)
     block_group.create_dataset("start_time", data=timeax[0])
-    comp_group = block_group.create_group("components")
 
+    # Create the group for storing each component's spectrogram data
+    comp_group = block_group.create_group("components")
     for component in components:
-        # Create the group for storing each component's spectrogram data
-        psd_group = comp_group.create_group(component)
         if component == "Z":
             data = data_z
         elif component == "1":
@@ -490,14 +501,13 @@ def save_geo_spectrogram_block(file, stream_spec, filename, outdir = SPECTROGRAM
         elif component == "2":
             data = data_2
         
-        psd_group.create_dataset("psd", data=data)
+        comp_group.create_dataset(component, data=data)
 
-    print(f"Spectrogram block {time_label} saved to {outpath}")
+    print(f"Spectrogram block {time_label} is saved")
 
     # Close the file
     if close_file:
         file.close()
-        print(f"Closed spectrogram file {outpath}")
 
 # Save all locations of a hydrophone station to a HDF5 file
 # Each location has its own time axis!
@@ -550,42 +560,58 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
 
     print(f"Spectrograms saved to {outpath}")
 
-# Read the geophone spectrograms from an HDF5 file
-def read_geo_spectrograms(inpath):
+# Finish writing a geophone spectrogram file by writing the list of time labels and close the file
+def finish_geo_spectrogram_file(file, time_labels):
+    file["headers"].create_dataset('time_labels', data=[time_label.encode("utf-8") for time_label in time_labels])
+    
+    file.close()
+    print("The spectrogram file is closed.")
+    
+# Read specific geophone-spectrogram data blocks from an HDF5 file 
+def read_geo_spectrograms(inpath, time_labels_to_read = None):
+    components = GEO_COMPONENTS
+    
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
-        station = header_group["station"][()]
-        time_label = header_group["time_label"][()]
-        components = header_group["components"][:]
         
-        starttime = header_group["start_time"][()]
-        time_interval = header_group["time_interval"][()]
+        station = header_group["station"][()]
+        station = station.decode("utf-8")
+
+        time_labels = header_group["time_labels"][()]
+        time_labels = [time_label.decode("utf-8") for time_label in time_labels]
+        
         freq_interval = header_group["frequency_interval"][()]
+        
+        window_length = header_group["window_length"][()]
         overlap = header_group["overlap"][()]
         
-        # Decode the strings
-        station = station.decode("utf-8")
-        time_label = time_label.decode("utf-8")
-        components = [component.decode("utf-8") for component in components]
-
-        # Read the spectrogram data
+        # Read the time labels
+        if time_labels_to_read is None:
+            time_labels_to_read = time_labels
+            
         data_group = file["data"]
         stream_spec = StreamSTFTPSD()
-        for component in components:
-            comp_group = data_group[component]
-            data = comp_group["psd"][:]
+        for time_label in time_labels_to_read:
+            block_group = data_group[time_label]
+            starttime = block_group["start_time"][()]
+            starttime = Timestamp(starttime, unit='ns')
 
-            num_freq = data.shape[0]
-            freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+            comp_group = block_group["components"]
+            for component in components:
+                data = comp_group[component][:]
+    
+                num_freq = data.shape[0]
+                freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+    
+                num_time = data.shape[1]
+                time_interval = Timedelta(seconds = window_length * (1 - overlap))
+                timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
+            
+                trace_spec = TraceSTFTPSD(station, None, component, time_label, timeax, freqax, data)
+                stream_spec.append(trace_spec)
 
-            num_time = data.shape[1]
-            timeax = assemble_timeax_from_ints(starttime, num_time, time_interval)
-        
-            trace_spec = TraceSTFTPSD(station, None, component, time_label, timeax, freqax, data)
-            stream_spec.append(trace_spec)
-
-        return stream_spec
+    return stream_spec
 
 # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
 # Each location has its own time axis!

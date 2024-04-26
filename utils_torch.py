@@ -3,6 +3,7 @@ from torch import Tensor
 from torch import abs, hann_window, square, stft, sum, tensor
 from numpy import linspace
 
+from utils_basic import SPECTROGRAM_DIR
 from utils_basic import power2db, reltimes_to_timestamps
 from utils_preproc import read_and_process_day_long_geo_waveforms
 from utils_spec import StreamSTFTPSD, TraceSTFTPSD
@@ -11,7 +12,7 @@ from utils_spec import downsample_stft_stream_freq
 ######
 # Functions
 ######
-
+    
 # Compute hourly spectrograms of a geophone station from a day-long stream object
 # Window length is in SECONDS!
 # Hours with missing data on ANY of the components are skipped
@@ -112,7 +113,7 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
+    stream_spec = get_stream_spectrograms(stream_day, range_type = "day", window_length = window_length, overlap=overlap, cuda = cuda)
     
     # Trim the spectrograms to the begin and end of the day
     print(f"Trimming the spectrograms to the begin and end of the day...")
