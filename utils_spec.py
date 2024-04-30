@@ -490,18 +490,11 @@ def assemble_spec_filename(range_type, block_type, sensor_type, station, window_
     elif block_type == "hour":
         block_type = "hourly"
     
-    if time_label is None:
-        if downsample:
-            downsample_factor = kwargs["downsample_factor"]
-            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
-        else:
-            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
+    if downsample:
+        downsample_factor = kwargs["downsample_factor"]
+        filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
     else:
-        if downsample:
-            downsample_factor = kwargs["downsample_factor"]
-            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
-        else:
-            filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_{time_label}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
+        filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
 
     return filename
 
@@ -509,10 +502,10 @@ def assemble_spec_filename(range_type, block_type, sensor_type, station, window_
 def create_geo_spectrogram_file(station, range_type = "whole_deployment", block_type = "day", window_length = 60.0, overlap = 0.0, freq_interval = 1.0, downsample = False, outdir = SPECTROGRAM_DIR, **kwargs):
 
     if not downsample:
-        filename = assemble_spec_filename(range_type, block_type, "geo", None, station, window_length, overlap, downsample)
+        filename = assemble_spec_filename(range_type, block_type, "geo", station, window_length, overlap, downsample)
     else:
         downsample_factor = kwargs['downsample_factor']
-        filename = assemble_spec_filename(range_type, block_type, "geo", None, station, window_length, overlap, downsample, downsample_factor = downsample_factor)
+        filename = assemble_spec_filename(range_type, block_type, "geo", station, window_length, overlap, downsample, downsample_factor = downsample_factor)
 
     # Create the output file
     outpath = join(outdir, filename)
