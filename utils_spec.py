@@ -194,6 +194,9 @@ class StreamSTFTPSD:
         if self.traces[0].db or self.traces[1].db or self.traces[2].db:
             raise ValueError("Error: The power spectrograms must be in linear scale!")
 
+        if self.traces[0].data.shape != self.traces[1].data.shape or self.traces[1].data.shape != self.traces[2].data.shape:
+            raise ValueError("Error: Inconsistent data matrix shapes!")
+
         data_total = self.traces[0].data + self.traces[1].data + self.traces[2].data
         trace_total = self.traces[0].copy()
         trace_total.data = data_total
@@ -481,7 +484,7 @@ def downsample_stft_freqax(freqax, factor=1000):
     return freqax
 
 # Assemble the name of a spectrogram file
-def assemble_spec_filename(range_type, block_type, sensor_type, time_label, station, window_length, overlap, downsample, **kwargs):
+def assemble_spec_filename(range_type, block_type, sensor_type, station, window_length, overlap, downsample, **kwargs):
     if block_type == "day":
         block_type = "daily"
     elif block_type == "hour":
