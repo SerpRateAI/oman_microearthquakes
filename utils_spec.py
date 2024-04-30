@@ -241,8 +241,20 @@ class TraceSTFTPSD:
         self.data = data
         self.db = db
 
+        self.num_times = len(self.times)
+        self.num_freqs = len(self.freqs)
+
+        self.time_interval = self.times[1] - self.times[0]
+        self.freq_interval = self.freqs[1] - self.freqs[0]
+
+        self.start_time = self.times[0]
+
     def __eq__(self, other):
-        return self.station == other.station and self.location == other.location and self.component == other.component and self.time_label == other.time_label
+        id_flag = self.station == other.station and self.location == other.location and self.component == other.component
+        time_flag = self.num_times == other.num_times and self.time_interval == other.time_interval and self.start_time == other.start_time
+        freq_flag = self.num_freqs == other.num_freqs and self.freq_interval == other.freq_interval
+        
+        return id_flag and time_flag and freq_flag
 
     # Convert the power spectrogram to dB
     def to_db(self):
@@ -360,6 +372,7 @@ def stitch_spectrograms(stream_spec, fill_value = nan):
     station = stream_spec[0].station
     location = stream_spec[0].location
     component = stream_spec[0].component
+    time_label = stream_spec[0].time_label
     freqax = stream_spec[0].freqs
     for i, trace_spec in enumerate(stream_spec):
         if i == 0:
@@ -382,15 +395,15 @@ def stitch_spectrograms(stream_spec, fill_value = nan):
                 num_fill = int((timeax_in[0] - timeax_out[-1]) / time_intverval)
                 fill_data = fill_value * ones((data_out.shape[0], num_fill))
                 data_out = column_stack([data_out, fill_data])
-                timeax_out = concat([timeax_out, date_range(start = timeax_out[-1] + time_intverval, periods = num_fill, freq = time_intverval)])
+                timeax_out = timeax_out.append(date_range(start = timeax_out[-1] + time_intverval, periods = num_fill, freq = time_intverval))
                 print(f"Filled {num_fill} points between them.")
             
             # Stitch the spectrograms
             data_out = column_stack([data_out, data_in])
-            timeax_out = concat([timeax_out, timeax_in])
+            timeax_out = timeax_out.append(timeax_in)
 
     # Save the stitched spectrogram to a new TraceSTFTPSD object
-    trace_spec_out = TraceSTFTPSD(station, location, component, timeax_out, freqax, data_out)
+    trace_spec_out = TraceSTFTPSD(station, location, component, time_label, timeax_out, freqax, data_out)
 
     return trace_spec_out
 
@@ -667,7 +680,7 @@ def read_geo_spectrograms(inpath, time_labels_to_read = None):
                 time_interval = Timedelta(seconds = window_length * (1 - overlap))
                 timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
             
-                trace_spec = TraceSTFTPSD(station, None, component, time_label, timeax, freqax, data)
+                trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
                 stream_spec.append(trace_spec)
 
     return stream_spec

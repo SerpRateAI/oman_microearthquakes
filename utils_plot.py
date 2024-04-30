@@ -472,20 +472,23 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
     else:
         fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
 
+    cmap = colormaps["inferno"]
+    cmap.set_bad(color="lightgray")
+
     ax = axes[0]
-    power_color = ax.pcolormesh(timeax, freqax, data_z, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    power_color = ax.pcolormesh(timeax, freqax, data_z, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("Z")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
 
     ax = axes[1]
-    power_color = ax.pcolormesh(timeax, freqax, data_1, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    power_color = ax.pcolormesh(timeax, freqax, data_1, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("1")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
 
     ax = axes[2]
-    power_color = ax.pcolormesh(timeax, freqax, data_2, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+    power_color = ax.pcolormesh(timeax, freqax, data_2, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("2")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
@@ -495,7 +498,7 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
         trace_total = kwargs["total_psd_trace"]
         trace_total.to_db()
         data_total = trace_total.data
-        power_color = ax.pcolormesh(timeax, freqax, data_total, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+        power_color = ax.pcolormesh(timeax, freqax, data_total, cmap = cmap, vmin = dbmin, vmax = dbmax)
         label = "Total"
         ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
         format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
