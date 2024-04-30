@@ -378,7 +378,7 @@ def stitch_spectrograms(stream_spec, fill_value = nan):
             # Check if the time axes are continuous
             if timeax_in[0] - timeax_out[-1] > time_intverval:
                 # Fill the gap with the fill value
-                print(f"Warning: Time axes are not continuous between {timeax_out[-1]} and {timeax_in[0]}!")
+                print(f"Warning: Time axes are not continuous between {timeax_out[-1]} and {timeax_in[0]} for {station}.{location}.{component}!")
                 num_fill = int((timeax_in[0] - timeax_out[-1]) / time_intverval)
                 fill_data = fill_value * ones((data_out.shape[0], num_fill))
                 data_out = column_stack([data_out, fill_data])
