@@ -621,6 +621,7 @@ def save_hydro_spectrograms(stream_spec, filename, outdir = SPECTROGRAM_DIR):
 # Finish writing a geophone spectrogram file by writing the list of time labels and close the file
 def finish_geo_spectrogram_file(file, time_labels):
     file["headers"].create_dataset('time_labels', data=[time_label.encode("utf-8") for time_label in time_labels])
+    print("Time labels are saved.")
     
     file.close()
     print("The spectrogram file is closed.")
