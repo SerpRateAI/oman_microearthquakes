@@ -359,6 +359,38 @@ def find_geo_station_spectral_peaks(stream_spec, rbw_threshold = 0.2, prom_thres
 
     return peak_df, trace_spec_total
 
+
+# Group the spectral-peak detections by time and frequency
+def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", min_freq = 0.0, max_freq = 500.0, freq_bin_width = 1.0):
+    # Define the frequency bins
+    num_freq_bins = int((maxfreq - minfreq) / freq_bin_width)
+    freq_bin_edges = linspace(minfreq, maxfreq, num_freq_bins + 1)
+    freq_bin_centers = freq_bin_edges + freq_bin_width / 2
+    freq_bin_centers = freq_bin_centers[:-1]
+
+    # Define the time bins
+    if isinstance(starttime, str):
+        starttime = Timestamp(starttime)
+
+    if isinstance(endtime, str):
+        endtime = Timestamp(endtime)
+
+    starttime = Timestamp(starttime)
+    endtime = Timestamp(endtime)
+    time_bin_edges = date_range(starttime, endtime, freq=time_interval)
+    time_bin_centers = [time + Timedelta(minutes=time_bin_width) / 2 for time in time_bin_edges]
+    time_bin_centers = time_bin_centers[:-1]
+
+    # Group the spectral peaks
+    peak_df['time_bin'] = cut(peak_df["time"], time_bin_edges, include_lowest=True, right=False)
+    peak_df['freq_bin'] = cut(peak_df["frequency"], freq_bin_edges, include_lowest=True, right=False)
+    
+    grouped = peak_df.groupby(['time_bin', 'freq_bin'], observed = False).size().unstack(fill_value=0)
+    detect_counts = grouped.values
+    detect_counts = detect_counts.T
+
+    return time_bin_centers, freq_bin_centers, detect_counts
+
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!
 def stitch_spectrograms(stream_spec, fill_value = nan):

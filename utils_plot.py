@@ -445,7 +445,8 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
                             xdim = 15, ydim_per_comp= 5, 
                             freq_lim=(0, 490), dbmin=-30, dbmax=0,
                             component_label_x = 0.01, component_label_y = 0.96,
-                            datetime_format = "%Y-%m-%d",
+                            date_format
+ = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -507,7 +508,9 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
 
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format
+ = date_format
+, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar
     bbox = axes[-1].get_position()
@@ -525,7 +528,8 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
                             xdim = 15, ydim_per_loc= 5, 
                             freq_lim=(0, 490), dbmin=-30, dbmax=0,
                             component_label_x = 0.01, component_label_y = 0.96,
-                            datetime_format = "%Y-%m-%d",
+                            date_format
+ = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -556,7 +560,9 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
 
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format
+ = date_format
+, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar
     bbox = axes[num_loc - 1].get_position()
@@ -575,7 +581,8 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
                             freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             marker_size = 5,
                             panel_label_x = 0.01, panel_label_y = 0.96,
-                            datetime_format = "%Y-%m-%d",
+                            date_format
+ = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -634,7 +641,9 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
-                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format
+ = date_format
+, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Set the y-axis limits
     ax.set_ylim(freq_lim)
@@ -649,7 +658,8 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
 def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, counts,
                             xdim = 15, ydim = 5, 
                             freq_lim=(0, 490), min_count = 0, max_count = 35,
-                            datetime_format = "%Y-%m-%dT%H:%M:%S",
+                            date_format
+ = "%Y-%m-%dT%H:%M:%S",
                             major_time_spacing=6, minor_time_spacing=1, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -666,7 +676,9 @@ def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, count
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
-                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, datetime_format = datetime_format, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format
+ = date_format
+, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar
     bbox = ax.get_position()
@@ -674,8 +686,7 @@ def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, count
     cbar = add_count_colorbar(fig, count_color, position, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Add the title
-    day = time_bin_centers[0].strftime("%Y-%m-%d")
-    ax.set_title(day, fontsize = title_size, fontweight = "bold")
+    ax.set_title("Array detection counts", fontsize = title_size, fontweight = "bold")
 
     return fig, ax, cbar
 
@@ -1775,12 +1786,14 @@ def get_windowed_pm_data(stream_in, window_length):
 
 
 ## Function to format the x labels in datetime
-def format_datetime_xlabels(ax, label=True, datetime_format = '%m-%dT%H:%M:%S', major_tick_spacing = 60, minor_tick_spacing = 15, axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
+def format_datetime_xlabels(ax, label=True, date_format
+ = '%m-%dT%H:%M:%S', major_tick_spacing = 60, minor_tick_spacing = 15, axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
     if label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
 
-    ax.xaxis.set_major_formatter(DateFormatter(datetime_format))
+    ax.xaxis.set_major_formatter(DateFormatter(date_format
+))
 
     ax.xaxis.set_major_locator(MultipleLocator(sec2day(major_tick_spacing)))
     ax.xaxis.set_minor_locator(MultipleLocator(sec2day(minor_tick_spacing)))
