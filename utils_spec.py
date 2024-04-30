@@ -5,7 +5,7 @@ from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
-from pandas import to_datetime, date_range
+from pandas import date_range, concat
 from h5py import File, special_dtype
 from multitaper import MTSpec
 
@@ -44,18 +44,28 @@ class StreamSTFTPSD:
     def __iter__(self):
         return iter(self.traces)
     
+    # Append a TraceSTFTPSD object to the stream
     def append(self, trace_spec):
         if not isinstance(trace_spec, TraceSTFTPSD):
             raise TypeError("Invalid TraceSTFTPSD object!")
 
         self.traces.append(trace_spec)
 
+    # Delete the TraceSTFTPSD objects contained in the input StreamSTFTPSD object
+    def delete(self, stream_spec):
+        if not isinstance(stream_spec, StreamSTFTPSD):
+            raise TypeError("Invalid StreamSTFTPSD object!")
+
+        self.traces = [trace for trace in self.traces if trace not in stream_spec.traces]
+
+    # Extend the stream with another StreamSTFTPSD object
     def extend(self, stream_spec):
         if not isinstance(stream_spec, StreamSTFTPSD):
             raise TypeError("Invalid StreamSTFTPSD object!")
 
         self.traces.extend(stream_spec.traces)
 
+    # Select traces based on station, location, component, and time label
     def select(self, station = None, location = None, component = None, time_label = None):
         traces = []
         if station is not None:
@@ -107,6 +117,35 @@ class StreamSTFTPSD:
                         
         stream = StreamSTFTPSD(traces)
         return stream
+    
+    # Stitch the spectrograms of multiple time periods together in place
+    def stitch(self, stations = None, locations = None, components = None, fill_value = nan):
+        # Determine the stations, locations, and components to stitch
+        if stations is None:
+            stations = self.get_stations()
+        
+        if locations is None:
+            locations = self.get_locations()
+
+        if components is None:
+            components = GEO_COMPONENTS
+
+        # Stitch the spectrograms of each station, location, and component
+        for station in stations:
+            for location in locations:
+                for component in components:
+                    stream_to_stitch = self.select(station=station, location=location, component=component)
+                    if len(stream_to_stitch) > 0:
+                        # Stitch the spectrograms
+                        trace_spec = stitch_spectrograms(stream_to_stitch, fill_value)
+                        self.append(trace_spec)
+
+                        # Delete the original traces
+                        self.delete(stream_to_stitch)
+    
+    # Sort the traces by start time
+    def sort_by_time(self):
+        self.traces.sort(key=lambda trace: trace.times[0])
     
     # Get the list of stations in the stream
     def get_stations(self):
@@ -163,7 +202,7 @@ class StreamSTFTPSD:
         return trace_total
 
     # Verify if the traces have the same station name, time labels, and the three components (what called a block)
-    def verify_block(self):
+    def verify_geo_block(self):
         if len(self.traces) != 3:
             raise ValueError("Error: Invalid number of components!")
         
@@ -175,6 +214,19 @@ class StreamSTFTPSD:
         
         if self.traces[0].component != "Z" or self.traces[1].component != "1" or self.traces[2].component != "2":
             raise ValueError("Error: Invalid component names!")
+        
+    # Verify if the traces in the stream have the same staiton name, location, and component
+    def verify_id(self):
+        if len(self.traces) < 2:
+            raise ValueError("Error: No traces in the stream!")
+
+        station = self.traces[0].station
+        location = self.traces[0].location
+        component = self.traces[0].component
+
+        for trace in self.traces:
+            if trace.station != station or trace.location != location or trace.component != component:
+                raise ValueError("Error: Inconsistent station, location, or component names!")
         
 # Class for storing the STFT data and associated parameters of a trace
 class TraceSTFTPSD:
@@ -188,6 +240,9 @@ class TraceSTFTPSD:
         self.overlap = overlap
         self.data = data
         self.db = db
+
+    def __eq__(self, other):
+        return self.station == other.station and self.location == other.location and self.component == other.component and self.time_label == other.time_label
 
     # Convert the power spectrogram to dB
     def to_db(self):
@@ -291,50 +346,53 @@ def find_geo_station_spectral_peaks(stream_spec, rbw_threshold = 0.2, prom_thres
 
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!
-def stitch_spectrograms(stream_spec, average_window, overlap = 0.5):
+def stitch_spectrograms(stream_spec, fill_value = nan):
     if len(stream_spec) < 2:
         raise ValueError("Error: Insufficient number of StreamSTFTPSD objects!")
 
-    station = stream_spec[0].station
-    component = stream_spec[0].component
-    location = stream_spec[0].location
-    freqax = stream_spec[0].freqs
+    # Verify if the StreamSTFTPSD objects have the same station, component, and location
+    stream_spec.verify_id()
+
+    # Sort the traces by start time
+    stream_spec.sort_by_time()
 
     # Stich the spectrograms together
+    station = stream_spec[0].station
+    location = stream_spec[0].location
+    component = stream_spec[0].component
+    freqax = stream_spec[0].freqs
     for i, trace_spec in enumerate(stream_spec):
-        if trace_spec.station != station or trace_spec.component != component or trace_spec.location != location:
-            raise ValueError("Error: Inconsistent station, component or location in the StreamSTFTPSD objects!")
-        
         if i == 0:
             timeax_out = trace_spec.times
             data_out = trace_spec.data
         else:
             timeax_in = trace_spec.times
             data_in = trace_spec.data
+            time_intverval = timeax_in[1] - timeax_in[0]
 
+            # Check if the time axes overlap; if so, remove the last point of the first spectrogram
             if timeax_out[-1] >= timeax_in[0]:
                 timeax_out = delete(timeax_out, -1)
                 data_out = delete(data_out, -1, axis=1)
 
+            # Check if the time axes are continuous
+            if timeax_in[0] - timeax_out[-1] > time_intverval:
+                # Fill the gap with the fill value
+                print(f"Warning: Time axes are not continuous between {timeax_out[-1]} and {timeax_in[0]}!")
+                num_fill = int((timeax_in[0] - timeax_out[-1]) / time_intverval)
+                fill_data = fill_value * ones((data_out.shape[0], num_fill))
+                data_out = column_stack([data_out, fill_data])
+                timeax_out = concat([timeax_out, date_range(start = timeax_out[-1] + time_intverval, periods = num_fill, freq = time_intverval)])
+                print(f"Filled {num_fill} points between them.")
+            
+            # Stitch the spectrograms
             data_out = column_stack([data_out, data_in])
-            timeax_out = concatenate([timeax_out, timeax_in])
-
-    # Average the spectrogram over the given window
-    if average_window is not None:
-        data_out = moving_average_2d(data_out, average_window, axis=1)
-
-        timeax_sr = Series(timeax_out)
-        timeax_sr = timeax_sr.astype('int64')
-        timeax_out = timeax_sr.to_numpy()
-        timeax_out = moving_average(timeax_out, average_window)
-        timeax_sr = Series(timeax_out)
-        timeax_sr = timeax_sr.astype('datetime64[ns]')
-        timeax_out = timeax_sr.to_numpy()
+            timeax_out = concat([timeax_out, timeax_in])
 
     # Save the stitched spectrogram to a new TraceSTFTPSD object
-    trace_spec = TraceSTFTPSD(station, location, component, timeax_out, freqax, data_out)
+    trace_spec_out = TraceSTFTPSD(station, location, component, timeax_out, freqax, data_out)
 
-    return trace_spec
+    return trace_spec_out
 
 # Moving window average of a 1D array
 def moving_average(data, window_length):
@@ -466,7 +524,7 @@ def write_geo_spectrogram_block(file, stream_spec, outdir = SPECTROGRAM_DIR, clo
     components = GEO_COMPONENTS
 
     # Verify the StreamSTFTPSD object
-    stream_spec.verify_block()
+    stream_spec.verify_geo_block()
     
     # Extract the data from the StreamSTFTPSD object
     trace_spec_z = stream_spec.select(component="Z")[0]
