@@ -636,7 +636,7 @@ def read_geo_spectrograms(inpath, time_labels_to_read = None):
         station = header_group["station"][()]
         station = station.decode("utf-8")
 
-        time_labels = header_group["time_labels"][()]
+        time_labels = header_group["time_labels"][:]
         time_labels = [time_label.decode("utf-8") for time_label in time_labels]
         
         freq_interval = header_group["frequency_interval"][()]
