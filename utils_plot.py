@@ -663,7 +663,7 @@ def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, count
                             major_time_spacing=6, minor_time_spacing=1, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
-                            time_tick_rotation=5, time_tick_va="top", time_tick_ha="right"):
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
 
     # Plot the detection counts
     fig, ax = subplots(1, 1, figsize=(xdim, ydim))

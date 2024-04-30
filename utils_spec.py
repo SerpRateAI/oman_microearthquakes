@@ -5,7 +5,7 @@ from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
-from pandas import date_range, concat
+from pandas import date_range, concat, cut
 from h5py import File, special_dtype
 from multitaper import MTSpec
 
@@ -363,8 +363,8 @@ def find_geo_station_spectral_peaks(stream_spec, rbw_threshold = 0.2, prom_thres
 # Group the spectral-peak detections by time and frequency
 def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", min_freq = 0.0, max_freq = 500.0, freq_bin_width = 1.0):
     # Define the frequency bins
-    num_freq_bins = int((maxfreq - minfreq) / freq_bin_width)
-    freq_bin_edges = linspace(minfreq, maxfreq, num_freq_bins + 1)
+    num_freq_bins = int((max_freq - min_freq) / freq_bin_width)
+    freq_bin_edges = linspace(min_freq, max_freq, num_freq_bins + 1)
     freq_bin_centers = freq_bin_edges + freq_bin_width / 2
     freq_bin_centers = freq_bin_centers[:-1]
 
@@ -377,8 +377,9 @@ def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", m
 
     starttime = Timestamp(starttime)
     endtime = Timestamp(endtime)
-    time_bin_edges = date_range(starttime, endtime, freq=time_interval)
-    time_bin_centers = [time + Timedelta(minutes=time_bin_width) / 2 for time in time_bin_edges]
+    time_bin_edges = date_range(starttime, endtime, freq=time_bin_width)
+    time_delta = time_bin_edges[1] - time_bin_edges[0]
+    time_bin_centers = [time + time_delta / 2 for time in time_bin_edges]
     time_bin_centers = time_bin_centers[:-1]
 
     # Group the spectral peaks
