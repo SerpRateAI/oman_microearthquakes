@@ -5,7 +5,7 @@ from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
-from pandas import date_range, concat, cut
+from pandas import concat, cut, date_range, read_csv, to_datetime
 from h5py import File, special_dtype
 from multitaper import MTSpec
 
@@ -751,7 +751,18 @@ def read_hydro_spectrograms(inpath):
             stream_spec.append(trace_spec)
 
         return stream_spec    
-    
+
+# Read detected spectral peaks from a CSV file
+# The date parser of pandas.read_csv() somehow doesn't work. Need to parse the dates manually after reading the data
+def read_spectral_peaks(inpath):
+    peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
+    #peak_df['time'] = to_datetime(peak_df['time'], errors='coerce')
+
+    return peak_df
+
+# Write the spectral peaks to a CSV file
+def save_spectral_peaks(peak_df, outpath):
+    peak_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    

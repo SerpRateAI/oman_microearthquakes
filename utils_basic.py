@@ -68,10 +68,10 @@ NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")
 STATIONS_PATH = join(ROOTDIR_GEO, "stations.csv")
 
 WINDOW_LENGTH_GEO = 3600 # in seconds
-STARTTIME_GEO = Timestamp("2020-01-10T03:00:00Z", tz="UTC")
-ENDTIME_GEO = Timestamp("2020-02-02T23:59:59Z", tz="UTC")
-STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00Z", tz="UTC")
-ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59Z", tz="UTC")
+STARTTIME_GEO = Timestamp("2020-01-10T00:00:00")
+ENDTIME_GEO = Timestamp("2020-02-01T23:59:59")
+STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00")
+ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59")
 HAMMER_DATE = "2020-01-25"
 
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
