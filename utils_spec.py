@@ -748,16 +748,60 @@ def read_hydro_spectrograms(inpath):
         return stream_spec    
 
 # Read detected spectral peaks from a CSV file
-# The date parser of pandas.read_csv() somehow doesn't work. Need to parse the dates manually after reading the data
 def read_spectral_peaks(inpath):
     peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
-    #peak_df['time'] = to_datetime(peak_df['time'], errors='coerce')
 
     return peak_df
 
 # Write the spectral peaks to a CSV file
 def save_spectral_peaks(peak_df, outpath):
     peak_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
+
+# Save spectral-peak bin counts to an HDF5 file
+def save_spectral_peak_bin_counts(time_bin_centers, freq_bin_centers, counts, outpath):
+    min_freq = freq_bin_centers[0]
+    freq_int = freq_bin_centers[1] - freq_bin_centers[0]
+
+    starttime = time_bin_centers[0]
+    time_int = time_bin_centers[1] - time_bin_centers[0]
+    
+    with File(outpath, 'w') as file:
+        header_group = file.create_group("headers")
+        
+        header_group.create_dataset("min_frequency", data = min_freq)
+        header_group.create_dataset("frequency_interval", data = freq_int)
+
+        header_group.create_dataset("start_time", data = starttime.value)
+        header_group.create_dataset("time_interval", data = time_int.value)
+
+        data_group = file.create_group("data")
+
+        data_group.create_dataset("bin_count", data = counts)
+
+    print(f"Bin counts saved to {outpath}")
+
+# Read spectral-peak bin counts from an HDF5 file
+def read_spectral_peak_bin_counts(inpath):
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+
+        start_time = Timestamp(header_group["start_time"][()])
+        time_int = Timedelta(header_group["time_interval"][()], unit = 'ns')
+
+        min_freq = header_group["min_frequency"][()]
+        freq_int = header_group["frequency_interval"][()]
+
+        data_group = file["data"]
+
+        counts = data_group["bin_count"][:]
+        num_times = counts.shape[1]
+        num_freqs = counts.shape[0]
+        max_freq = min_freq + (num_freqs - 1) * freq_int
+
+        timeax = date_range(start = start_time, freq = time_int, periods = num_times)
+        freqax = linspace(min_freq, max_freq, num_freqs)
+
+    return timeax, freqax, counts
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    
@@ -808,8 +852,3 @@ def get_quality_factor(freqax, power_in_db, freq0):
     quality_factor = freq0 * rbw
 
     return quality_factor, rbw
-
-
-
-
-    return quality_factor
