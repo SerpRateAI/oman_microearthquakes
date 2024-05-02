@@ -143,7 +143,7 @@ class StreamSTFTPSD:
                         # Delete the original traces
                         self.delete(stream_to_stitch)
 
-    # Slice along the frequency axis and return a NEW StreamSTFTPSD object
+
     
     # Sort the traces by start time
     def sort_by_time(self):
@@ -175,8 +175,13 @@ class StreamSTFTPSD:
         for trace in self.traces:
             trace.to_db()
 
+    # Trim the spectrograms to a given frequency range
+    def trim_freq(self, freqmin = None, freqmax = None):
+        for trace in self.traces:
+            trace.trim_freq(starttime, endtime)
+
     # Trim the spectrograms to a given time range
-    def trim(self, starttime = None, endtime = None):
+    def trim_time(self, starttime = None, endtime = None):
         for trace in self.traces:
             trace.trim(starttime, endtime)
 
@@ -274,7 +279,7 @@ class TraceSTFTPSD:
         return TraceSTFTPSD(self.station, self.location, self.component, self.time_label, self.times, self.freqs, self.data, self.db)
 
     # Trim the spectrogram to a given time range
-    def trim(self, starttime = None, endtime = None):
+    def trim_time(self, starttime = None, endtime = None):
         timeax = self.times
     
         if starttime is not None:
@@ -290,6 +295,23 @@ class TraceSTFTPSD:
         self.times = timeax[start_index:end_index]
         self.data = self.data[:, start_index:end_index]
 
+    # Trim the spectrogram to a given frequency range
+    def trim_freq(self, freqmin = None, freqmax = None):
+        freqax = self.freqs
+
+        if freqmin is not None:
+            min_index = freqax.searchsorted(freqmin)
+        else:
+            min_index = 0
+
+        if freqmax is not None:
+            max_index = freqax.searchsorted(freqmax)
+        else:
+            max_index = len(freqax)
+
+        self.freqs = freqax[min_index:max_index]
+        self.data = self.data[min_index:max_index, :]
+
     # Trim the spectrogram to the begin and end of the day
     def trim_to_day(self):
         timeax = self.times
@@ -298,7 +320,7 @@ class TraceSTFTPSD:
         start_of_day = ref_time.replace(hour=0, minute=0, second=0, microsecond=0)
         end_of_day = ref_time.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        self.trim(start_of_day, end_of_day)
+        self.trim_time(start_of_day, end_of_day)
 
     # Find spectral peaks satisfying the given criteria
     # The power threshold is in dB!
