@@ -417,7 +417,7 @@ def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", m
     return time_bin_centers, freq_bin_centers, detect_counts
 
 # Convert the spectral-peak bin counts to a DataFrame
-def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts):
+def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts, count_threshold = 1):
     # Convert the time bin centers to nano-second integers
     time_bin_centers = [time.value for time in time_bin_centers]
 
@@ -435,8 +435,8 @@ def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts):
     # Convert the time column to Timestamp
     count_df["time"] = to_datetime(count_df["time"])
 
-    # Remove the rows with zero counts
-    count_df = count_df.loc[count_df["count"] > 0]
+    # Remove the rows with counts below the threshold
+    count_df = count_df.loc[count_df["count"] >= count_threshold]
 
     return count_df
 
@@ -806,6 +806,12 @@ def read_spectral_peaks(inpath):
 
     return peak_df
 
+# Read spectral peak bin counts from a CSV file
+def read_spectral_peak_bin_counts(inpath):
+    peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
+
+    return peak_df
+
 # Write the spectral peaks to a CSV file
 def save_spectral_peaks(peak_df, outpath):
     peak_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
@@ -832,29 +838,6 @@ def save_spectral_peak_bin_counts(time_bin_centers, freq_bin_centers, counts, ou
         data_group.create_dataset("bin_count", data = counts)
 
     print(f"Bin counts saved to {outpath}")
-
-# Read spectral-peak bin counts from an HDF5 file
-def read_spectral_peak_bin_counts(inpath):
-    with File(inpath, 'r') as file:
-        header_group = file["headers"]
-
-        start_time = Timestamp(header_group["start_time"][()])
-        time_int = Timedelta(header_group["time_interval"][()], unit = 'ns')
-
-        min_freq = header_group["min_frequency"][()]
-        freq_int = header_group["frequency_interval"][()]
-
-        data_group = file["data"]
-
-        counts = data_group["bin_count"][:]
-        num_times = counts.shape[1]
-        num_freqs = counts.shape[0]
-        max_freq = min_freq + (num_freqs - 1) * freq_int
-
-        timeax = date_range(start = start_time, freq = time_int, periods = num_times)
-        freqax = linspace(min_freq, max_freq, num_freqs)
-
-    return timeax, freqax, counts
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    

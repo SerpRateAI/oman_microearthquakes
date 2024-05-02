@@ -1,7 +1,7 @@
 # Functions and classes for plotting
 from os.path import join
 from pandas import Timestamp, Timedelta
-from numpy import arctan, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
+from numpy import arctan, array, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
 from numpy.linalg import norm
 from scipy.stats import gmean
 from matplotlib.pyplot import subplots, Circle
@@ -657,9 +657,9 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
 # Plot array spectral-peak bin counts
 def plot_array_spec_peak_bin_counts(count_df,
                             size_scale = 5,
-                            example_coutns = array([3, 10, 30])
+                            example_counts = array([5, 20, 35]),
                             xdim = 15, ydim = 5, 
-                            freq_lim = (0, 490), min_count = 0, max_count = 35,
+                            freq_lim = (0, 490),
                             date_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
@@ -668,19 +668,21 @@ def plot_array_spec_peak_bin_counts(count_df,
 
     # Calculate the marker sizes
     counts = count_df["count"]
-    marker_sizes = (log(counts) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
-
+    #marker_sizes = (log(counts) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
+    marker_sizes = (counts - counts.min()) / (counts.max() - counts.min()) * size_scale
+    
     # Plot the detection counts
     fig, ax = subplots(1, 1, figsize=(xdim, ydim))
-    ax.scatter(count_df["time"], count_df["frequency"], s = marker_sizes, facecolors = "lightgray", edgecolors = "black", alpha = 0.5)
+    ax.scatter(count_df["time"], count_df["frequency"], s = marker_sizes, facecolors = "lightgray", edgecolors = "black", alpha = 0.5, linewidth = 0.1)
 
     # Plot the example counts for the legend
     for count in example_counts:
-        marker_size = (log(count) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
-        ax.scatter([], [], s = marker_size, facecolors = "lightgray", edgecolors = "black", label = f"{count}")
+        #marker_size = (log(count) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
+        marker_size = (count - counts.min()) / (counts.max() - counts.min()) * size_scale
+        ax.scatter([], [], s = marker_size, facecolors = "lightgray", edgecolors = "black", linewidth = 0.1, label = f"{count}")
 
     # Add the legend
-    ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right")
+    ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
 
     # Format the frequency axis
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
@@ -699,15 +701,16 @@ def plot_array_spec_peak_bin_counts(count_df,
     ax.set_ylim(freq_lim)
 
     # Add the title
-    ax.set_title("Array detection counts", fontsize = title_size, fontweight = "bold")
+    ax.set_title("Array bin counts", fontsize = title_size, fontweight = "bold")
 
-    return fig, ax, cbar
+    return fig, ax
 
 # Plot the total PSD of a geophone station, the power and reverse bandwidth of the spectral peaks detected from it, and the array detection counts
-def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, time_bin_centers, freq_bin_centers, counts,
+def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
+                            size_scale = 5, marker_size = 1,
+                            example_counts = array([5, 20, 35]),
                             xdim = 15, ydim_per_row = 5,
-                            freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5, min_count = 0, max_count = 35,
-                            marker_size = 1,
+                            freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             date_format = "%Y-%m-%d",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
@@ -784,38 +787,41 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, time_bin_cen
     # Plot the array detection counts
     ax = axes[3]
 
-    cmap_count = colormaps["gray"].copy()
-    cmap_count.set_bad(color="blue")
-    norm_power = Normalize(vmin=min_count, vmax=max_count)
-
-    ax.set_facecolor("blue")
-    count_color = ax.pcolormesh(time_bin_centers, freq_bin_centers, counts, cmap = cmap_count, vmin = min_count, vmax = max_count)
-
-    label = "Peak detections"
-    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    # Calculate the marker sizes
+    counts = count_df["count"]
+    marker_sizes = (counts - counts.min()) / (counts.max() - counts.min()) * size_scale
     
+    # Plot the detection counts
+    ax.scatter(count_df["time"], count_df["frequency"], s = marker_sizes, facecolors = "lightgray", edgecolors = "black", alpha = 0.5, linewidth = 0.1)
+
+    # Plot the example counts for the legend
+    for count in example_counts:
+        marker_size = (count - counts.min()) / (counts.max() - counts.min()) * size_scale
+        ax.scatter([], [], s = marker_size, facecolors = "lightgray", edgecolors = "black", linewidth = 0.1, label = f"{count}")
+
+    # Add the legend
+    ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
+
+    # Format the frequency axis
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
-    ax.set_title("All geophones", fontsize = title_size, fontweight = "bold")
-
-    # Plot the count colorbar
-    bbox = ax.get_position()
-    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    count_cbar = add_count_colorbar(fig, count_color, position, tick_label_size=tick_label_size, orientation = "vertical")
-
-    # Format the x-axis labels
+    # Format the time axis
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
-                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format, rotation = time_tick_rotation, vertical_align = time_tick_va, horizontal_align = time_tick_ha)
-
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
+                            , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+    
+    # Add the title
+    ax.set_title("Array bin counts", fontsize = title_size, fontweight = "bold")
+    
     # Set the x-axis limits
-    ax.set_xlim((time_bin_centers[0], time_bin_centers[-1]))
+    ax.set_xlim([count_df["time"].min(), count_df["time"].max()])
     
     # Set the y-axis limits
     ax.set_ylim(freq_lim)
 
-    return fig, axes, power_cbar, rbw_cbar, count_cbar
+    return fig, axes, power_cbar, rbw_cbar
 
 ###### Functions for plotting CWT spectra ######
 
