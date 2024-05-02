@@ -3,7 +3,7 @@ from os.path import join
 from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, nan, ones, pi, savez
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, meshgrid, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, to_datetime
 from h5py import File, special_dtype
@@ -415,6 +415,31 @@ def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", m
     detect_counts = detect_counts.T
 
     return time_bin_centers, freq_bin_centers, detect_counts
+
+# Convert the spectral-peak bin counts to a DataFrame
+def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts):
+    # Convert the time bin centers to nano-second integers
+    time_bin_centers = [time.value for time in time_bin_centers]
+
+    # Create the 2D meshgrid of time and frequency bin centers
+    time_mesh, freq_mesh = meshgrid(time_bin_centers, freq_bin_centers)
+
+    # Flatten the 2D meshgrid
+    time_mesh = time_mesh.flatten()
+    freq_mesh = freq_mesh.flatten()
+    counts = counts.flatten()
+
+    # Create the DataFrame
+    count_df = DataFrame({"time": time_mesh, "frequency": freq_mesh, "count": counts})
+
+    # Convert the time column to Timestamp
+    count_df["time"] = to_datetime(count_df["time"])
+
+    # Remove the rows with zero counts
+    count_df = count_df.loc[count_df["count"] > 0]
+
+    return count_df
+
 
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!

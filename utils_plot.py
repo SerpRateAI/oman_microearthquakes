@@ -1,7 +1,7 @@
 # Functions and classes for plotting
 from os.path import join
 from pandas import Timestamp, Timedelta
-from numpy import arctan, abs, amax, angle, column_stack, cos, sin, linspace, pi, radians
+from numpy import arctan, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
 from numpy.linalg import norm
 from scipy.stats import gmean
 from matplotlib.pyplot import subplots, Circle
@@ -654,19 +654,33 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
 
     return fig, axes
 
-# Plot array spectral-peak detection counts
-def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, counts,
+# Plot array spectral-peak bin counts
+def plot_array_spec_peak_bin_counts(count_df,
+                            size_scale = 5,
+                            example_coutns = array([3, 10, 30])
                             xdim = 15, ydim = 5, 
-                            freq_lim=(0, 490), min_count = 0, max_count = 35,
-                            date_format = "%Y-%m-%dT%H:%M:%S",
-                            major_time_spacing=6, minor_time_spacing=1, 
+                            freq_lim = (0, 490), min_count = 0, max_count = 35,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
 
+    # Calculate the marker sizes
+    counts = count_df["count"]
+    marker_sizes = (log(counts) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
+
     # Plot the detection counts
     fig, ax = subplots(1, 1, figsize=(xdim, ydim))
-    count_color = ax.pcolormesh(time_bin_centers, freq_bin_centers, counts, cmap = "gray", vmin = min_count, vmax = max_count)
+    ax.scatter(count_df["time"], count_df["frequency"], s = marker_sizes, facecolors = "lightgray", edgecolors = "black", alpha = 0.5)
+
+    # Plot the example counts for the legend
+    for count in example_counts:
+        marker_size = (log(count) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
+        ax.scatter([], [], s = marker_size, facecolors = "lightgray", edgecolors = "black", label = f"{count}")
+
+    # Add the legend
+    ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right")
 
     # Format the frequency axis
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
@@ -675,14 +689,14 @@ def plot_array_spec_peak_detect_counts(time_bin_centers, freq_bin_centers, count
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
-                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format
- = date_format
-, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
+                            , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
-    # Add the colorbar
-    bbox = ax.get_position()
-    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    cbar = add_count_colorbar(fig, count_color, position, tick_label_size=tick_label_size, orientation = "vertical")
+    # Set the x-axis limits
+    ax.set_xlim([count_df["time"].min(), count_df["time"].max()])
+    
+    # Set the y-axis limits
+    ax.set_ylim(freq_lim)
 
     # Add the title
     ax.set_title("Array detection counts", fontsize = title_size, fontweight = "bold")
