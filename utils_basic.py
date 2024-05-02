@@ -177,24 +177,33 @@ def get_geophone_days():
 # Functions for handling times
 ######
 
-# Function to convert seconds to days
+# Convert seconds to days
 def sec2day(seconds):
     days = seconds / 86400
 
     return days
 
-# Function to convert days to seconds
+# Convert days to seconds
 def day2sec(days):
     seconds = days * 86400
 
     return seconds
 
-# Function to convert hours to seconds
+# Convert hours to seconds
 def hour2sec(hours):
     seconds = hours * 3600
 
     return seconds
 
+# Get the begin and end of a day
+def get_day_begin_and_end(day):
+    if not isinstance(day, Timestamp):
+        day = Timestamp(day)
+
+    starttime = day.replace(hour = 0, minute = 0, second = 0, microsecond = 0)
+    endtime = day.replace(hour = 23, minute = 59, second = 59, microsecond = 999999)
+
+    return starttime, endtime
 
 # Function to convert year-month-day to day of the year
 def to_day_of_year(date):

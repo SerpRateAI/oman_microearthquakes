@@ -135,13 +135,15 @@ class StreamSTFTPSD:
             for location in locations:
                 for component in components:
                     stream_to_stitch = self.select(station=station, location=location, component=component)
-                    if len(stream_to_stitch) > 0:
+                    if len(stream_to_stitch) > 1:
                         # Stitch the spectrograms
                         trace_spec = stitch_spectrograms(stream_to_stitch, fill_value)
                         self.append(trace_spec)
 
                         # Delete the original traces
                         self.delete(stream_to_stitch)
+
+    # Slice along the frequency axis and return a NEW StreamSTFTPSD object
     
     # Sort the traces by start time
     def sort_by_time(self):
@@ -395,8 +397,8 @@ def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", m
 # Stitch spectrograms of multiple time periods together
 # Output window length is in SECOND!
 def stitch_spectrograms(stream_spec, fill_value = nan):
-    if len(stream_spec) < 2:
-        raise ValueError("Error: Insufficient number of StreamSTFTPSD objects!")
+    if len(stream_spec) == 1:
+        raise ValueError("Error: Only one trace in the stream. Nothing to stitch!")
 
     # Verify if the StreamSTFTPSD objects have the same station, component, and location
     stream_spec.verify_id()
@@ -664,8 +666,12 @@ def finish_geo_spectrogram_file(file, time_labels):
     print("The spectrogram file is closed.")
     
 # Read specific geophone-spectrogram data blocks from an HDF5 file 
-def read_geo_spectrograms(inpath, time_labels_to_read = None):
+def read_geo_spectrograms(inpath, time_labels = None):
     components = GEO_COMPONENTS
+
+    if not isinstance(time_labels, list):
+        if isinstance(time_labels, str):
+            time_labels = [time_labels]
     
     with File(inpath, 'r') as file:
         # Read the header information
@@ -674,8 +680,8 @@ def read_geo_spectrograms(inpath, time_labels_to_read = None):
         station = header_group["station"][()]
         station = station.decode("utf-8")
 
-        time_labels = header_group["time_labels"][:]
-        time_labels = [time_label.decode("utf-8") for time_label in time_labels]
+        time_labels_in = header_group["time_labels"][:]
+        time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
         
         freq_interval = header_group["frequency_interval"][()]
         
@@ -683,12 +689,12 @@ def read_geo_spectrograms(inpath, time_labels_to_read = None):
         overlap = header_group["overlap"][()]
         
         # Read the time labels
-        if time_labels_to_read is None:
-            time_labels_to_read = time_labels
+        if time_labels is None:
+            time_labels = time_labels_in
             
         data_group = file["data"]
         stream_spec = StreamSTFTPSD()
-        for time_label in time_labels_to_read:
+        for time_label in time_labels:
             block_group = data_group[time_label]
             starttime = block_group["start_time"][()]
             starttime = Timestamp(starttime, unit='ns')
@@ -852,3 +858,9 @@ def get_quality_factor(freqax, power_in_db, freq0):
     quality_factor = freq0 * rbw
 
     return quality_factor, rbw
+
+# Get the time label for a spectrogram block from a time string
+def string_to_time_label(time_str):
+    time_label = Timestamp(time_str).strftime("%Y%m%d%H%M%S%f")
+
+    return time_label
