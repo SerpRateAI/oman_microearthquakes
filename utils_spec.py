@@ -178,12 +178,12 @@ class StreamSTFTPSD:
     # Trim the spectrograms to a given frequency range
     def trim_freq(self, freqmin = None, freqmax = None):
         for trace in self.traces:
-            trace.trim_freq(starttime, endtime)
+            trace.trim_freq(freqmin = freqmin, freqmax = freqmax)
 
     # Trim the spectrograms to a given time range
     def trim_time(self, starttime = None, endtime = None):
         for trace in self.traces:
-            trace.trim(starttime, endtime)
+            trace.trim(starttime = starttime, endtime = endtime)
 
     # Trim the spectrograms to the begin and end of the day
     def trim_to_day(self):
@@ -437,6 +437,7 @@ def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts, count_threshold
 
     # Remove the rows with counts below the threshold
     count_df = count_df.loc[count_df["count"] >= count_threshold]
+    count_df.reset_index(drop = True, inplace = True)
 
     return count_df
 
