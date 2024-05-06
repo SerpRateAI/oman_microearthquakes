@@ -635,6 +635,8 @@ def write_geo_spectrogram_block(file, stream_spec, outdir = SPECTROGRAM_DIR, clo
     data_group = file["data"]
     block_group = data_group.create_group(time_label)
     block_group.create_dataset("start_time", data=timeax[0])
+    block_group.create_dataset("num_times", data=len(timeax))
+    block_group.create_dataset("num_freqs", data=len(trace_spec_z.freqs))
 
     # Create the group for storing each component's spectrogram data
     comp_group = block_group.create_group("components")
@@ -713,55 +715,76 @@ def finish_geo_spectrogram_file(file, time_labels):
     file.close()
     print("The spectrogram file is closed.")
     
-# Read specific geophone-spectrogram data blocks from an HDF5 file 
-def read_geo_spectrograms(inpath, time_labels = None):
-    components = GEO_COMPONENTS
+# # Read specific geophone-spectrogram data blocks from an HDF5 file 
+# def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None):
+#     components = GEO_COMPONENTS
 
-    if not isinstance(time_labels, list):
-        if isinstance(time_labels, str):
-            time_labels = [time_labels]
+#     # Determine if the input time information 
+#     if (starttime is not None and endtime is None) or (starttime is None and endtime is not None):
+#         raise ValueError("Error: Both start and end times must be provided!")
+
+#     # Determine if the input time information is redundant
+#     if starttime is not None and endtime is not None and time_labels is not None:
+#         raise ValueError("Error: Time labels and start/end times cannot be given at the same time!")
+
+#     # Convert the time labels to a list
+#     if not isinstance(time_labels, list):
+#         if isinstance(time_labels, str):
+#             time_labels = [time_labels]
     
-    with File(inpath, 'r') as file:
-        # Read the header information
-        header_group = file["headers"]
+#     with File(inpath, 'r') as file:
+#         # Read the header information
+#         header_group = file["headers"]
         
-        station = header_group["station"][()]
-        station = station.decode("utf-8")
+#         station = header_group["station"][()]
+#         station = station.decode("utf-8")
 
-        time_labels_in = header_group["time_labels"][:]
-        time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
+#         time_labels_in = header_group["time_labels"][:]
+#         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
         
-        freq_interval = header_group["frequency_interval"][()]
+#         freq_interval = header_group["frequency_interval"][()]
         
-        window_length = header_group["window_length"][()]
-        overlap = header_group["overlap"][()]
+#         window_length = header_group["window_length"][()]
+#         overlap = header_group["overlap"][()]
         
-        # Read the time labels
-        if time_labels is None:
-            time_labels = time_labels_in
-            
-        data_group = file["data"]
-        stream_spec = StreamSTFTPSD()
-        for time_label in time_labels:
-            block_group = data_group[time_label]
-            starttime = block_group["start_time"][()]
-            starttime = Timestamp(starttime, unit='ns')
+#         if starttime is None and endtime is None:
+#             # Option 1: Read the spectrograms of specific time labels
+#             if time_labels is None:
+#                 time_labels = time_labels_in
+                
+#             data_group = file["data"]
+#             stream_spec = StreamSTFTPSD()
+#             for time_label in time_labels:
+#                 block_group = data_group[time_label]
+#                 starttime = block_group["start_time"][()]
+#                 starttime = Timestamp(starttime, unit='ns')
 
-            comp_group = block_group["components"]
-            for component in components:
-                data = comp_group[component][:]
-    
-                num_freq = data.shape[0]
-                freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
-    
-                num_time = data.shape[1]
-                time_interval = Timedelta(seconds = window_length * (1 - overlap))
-                timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
-            
-                trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
-                stream_spec.append(trace_spec)
+#                 comp_group = block_group["components"]
+#                 for component in components:
+#                     data = comp_group[component][:]
+        
+#                     num_freq = data.shape[0]
+#                     freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+        
+#                     num_time = data.shape[1]
+#                     time_interval = Timedelta(seconds = window_length * (1 - overlap))
+#                     timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
+                
+#                     trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
+#                     stream_spec.append(trace_spec)
+#         else:
+#             # Option 2: Read the spectrograms of a specific time range
+#             # Get the start and end times of each block
+#             block_starttimes = []
+#             block_endtimes = []
+#             for time_label in time_labels_in:
+#                 block_group = file["data"][time_label]
+#                 starttime = block_group["start_time"][()]
+#                 starttime = Timestamp(starttime, unit='ns')
+#                 block_starttimes.append(starttime)
+#                 block_endtimes.append(starttime + Timedelta(seconds = window_length))
 
-    return stream_spec
+#     return stream_spec
 
 # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
 # Each location has its own time axis!

@@ -386,72 +386,150 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
 
 ###### Functions for plotting STFT power spectrograms and related data ######   
 
-# Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
-def plot_3c_waveforms_and_stfts(stream, specdict, 
-                                       linewidth=0.1, xdim_per_comp=10, ydim_per_sta=3, ylim_wf=(-50, 50), dbmin=-50, dbmax=0, ylim_spec=(0, 200), 
-                                       major_tick_spacing=5, minor_tick_spacing=1, station_label_size=12, axis_label_size=12, tick_label_size=12, title_size=15):
-    components = GEO_COMPONENTS
-    vel_label = GROUND_VELOCITY_LABEL_SHORT
+# Plot the 3C seismograms and spectrograms computed using STFT of a list of stations
+def plot_short_term_geo_waveforms_and_stfts(stream_wf, stream_spec,
+                            xdim_per_col = 10, ydim_per_row= 5, 
+                            freq_lim=(0, 490), waveform_lim=(-100, 100),
+                            linewidth=0.1,
+                            dbmin=-30, dbmax=0,
+                            component_label_x = 0.01, component_label_y = 0.96,
+                            date_format = "%Y-%m-%d",
+                            major_vel_spacing=100, minor_vel_spacing=50,
+                            major_time_spacing=30, minor_time_spacing=5,
+                            major_freq_spacing=100, minor_freq_spacing=20,
+                            component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+    
+    # Convert the power to dB
+    stream_spec.to_db()
 
-    stations = get_unique_stations(stream)
-    numsta = len(stations)
+    # Get the list of stations
+    stations_wf = get_unique_stations(stream_wf)
+    stations_spec = stream_spec.get_stations()
 
-    fig, axes = subplots(2 * numsta, 3, figsize=(xdim_per_comp * 3, ydim_per_sta * numsta * 2), sharex=True)
+    if stations_wf != stations_spec:
+        raise ValueError("Inconsistent stations between the waveforms and spectrograms!")
+    
+    stations = stations_wf
+    num_sta = len(stations)
 
-    for i, component in enumerate(components):
-        for j, station in enumerate(stations):
-            trace = stream.select(station=station, component=component)[0]
+    # Generate the figure and axes
+    fig, axes = subplots(6, num_sta, figsize=(xdim_per_col * num_sta, 6 * ydim_per_row), sharex=True)
 
-            # Plot the waveforms
-            signal = trace.data
-            timeax_wf = get_datetime_axis_from_trace(trace)
-
-            ax = axes[2 * j, i]
+    # Loop over the stations
+    for i, station in enumerate(stations):
+        # Loop over the components
+        for j, component in enumerate(GEO_COMPONENTS):
+            # Plot the waveform
+            trace_wf = stream_wf.select(station=station, component=component)[0]
+            waveform = trace_wf.data
+            timeax_wf = get_datetime_axis_from_trace(trace_wf)
             color = get_geo_component_color(component)
-            ax.plot(timeax_wf, signal, color=color, linewidth=linewidth)
 
-            ax.set_ylim(ylim_wf)
-
+            ax = axes[ 2 * j, i]
+            ax.plot(timeax_wf, waveform, color=color, linewidth=linewidth)
+            
             if j == 0:
-                title = component_to_label(component)
-                ax.set_title(f"{title}", fontsize=title_size, fontweight="bold")
-
+                title = station
+                ax.set_title(title, fontsize=title_size, fontweight="bold")
+            
             if i == 0:
-                ax.set_ylabel(vel_label, fontsize=tick_label_size)
-                ax.text(0.01, 0.98, f"{station}", fontsize=station_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top") 
+                format_vel_ylabels(ax, major_tick_spacing=major_vel_spacing, minor_tick_spacing=minor_vel_spacing, tick_label_size=tick_label_size)
 
+            # Plot the spectrogram
+            trace_spec = stream_spec.select(station=station, component=component)[0]
+            timeax_spec = trace_spec.times
+            freqax = trace_spec.freqs
+            spec = trace_spec.data
 
-            # Plot the spectrograms
-            timeax_spec, freqax, spec = specdict[(station, component)]
             ax = axes[2 * j + 1, i]
-            ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
+            power_color = ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
+            label = component_to_label(component)
+            ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
 
-            ax.set_ylim(ylim_spec)
-
-            if j == numsta - 1:
-                ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
+            if j == 2:
+                format_datetime_xlabels(ax, major_tick_spacing=hour2sec(major_time_spacing), minor_tick_spacing=hour2sec(minor_time_spacing), tick_label_size=tick_label_size, date_format=date_format, rotation=time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
             if i == 0:
-                ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
+                format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
 
-    format_datetime_xlabels(axes)
+    # Set the axis limits
+    axes[0, 0].set_xlim(timeax_wf[0], timeax_wf[-1])
+    axes[0, 0].set_ylim(waveform_lim)
+    axes[1, 0].set_ylim(freq_lim)
 
-    fig.patch.set_alpha(0.0)
+    # Add the colorbar
+    bbox = axes[-1, -1].get_position()
+    position = [bbox.x0 + 0.1, bbox.y0, 0.02, bbox.height]
+    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
 
-    return fig, axes
+    return fig, axes, cbar
+    
+# # Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
+# def plot_3c_waveforms_and_stfts(stream, specdict, 
+#                                        linewidth=0.1, xdim_per_comp=10, ydim_per_sta=3, ylim_wf=(-50, 50), dbmin=-50, dbmax=0, ylim_spec=(0, 200), 
+#                                        major_tick_spacing=5, minor_tick_spacing=1, station_label_size=12, axis_label_size=12, tick_label_size=12, title_size=15):
+#     components = GEO_COMPONENTS
+#     vel_label = GROUND_VELOCITY_LABEL_SHORT
+
+#     stations = get_unique_stations(stream)
+#     numsta = len(stations)
+
+#     fig, axes = subplots(2 * numsta, 3, figsize=(xdim_per_comp * 3, ydim_per_sta * numsta * 2), sharex=True)
+
+#     for i, component in enumerate(components):
+#         for j, station in enumerate(stations):
+#             trace = stream.select(station=station, component=component)[0]
+
+#             # Plot the waveforms
+#             signal = trace.data
+#             timeax_wf = get_datetime_axis_from_trace(trace)
+
+#             ax = axes[2 * j, i]
+#             color = get_geo_component_color(component)
+#             ax.plot(timeax_wf, signal, color=color, linewidth=linewidth)
+
+#             ax.set_ylim(ylim_wf)
+
+#             if j == 0:
+#                 title = component_to_label(component)
+#                 ax.set_title(f"{title}", fontsize=title_size, fontweight="bold")
+
+#             if i == 0:
+#                 ax.set_ylabel(vel_label, fontsize=tick_label_size)
+#                 ax.text(0.01, 0.98, f"{station}", fontsize=station_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top") 
+
+
+#             # Plot the spectrograms
+#             timeax_spec, freqax, spec = specdict[(station, component)]
+#             ax = axes[2 * j + 1, i]
+#             ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
+
+#             ax.set_ylim(ylim_spec)
+
+#             if j == numsta - 1:
+#                 ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
+
+#             if i == 0:
+#                 ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
+
+#     format_datetime_xlabels(axes)
+
+#     fig.patch.set_alpha(0.0)
+
+#     return fig, axes
 
 # Plot the 3C long-term geophone spectrograms of a station computed using STFT
 def plot_long_term_geo_stft_spectrograms(stream_spec,
-                            xdim = 15, ydim_per_comp= 5, 
-                            freq_lim=(0, 490), dbmin=-30, dbmax=0,
-                            component_label_x = 0.01, component_label_y = 0.96,
-                            date_format
- = "%Y-%m-%d",
-                            major_time_spacing=24, minor_time_spacing=6, 
-                            major_freq_spacing=100, minor_freq_spacing=20,
-                            component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
-                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right",
-                            plot_total_psd = False, **kwargs):
+                                        xdim = 15, ydim_per_comp= 5, 
+                                        freq_lim=(0, 490), dbmin=-30, dbmax=0,
+                                        component_label_x = 0.01, component_label_y = 0.96,
+                                        date_format = "%Y-%m-%d",
+                                        major_time_spacing=24, minor_time_spacing=6, 
+                                        major_freq_spacing=100, minor_freq_spacing=20,
+                                        component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                                        time_tick_rotation=15, time_tick_va="top", time_tick_ha="right",
+                                        plot_total_psd = False, **kwargs):
     # Convert the power to dB
     stream_spec.to_db()
 
