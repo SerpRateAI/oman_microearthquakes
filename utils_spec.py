@@ -3,7 +3,7 @@ from os.path import join
 from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, max, meshgrid, nan, ones, pi, savez
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, to_datetime
 from h5py import File, special_dtype
@@ -794,47 +794,52 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
                 raise ValueError("Error: Start time must be less than the end time!")
 
             # Get the start and end times of each block
+            block_starttimes = []
+            block_endtimes = []
+            block_numtimes = []
             for time_label in time_labels_in:
                 block_group = file["data"][time_label]
                 starttime = block_group["start_time"][()]
+                num_times = block_group["num_times"][()]
                 starttime = Timestamp(starttime, unit='ns')
+                endtime = starttime + (num_times - 1) * time_interval
                 block_starttimes.append(starttime)
-                block_endtimes.append(starttime + Timedelta(seconds = window_length))
+                block_endtimes.append(endtime)
+                block_numtimes.append(num_times)
 
-            block_timing_df = DataFrame({"time_label": time_labels_in, "start_time": block_starttimes, "end_time": block_endtimes}) 
+            block_timing_df = DataFrame({"time_label": time_labels_in, "start_time": block_starttimes, "end_time": block_endtimes, "num_times": block_numtimes})
 
             # Find the blocks that overlap with the given time range
             overlap_df = block_timing_df.loc[(block_timing_df["start_time"] <= endtime_to_read) & (block_timing_df["end_time"] >= starttime_to_read)]
-
+            if len(overlap_df) == 0:
+                raise ValueError("Error: No data is read!")
+                
             # Read the spectrograms of the overlapping blocks
             stream_spec = StreamSTFTPSD()
             for i, row in overlap_df.iterrows():
                 time_label = row["time_label"]
                 block_group = file["data"][time_label]
 
-                starttime = block_group["start_time"][()]
-                starttime = Timestamp(starttime, unit='ns')
-
-                num_times = block_group["num_times"][()]
-                num_freqs = block_group["num_freqs"][()]
+                starttime_block = row["start_time"]
+                num_times = row["num_times"]
 
                 comp_group = block_group["components"]
                 for component in components:
                     # Find the start and end indices of the time axis
-                    start_index = max([0, int((starttime_to_read - starttime) / time_interval)])
-                    end_index = min([num_times, int((endtime_to_read - starttime) / time_interval)])
+                    start_index = amax([0, int((starttime_to_read - starttime_block) / time_interval)])
+                    end_index = amin([num_times, int((endtime_to_read - starttime_block) / time_interval)])
+                    # print((start_index, end_index))
 
                     # Slice the data matrix
                     data = comp_group[component][min_freq_index:max_freq_index, start_index:end_index]
+                    # print(data.shape)
 
                     # Create the frequency axis
-                    num_freq = data.shape[0]
-                    freqax = linspace(min_freq, (num_freq - 1) * freq_interval, num_freq)
+                    freqax = linspace(min_freq, max_freq, data.shape[0])
         
                     # Create the time axis
-                    num_time = data.shape[1]
-                    time_interval = Timedelta(seconds = window_length * (1 - overlap))
-                    timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
+                    starttime_out = max([starttime_to_read, starttime_block])
+                    timeax = date_range(start = starttime_out, periods = data.shape[1], freq = time_interval)
 
                     # Create the TraceSTFTPSD object
                     trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
