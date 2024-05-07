@@ -519,17 +519,17 @@ def plot_short_term_geo_waveforms_and_stfts(stream_wf, stream_spec,
 
 #     return fig, axes
 
-# Plot the 3C long-term geophone spectrograms of a station computed using STFT
-def plot_long_term_geo_stft_spectrograms(stream_spec,
-                                        xdim = 15, ydim_per_comp= 5, 
-                                        freq_lim=(0, 490), dbmin=-30, dbmax=0,
-                                        component_label_x = 0.01, component_label_y = 0.96,
-                                        date_format = "%Y-%m-%d",
-                                        major_time_spacing=24, minor_time_spacing=6, 
-                                        major_freq_spacing=100, minor_freq_spacing=20,
-                                        component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
-                                        time_tick_rotation=15, time_tick_va="top", time_tick_ha="right",
-                                        plot_total_psd = False, **kwargs):
+# Plot the 3C geophone spectrograms of a station computed using STFT
+def plot_geo_stft_spectrograms(stream_spec,
+                                xdim = 15, ydim_per_comp= 5, 
+                                freq_lim=(0, 490), dbmin=-30, dbmax=0,
+                                component_label_x = 0.01, component_label_y = 0.96,
+                                date_format = "%Y-%m-%d",
+                                major_time_spacing="24h", minor_time_spacing="1h", 
+                                major_freq_spacing=100, minor_freq_spacing=20,
+                                component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
+                                time_tick_rotation=15, time_tick_va="top", time_tick_ha="right",
+                                plot_total_psd = False, **kwargs):
     # Convert the power to dB
     stream_spec.to_db()
 
@@ -584,8 +584,6 @@ def plot_long_term_geo_stft_spectrograms(stream_spec,
     
     ax.set_ylim(freq_lim)
 
-    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
-    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format
  = date_format
 , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
@@ -1996,18 +1994,21 @@ def get_windowed_pm_data(stream_in, window_length):
 
 
 
-## Function to format the x labels in datetime
+# Format the x labels in datetime
 def format_datetime_xlabels(ax, label=True, date_format
- = '%m-%dT%H:%M:%S', major_tick_spacing = 60, minor_tick_spacing = 15, axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
+ = '%m-%dT%H:%M:%S', major_tick_spacing = "24h", minor_tick_spacing = "1h", axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
     if label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
+    # Convert to time deltas
+    major_tick_spacing = Timedelta(major_tick_spacing)
+    minor_tick_spacing = Timedelta(minor_tick_spacing)
+  
+    major_locator = timedelta_to_locator(major_tick_spacing)
+    minor_locator = timedelta_to_locator(minor_tick_spacing)
 
-    ax.xaxis.set_major_formatter(DateFormatter(date_format
-))
-
-    ax.xaxis.set_major_locator(MultipleLocator(sec2day(major_tick_spacing)))
-    ax.xaxis.set_minor_locator(MultipleLocator(sec2day(minor_tick_spacing)))
+    ax.xaxis.set_major_locator(major_locator)
+    ax.xaxis.set_minor_locator(minor_locator)
 
     for label in ax.get_xticklabels():
         label.set_fontsize(tick_label_size) 
@@ -2017,7 +2018,7 @@ def format_datetime_xlabels(ax, label=True, date_format
 
     return ax
 
-## Function format the x labels in relative time
+## Format the x labels in relative time
 def format_rel_time_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12):
     if label:
         ax.set_xlabel("Time (s)", fontsize=axis_label_size)
@@ -2084,7 +2085,7 @@ def format_vel_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=10
 
     return ax
 
-## Function to format the ylabel in pressure
+# Format the ylabel in pressure
 def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=5, minor_tick_spacing=1, axis_label_size=12,  tick_label_size=12):
     if label:
         if abbreviation:
@@ -2101,6 +2102,19 @@ def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spaci
         label.set_horizontalalignment('right')
 
     return ax
+
+# Convert a Timedelta to a datetime locator
+def timedelta_to_locator(time_delta):
+    if time_delta.days > 0:
+        locator = DayLocator(interval=time_delta.days)  # Use DayLocator for days
+    elif time_delta.seconds >= 3600:
+        locator = HourLocator(interval=time_delta.seconds // 3600)  # Use HourLocator for hours
+    elif time_delta.seconds >= 60:
+        locator = MinuteLocator(interval=time_delta.seconds // 60)  # Use MinuteLocator for minutes
+    else:
+        locator = SecondLocator(interval=time_delta.seconds)  # Use SecondLocator for seconds
+
+    return locator
 
 # Add a power colorbar to the plot
 def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=12, tick_label_size=12):
