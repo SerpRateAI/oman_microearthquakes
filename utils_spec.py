@@ -812,7 +812,7 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
             # Find the blocks that overlap with the given time range
             overlap_df = block_timing_df.loc[(block_timing_df["start_time"] <= endtime_to_read) & (block_timing_df["end_time"] >= starttime_to_read)]
             if len(overlap_df) == 0:
-                raise ValueError("Error: No data is read!")
+                print("Warning: No data is read!")
                 
             # Read the spectrograms of the overlapping blocks
             stream_spec = StreamSTFTPSD()
@@ -849,6 +849,34 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
     stream_spec.stitch()
 
     return stream_spec
+
+# Read the headers of a geophone spectrogram file and return them in a dictionary
+def read_geo_spec_headers(inpath):
+    header_dict = {}
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+        
+        station = header_group["station"][()]
+        station = station.decode("utf-8")
+
+        block_type = header_group["block_type"][()]
+        block_type.decode("utf-8")
+
+        window_length = header_group["window_length"][()]
+        overlap = header_group["overlap"][()]
+        freq_interval = header_group["frequency_interval"][()]
+
+        time_labels = header_group["time_labels"][:]
+        time_labels = [time_label.decode("utf-8") for time_label in time_labels]
+
+    header_dict["station"] = station
+    header_dict["block_type"] = block_type
+    header_dict["window_length"] = window_length
+    header_dict["overlap"] = overlap
+    header_dict["frequency_interval"] = freq_interval
+    header_dict["time_labels"] = time_labels
+
+    return header_dict
 
 # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
 # Each location has its own time axis!
