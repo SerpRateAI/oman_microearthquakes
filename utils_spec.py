@@ -3,7 +3,7 @@ from os.path import join
 from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, meshgrid, nan, ones, pi, savez
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, max, meshgrid, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, to_datetime
 from h5py import File, special_dtype
@@ -715,76 +715,135 @@ def finish_geo_spectrogram_file(file, time_labels):
     file.close()
     print("The spectrogram file is closed.")
     
-# # Read specific geophone-spectrogram data blocks from an HDF5 file 
-# def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None):
-#     components = GEO_COMPONENTS
+# Read specific geophone-spectrogram data blocks from an HDF5 file 
+def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None, min_freq = None, max_freq = None):
+    components = GEO_COMPONENTS
 
-#     # Determine if the input time information 
-#     if (starttime is not None and endtime is None) or (starttime is None and endtime is not None):
-#         raise ValueError("Error: Both start and end times must be provided!")
-
-#     # Determine if the input time information is redundant
-#     if starttime is not None and endtime is not None and time_labels is not None:
-#         raise ValueError("Error: Time labels and start/end times cannot be given at the same time!")
-
-#     # Convert the time labels to a list
-#     if not isinstance(time_labels, list):
-#         if isinstance(time_labels, str):
-#             time_labels = [time_labels]
+    # Determine if the both start and end times are provided
+    if (starttime is not None and endtime is None) or (starttime is None and endtime is not None):
+        raise ValueError("Error: Both start and end times must be provided!")
     
-#     with File(inpath, 'r') as file:
-#         # Read the header information
-#         header_group = file["headers"]
-        
-#         station = header_group["station"][()]
-#         station = station.decode("utf-8")
+    # Determine if the input time information is redundant
+    if starttime is not None and endtime is not None and time_labels is not None:
+        raise ValueError("Error: Time labels and start/end times cannot be given at the same time!")
 
-#         time_labels_in = header_group["time_labels"][:]
-#         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
+    # Convert the time labels to a list
+    if not isinstance(time_labels, list):
+        if isinstance(time_labels, str):
+            time_labels = [time_labels]
+    
+    with File(inpath, 'r') as file:
+        # Read the header information
+        header_group = file["headers"]
         
-#         freq_interval = header_group["frequency_interval"][()]
+        station = header_group["station"][()]
+        station = station.decode("utf-8")
+
+        time_labels_in = header_group["time_labels"][:]
+        time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
         
-#         window_length = header_group["window_length"][()]
-#         overlap = header_group["overlap"][()]
+        freq_interval = header_group["frequency_interval"][()]
+        if min_freq is None:
+            min_freq = 0.0
         
-#         if starttime is None and endtime is None:
-#             # Option 1: Read the spectrograms of specific time labels
-#             if time_labels is None:
-#                 time_labels = time_labels_in
+        if max_freq is None:
+            max_freq = 500.0
+        min_freq_index = int(min_freq / freq_interval)
+        max_freq_index = int(max_freq / freq_interval)
+        
+        window_length = header_group["window_length"][()]
+        overlap = header_group["overlap"][()]
+        time_interval = Timedelta(seconds = window_length * (1 - overlap))
+        
+        if starttime is None and endtime is None:
+            # Option 1: Read the spectrograms of specific time labels
+            if time_labels is None:
+                time_labels = time_labels_in
                 
-#             data_group = file["data"]
-#             stream_spec = StreamSTFTPSD()
-#             for time_label in time_labels:
-#                 block_group = data_group[time_label]
-#                 starttime = block_group["start_time"][()]
-#                 starttime = Timestamp(starttime, unit='ns')
+            data_group = file["data"]
+            stream_spec = StreamSTFTPSD()
+            for time_label in time_labels:
+                block_group = data_group[time_label]
+                starttime = block_group["start_time"][()]
+                starttime = Timestamp(starttime, unit='ns')
 
-#                 comp_group = block_group["components"]
-#                 for component in components:
-#                     data = comp_group[component][:]
+                comp_group = block_group["components"]
+                for component in components:
+                    data = comp_group[component][min_freq_index:max_freq_index, :]
         
-#                     num_freq = data.shape[0]
-#                     freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+                    num_freq = data.shape[0]
+                    freqax = linspace(min_freq, (num_freq - 1) * freq_interval, num_freq)
         
-#                     num_time = data.shape[1]
-#                     time_interval = Timedelta(seconds = window_length * (1 - overlap))
-#                     timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
+                    num_time = data.shape[1]
+                    
+                    timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
                 
-#                     trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
-#                     stream_spec.append(trace_spec)
-#         else:
-#             # Option 2: Read the spectrograms of a specific time range
-#             # Get the start and end times of each block
-#             block_starttimes = []
-#             block_endtimes = []
-#             for time_label in time_labels_in:
-#                 block_group = file["data"][time_label]
-#                 starttime = block_group["start_time"][()]
-#                 starttime = Timestamp(starttime, unit='ns')
-#                 block_starttimes.append(starttime)
-#                 block_endtimes.append(starttime + Timedelta(seconds = window_length))
+                    trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
+                    stream_spec.append(trace_spec)
+        else:
+            # Option 2: Read the spectrograms of a specific time range
+            # Convert the start and end times to Timestamp objects
+            if isinstance(starttime, str):
+                starttime_to_read = Timestamp(starttime)
+            
+            if isinstance(endtime, str):
+                endtime_to_read = Timestamp(endtime)
+            
+            # Check the start time is greater than the end time
+            if starttime_to_read > endtime_to_read:
+                raise ValueError("Error: Start time must be less than the end time!")
 
-#     return stream_spec
+            # Get the start and end times of each block
+            for time_label in time_labels_in:
+                block_group = file["data"][time_label]
+                starttime = block_group["start_time"][()]
+                starttime = Timestamp(starttime, unit='ns')
+                block_starttimes.append(starttime)
+                block_endtimes.append(starttime + Timedelta(seconds = window_length))
+
+            block_timing_df = DataFrame({"time_label": time_labels_in, "start_time": block_starttimes, "end_time": block_endtimes}) 
+
+            # Find the blocks that overlap with the given time range
+            overlap_df = block_timing_df.loc[(block_timing_df["start_time"] <= endtime_to_read) & (block_timing_df["end_time"] >= starttime_to_read)]
+
+            # Read the spectrograms of the overlapping blocks
+            stream_spec = StreamSTFTPSD()
+            for i, row in overlap_df.iterrows():
+                time_label = row["time_label"]
+                block_group = file["data"][time_label]
+
+                starttime = block_group["start_time"][()]
+                starttime = Timestamp(starttime, unit='ns')
+
+                num_times = block_group["num_times"][()]
+                num_freqs = block_group["num_freqs"][()]
+
+                comp_group = block_group["components"]
+                for component in components:
+                    # Find the start and end indices of the time axis
+                    start_index = max([0, int((starttime_to_read - starttime) / time_interval)])
+                    end_index = min([num_times, int((endtime_to_read - starttime) / time_interval)])
+
+                    # Slice the data matrix
+                    data = comp_group[component][min_freq_index:max_freq_index, start_index:end_index]
+
+                    # Create the frequency axis
+                    num_freq = data.shape[0]
+                    freqax = linspace(min_freq, (num_freq - 1) * freq_interval, num_freq)
+        
+                    # Create the time axis
+                    num_time = data.shape[1]
+                    time_interval = Timedelta(seconds = window_length * (1 - overlap))
+                    timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
+
+                    # Create the TraceSTFTPSD object
+                    trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
+                    stream_spec.append(trace_spec)
+    
+    # Stitch the spectrograms if there are multiple blocks
+    stream_spec.stitch()
+
+    return stream_spec
 
 # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
 # Each location has its own time axis!
