@@ -2009,6 +2009,7 @@ def format_datetime_xlabels(ax, label=True, date_format
 
     ax.xaxis.set_major_locator(major_locator)
     ax.xaxis.set_minor_locator(minor_locator)
+    ax.xaxis.set_major_formatter(DateFormatter(date_format))
 
     for label in ax.get_xticklabels():
         label.set_fontsize(tick_label_size) 
