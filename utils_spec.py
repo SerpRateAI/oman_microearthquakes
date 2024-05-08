@@ -8,6 +8,7 @@ from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, to_datetime
 from h5py import File, special_dtype
 from multitaper import MTSpec
+from multiprocessing import Pool
 
 from utils_basic import GEO_COMPONENTS
 from utils_basic import SPECTROGRAM_DIR 
@@ -322,44 +323,7 @@ class TraceSTFTPSD:
 
         self.trim_time(start_of_day, end_of_day)
 
-    # Find spectral peaks satisfying the given criteria
-    # The power threshold is in dB!
-    def find_spectral_peaks(self, prom_threshold, rbw_threshold, freqmin = None, freqmax = None):
-        # Convert to dB
-        self.to_db()
 
-        # Trim the data to the given frequency range
-        if freqmin is None:
-            freqmin = self.freqs[0]
-
-        if freqmax is None:
-            freqmax = self.freqs[-1]
-
-        freq_inds = (self.freqs >= freqmin) & (self.freqs <= freqmax)
-        freqax = self.freqs[freq_inds]
-        data = self.data[freq_inds, :]
-
-        # Find the spectral peaks
-        peak_freqs = []
-        peak_times = []
-        peak_powers = []
-        peak_rbws = []
-        for i, time in enumerate(self.times):
-            power = data[:, i]
-            peak_inds, _ = find_peaks(power, prominence = prom_threshold)
-
-            for j in peak_inds:
-                freq = freqax[j]
-                _, rbw = get_quality_factor(freqax, power, freq)
-                if rbw >= rbw_threshold:
-                    peak_freqs.append(freq)
-                    peak_times.append(time)
-                    peak_powers.append(power[j])
-                    peak_rbws .append(rbw)
-        
-        peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
-
-        return peak_df
 
 ######
 # Functions
@@ -565,6 +529,60 @@ def downsample_stft_freqax(freqax, factor=1000):
     freqax = freqax.mean(axis=1)
 
     return freqax
+
+# Find spectral peaks satisfying the given criteria
+# The function runs in parallel using the given number of processes
+# The power threshold is in dB!
+def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
+    # Trim the data to the given frequency range
+    if freqmin is None:
+        freqmin = trace_spec.freqs[0]
+
+    if freqmax is None:
+        freqmax = trace_spec.freqs[-1]
+
+    freq_inds = (trace_spec.freqs >= freqmin) & (trace_spec.freqs <= freqmax)
+    freqax = trace_spec.freqs[freq_inds]
+    data = trace_spec.data[freq_inds, :]
+
+    data = power2db(data)
+
+    # Divide the data into chunks
+    num_chunks = num_process
+    chunk_size = data.shape[1] // num_chunks
+    data_chunks = [data[:, i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+
+    # Find the spectral peaks in parallel
+    print(f"Finding the spectral-peak indices in {num_process} processes...")
+    with Pool(num_process) as pool:
+        results = pool.starmap(find_spectral_peak_indices, [(data_chunk, prom_threshold) for data_chunk in data_chunks])
+
+    # Concatenate the results
+    time_freq_inds = []
+    for result in results:
+        time_freq_inds.extend(result)
+
+    return time_freq_inds
+
+# Find the time and frequency indices of spectral peaks exceeding the given prominence
+def find_spectral_peak_indices(power, prominence_threshold):
+    time_freq_inds = []
+    for i in range(power.shape[1]):
+        power = power[:, i]
+        freq_inds, _ = find_peaks(power, prominence = prominence_threshold)
+
+        for j in freq_inds:
+            time_freq_inds.append((i, j))
+
+    #         if rbw >= rbw_threshold:
+    #             peak_freqs.append(freq)
+    #             peak_times.append(time)
+    #             peak_powers.append(power[j])
+    #             peak_rbws .append(rbw)
+    
+    # peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
+
+    return time_freq_inds
 
 # Assemble the name of a spectrogram file
 def assemble_spec_filename(range_type, block_type, sensor_type, station, window_length, overlap, downsample, **kwargs):
