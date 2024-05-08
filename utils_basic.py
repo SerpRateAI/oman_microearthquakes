@@ -11,6 +11,8 @@ from obspy import UTCDateTime, read_inventory
 
 ## Constants
 
+POWER_FLOOR = 1e-50
+
 ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
 ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
@@ -137,6 +139,7 @@ def power2db(power, reference_type=None, **kwargs):
         raise ValueError("Invalid reference type!")
     
     power = power / reference
+    power[ power < POWER_FLOOR ] = POWER_FLOOR
     db = 10 * log10(power)
 
     return db

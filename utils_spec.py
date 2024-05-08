@@ -597,6 +597,9 @@ def downsample_stft_freqax(freqax, factor=1000):
 # The function runs in parallel using the given number of processes
 # The power threshold is in dB!
 def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
+    # Convert the trace to dB
+    trace_spec.to_db()
+    
     # Trim the data to the given frequency range
     if freqmin is None:
         freqmin = trace_spec.freqs[0]
@@ -608,7 +611,6 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_t
     freqax = trace_spec.freqs[freq_inds]
     data = trace_spec.data[freq_inds, :]
 
-    data = power2db(data)
     timeax = trace_spec.times
 
     # Divide the data and time axis into chunks for parallel processing
@@ -618,12 +620,12 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_t
     time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
 
     # Construct the arguments for the parallel processing
-    args = [(data_chunk, time_chunk, freqax, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
+    args = [(time_chunk, freqax, data_chunk, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
 
     # Find the spectral peaks in parallel
     print(f"Finding the spectral peaks in {num_process} processes...")
     with Pool(num_process) as pool:
-        results = pool.starmap(find_spectral_peak_indices, args)
+        results = pool.starmap(find_spectral_peaks, args)
 
     # Concatenate the results
     peak_df = concat(results, ignore_index=True)
@@ -1017,9 +1019,15 @@ def read_spectral_peak_bin_counts(inpath):
 
     return peak_df
 
-# Write the spectral peaks to a CSV file
-def save_spectral_peaks(peak_df, outpath):
+# Save the spectral peaks to a CSV file
+def save_spectral_peaks_to_csv(peak_df, outpath):
     peak_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
+    print(f"Results saved to {outpath}")
+
+# Save the spectral peaks to an HDF file
+def save_spectral_peaks_to_hdf(peak_df, outpath):
+    peak_df.to_hdf(outpath, key = "peaks", mode = "w")
+    print(f"Results saved to {outpath}")
 
 # Save spectral-peak bin counts to an HDF5 file
 def save_spectral_peak_bin_counts(time_bin_centers, freq_bin_centers, counts, outpath):
