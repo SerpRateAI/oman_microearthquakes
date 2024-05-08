@@ -332,9 +332,10 @@ class TraceSTFTPSD:
 ###### Functions for handling STFT spectrograms ######
 
 # Find spectral peaks in the spectrograms of a geophone station
+# The function runs in parallel using the given number of processes
 # A Pandas DataFrame containing the frequency, time, power, and quality factor of each peak is returned
 # The power threshold is in dB!
-def find_geo_station_spectral_peaks(stream_spec, rbw_threshold = 0.2, prom_threshold = 5, freqmin = None, freqmax = None):
+def find_geo_station_spectral_peaks(stream_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
     # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of components!")
@@ -342,10 +343,72 @@ def find_geo_station_spectral_peaks(stream_spec, rbw_threshold = 0.2, prom_thres
     # Compute the total power spectrogram
     trace_spec_total = stream_spec.get_total_power()
 
-    # Find the spectral peaks in each component
-    peak_df = trace_spec_total.find_spectral_peaks(prom_threshold, rbw_threshold, freqmin = freqmin, freqmax = freqmax)
+    # Find the spectral peaks in the total power spectrogram
+    peak_df = find_trace_spectral_peaks(trace_spec_total, num_process, prom_threshold, rbw_threshold, freqmin, freqmax)
 
     return peak_df, trace_spec_total
+
+# Find spectral peaks satisfying the given criteria
+# The function runs in parallel using the given number of processes
+# The power threshold is in dB!
+def find_trace_spectral_peaks(trace_spec, num_process, prom_threshol, rbw_threshold, freqmin, freqmax):
+    # Trim the data to the given frequency range
+    if freqmin is None:
+        freqmin = trace_spec.freqs[0]
+
+    if freqmax is None:
+        freqmax = trace_spec.freqs[-1]
+
+    freq_inds = (trace_spec.freqs >= freqmin) & (trace_spec.freqs <= freqmax)
+    freqax = trace_spec.freqs[freq_inds]
+    data = trace_spec.data[freq_inds, :]
+
+    data = power2db(data)
+    timeax = trace_spec.times
+
+    # Divide the data and time axis into chunks for parallel processing
+    num_chunks = num_process
+    chunk_size = data.shape[1] // num_chunks
+    data_chunks = [data[:, i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+    time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+
+    # Construct the arguments for the parallel processing
+    args = [(data_chunk, time_chunk, freqax, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
+
+    # Find the spectral peaks in parallel
+    print(f"Finding the spectral peaks in {num_process} processes...")
+    with Pool(num_process) as pool:
+        results = pool.starmap(find_spectral_peak_indices, args)
+
+    # Concatenate the results
+    peak_df = concat(results, ignore_index=True)
+
+    return peak_df
+
+# Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
+def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
+    peak_freqs = []
+    peak_times = []
+    peak_powers = []
+    peak_rbws = []
+    for i, peak_time in enumerate(timeax):
+        power_column = power[:, i]
+        freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
+
+        for j in freq_inds:
+            peak_freq = freqax[j]
+            peak_power = power_column[j]
+            _, rbw = get_quality_factor(freqax, power_column, peak_freq)
+
+            if rbw >= rbw_threshold:
+                peak_freqs.append(peak_freq)
+                peak_times.append(peak_time)
+                peak_powers.append(peak_power)
+                peak_rbws.append(rbw)
+
+    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
+
+    return peak_df
 
 
 # Group the spectral-peak detections by time and frequency
@@ -546,43 +609,51 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_t
     data = trace_spec.data[freq_inds, :]
 
     data = power2db(data)
+    timeax = trace_spec.times
 
-    # Divide the data into chunks
+    # Divide the data and time axis into chunks for parallel processing
     num_chunks = num_process
     chunk_size = data.shape[1] // num_chunks
     data_chunks = [data[:, i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+    time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+
+    # Construct the arguments for the parallel processing
+    args = [(data_chunk, time_chunk, freqax, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
 
     # Find the spectral peaks in parallel
-    print(f"Finding the spectral-peak indices in {num_process} processes...")
+    print(f"Finding the spectral peaks in {num_process} processes...")
     with Pool(num_process) as pool:
-        results = pool.starmap(find_spectral_peak_indices, [(data_chunk, prom_threshold) for data_chunk in data_chunks])
+        results = pool.starmap(find_spectral_peak_indices, args)
 
     # Concatenate the results
-    time_freq_inds = []
-    for result in results:
-        time_freq_inds.extend(result)
+    peak_df = concat(results, ignore_index=True)
 
-    return time_freq_inds
+    return peak_df
 
-# Find the time and frequency indices of spectral peaks exceeding the given prominence
-def find_spectral_peak_indices(power, prominence_threshold):
-    time_freq_inds = []
-    for i in range(power.shape[1]):
+# Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
+def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
+    peak_freqs = []
+    peak_times = []
+    peak_powers = []
+    peak_rbws = []
+    for i, peak_time in enumerate(timeax):
         power_column = power[:, i]
         freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
 
         for j in freq_inds:
-            time_freq_inds.append((i, j))
+            peak_freq = freqax[j]
+            peak_power = power_column[j]
+            _, rbw = get_quality_factor(freqax, power_column, peak_freq)
 
-    #         if rbw >= rbw_threshold:
-    #             peak_freqs.append(freq)
-    #             peak_times.append(time)
-    #             peak_powers.append(power[j])
-    #             peak_rbws .append(rbw)
-    
-    # peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
+            if rbw >= rbw_threshold:
+                peak_freqs.append(peak_freq)
+                peak_times.append(peak_time)
+                peak_powers.append(peak_power)
+                peak_rbws.append(rbw)
 
-    return time_freq_inds
+    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
+
+    return peak_df
 
 # Assemble the name of a spectrogram file
 def assemble_spec_filename(range_type, block_type, sensor_type, station, window_length, overlap, downsample, **kwargs):
