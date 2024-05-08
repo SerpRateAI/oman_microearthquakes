@@ -568,8 +568,8 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_t
 def find_spectral_peak_indices(power, prominence_threshold):
     time_freq_inds = []
     for i in range(power.shape[1]):
-        power = power[:, i]
-        freq_inds, _ = find_peaks(power, prominence = prominence_threshold)
+        power_column = power[:, i]
+        freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
 
         for j in freq_inds:
             time_freq_inds.append((i, j))
