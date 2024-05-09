@@ -1014,6 +1014,9 @@ def read_spectral_peaks(inpath, **kwargs):
         file_format = kwargs["file_format"]
     else:
         _, file_format = splitext(inpath)
+        file_format = file_format.replace(".", "")
+
+    # print(file_format)
         
     if file_format == "csv":
         peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])

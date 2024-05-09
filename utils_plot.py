@@ -735,7 +735,7 @@ def plot_array_spec_peak_bin_counts(count_df,
                             size_scale = 5,
                             example_counts = array([5, 20, 35]),
                             xdim = 15, ydim = 5, 
-                            starttime = STARTTIME_GEO, endtime = ENDTIME_GEO,freq_lim = (0, 490),
+                            starttime = STARTTIME_GEO, endtime = ENDTIME_GEO, freq_lim = (0, 490),
                             date_format = "%Y-%m-%d",
                             major_time_spacing="24h", minor_time_spacing="6h", 
                             major_freq_spacing=100, minor_freq_spacing=20,
@@ -744,10 +744,10 @@ def plot_array_spec_peak_bin_counts(count_df,
 
     # Trim the counts to the specified time range
     if not isinstance(starttime, Timestamp):
-        starttime = Timestamp(starttime, tz="UTC")
+        starttime = Timestamp(starttime)
     
     if not isinstance(endtime, Timestamp):
-        endtime = Timestamp(endtime, tz="UTC")
+        endtime = Timestamp(endtime)
 
     count_df = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime)]
 
@@ -772,8 +772,6 @@ def plot_array_spec_peak_bin_counts(count_df,
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Format the time axis
-    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
-    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
                             , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
