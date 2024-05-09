@@ -11,7 +11,7 @@ from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocat
 from matplotlib.colors import LogNorm, Normalize
 from matplotlib.ticker import MultipleLocator
 
-from utils_basic import GEO_STATIONS, GEO_COMPONENTS, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
+from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import days_to_timestamps, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
@@ -735,16 +735,24 @@ def plot_array_spec_peak_bin_counts(count_df,
                             size_scale = 5,
                             example_counts = array([5, 20, 35]),
                             xdim = 15, ydim = 5, 
-                            freq_lim = (0, 490),
+                            starttime = STARTTIME_GEO, endtime = ENDTIME_GEO,freq_lim = (0, 490),
                             date_format = "%Y-%m-%d",
-                            major_time_spacing=24, minor_time_spacing=6, 
+                            major_time_spacing="24h", minor_time_spacing="6h", 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
 
+    # Trim the counts to the specified time range
+    if not isinstance(starttime, Timestamp):
+        starttime = Timestamp(starttime, tz="UTC")
+    
+    if not isinstance(endtime, Timestamp):
+        endtime = Timestamp(endtime, tz="UTC")
+
+    count_df = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime)]
+
     # Calculate the marker sizes
     counts = count_df["count"]
-    #marker_sizes = (log(counts) - log(counts.min())) / (log(counts.max()) - log(counts.min())) * size_scale
     marker_sizes = (counts - counts.min()) / (counts.max() - counts.min()) * size_scale
     
     # Plot the detection counts
@@ -777,7 +785,7 @@ def plot_array_spec_peak_bin_counts(count_df,
     ax.set_ylim(freq_lim)
 
     # Add the title
-    ax.set_title("Array bin counts", fontsize = title_size, fontweight = "bold")
+    ax.set_title("Array detection bin counts", fontsize = title_size, fontweight = "bold")
 
     return fig, ax
 

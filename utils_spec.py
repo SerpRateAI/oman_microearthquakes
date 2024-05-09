@@ -1,11 +1,11 @@
 # Functions and classes for spectrum analysis
-from os.path import join
+from os.path import join, splitext
 from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
-from pandas import concat, cut, date_range, read_csv, to_datetime
+from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
 from h5py import File, special_dtype
 from multitaper import MTSpec
 from multiprocessing import Pool
@@ -411,8 +411,8 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
     return peak_df
 
 
-# Group the spectral-peak detections by time and frequency
-def group_spectral_peaks(peak_df, starttime, endtime, time_bin_width = "1min", min_freq = 0.0, max_freq = 500.0, freq_bin_width = 1.0):
+# Group the spectral-peak detections into regular time and frequency bins
+def group_spectral_peaks_regular_bins(peak_df, starttime, endtime, time_bin_width = "1min", min_freq = 0.0, max_freq = 500.0, freq_bin_width = 1.0):
     # Define the frequency bins
     num_freq_bins = int((max_freq - min_freq) / freq_bin_width)
     freq_bin_edges = linspace(min_freq, max_freq, num_freq_bins + 1)
@@ -1007,50 +1007,66 @@ def read_hydro_spectrograms(inpath):
 
         return stream_spec    
 
-# Read detected spectral peaks from a CSV file
-def read_spectral_peaks(inpath):
-    peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
-
-    return peak_df
-
-# Read spectral peak bin counts from a CSV file
-def read_spectral_peak_bin_counts(inpath):
-    peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
-
-    return peak_df
-
-# Save the spectral peaks to a CSV file
-def save_spectral_peaks_to_csv(peak_df, outpath):
-    peak_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
-    print(f"Results saved to {outpath}")
-
-# Save the spectral peaks to an HDF file
-def save_spectral_peaks_to_hdf(peak_df, outpath):
-    peak_df.to_hdf(outpath, key = "peaks", mode = "w")
-    print(f"Results saved to {outpath}")
-
-# Save spectral-peak bin counts to an HDF5 file
-def save_spectral_peak_bin_counts(time_bin_centers, freq_bin_centers, counts, outpath):
-    min_freq = freq_bin_centers[0]
-    freq_int = freq_bin_centers[1] - freq_bin_centers[0]
-
-    starttime = time_bin_centers[0]
-    time_int = time_bin_centers[1] - time_bin_centers[0]
-    
-    with File(outpath, 'w') as file:
-        header_group = file.create_group("headers")
+# Read detected spectral peaks from a CSV or HDF file
+def read_spectral_peaks(inpath, **kwargs):
+    # If the file format is not given, infer it from the file extension
+    if "file_format" in kwargs:
+        file_format = kwargs["file_format"]
+    else:
+        _, file_format = splitext(inpath)
         
-        header_group.create_dataset("min_frequency", data = min_freq)
-        header_group.create_dataset("frequency_interval", data = freq_int)
+    if file_format == "csv":
+        peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
+    elif file_format == "h5" or file_format == "hdf":
+        peak_df = read_hdf(inpath, key = "peaks")
+    else:
+        raise ValueError("Error: Invalid file format!")
 
-        header_group.create_dataset("start_time", data = starttime.value)
-        header_group.create_dataset("time_interval", data = time_int.value)
+    return peak_df
 
-        data_group = file.create_group("data")
+# Save the detected spectral peaks to a CSV or HDF file
+def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
+    if file_format == "csv":
+        outpath = join(outdir, f"{file_stem}.csv")
+        peak_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
+    elif file_format == "h5" or file_format == "hdf":
+        outpath = join(outdir, f"{file_stem}.h5")
+        peak_df.to_hdf(outpath, key = "peaks", mode = "w")
+    else:
+        raise ValueError("Error: Invalid file format!")
 
-        data_group.create_dataset("bin_count", data = counts)
+    print(f"Results saved to {outpath}")
 
-    print(f"Bin counts saved to {outpath}")
+# Read spectral peak bin counts from a CSV or HDF file
+def read_spectral_peak_bin_counts(inpath, **kwargs):
+    # If the file format is not given, infer it from the file extension
+    if "file_format" in kwargs:
+        file_format = kwargs["file_format"]
+    else:
+        _, file_format = splitext(inpath)
+
+    if file_format == "csv":
+        count_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
+    elif file_format == "h5" or file_format == "hdf":
+        count_df = read_hdf(inpath, key = "counts")
+    else:
+        raise ValueError("Error: Invalid file format!")
+
+    return count_df
+
+# Save spectral-peak bin counts to a CSV or HDF file
+def save_spectral_peak_bin_counts(count_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
+    if file_format == "csv":
+        outpath = join(outdir, f"{file_stem}.csv")
+        count_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
+    elif file_format == "h5" or file_format == "hdf":
+        outpath = join(outdir, f"{file_stem}.h5")
+        count_df.to_hdf(outpath, key = "counts", mode = "w")
+    else:
+        raise ValueError("Error: Invalid file format!")
+
+    print(f"Results saved to {outpath}")
+
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    
