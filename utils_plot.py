@@ -794,7 +794,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
                             xdim = 15, ydim_per_row = 5,
                             freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             date_format = "%Y-%m-%d",
-                            major_time_spacing=24, minor_time_spacing=6, 
+                            major_time_spacing="24h", minor_time_spacing="6h", 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             panel_label_x = 0.01, panel_label_y = 0.96, panel_label_size=12, 
                             axis_label_size=12, tick_label_size=10, title_size=15,
@@ -888,8 +888,6 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Format the time axis
-    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
-    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
                             , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
