@@ -412,36 +412,17 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
 
 
 # Group the spectral-peak detections into regular time and frequency bins
-def group_spectral_peaks_regular_bins(peak_df, starttime, endtime, time_bin_width = "1min", min_freq = 0.0, max_freq = 500.0, freq_bin_width = 1.0):
-    # Define the frequency bins
-    num_freq_bins = int((max_freq - min_freq) / freq_bin_width)
-    freq_bin_edges = linspace(min_freq, max_freq, num_freq_bins + 1)
-    freq_bin_centers = freq_bin_edges + freq_bin_width / 2
-    freq_bin_centers = freq_bin_centers[:-1]
-
-    # Define the time bins
-    if isinstance(starttime, str):
-        starttime = Timestamp(starttime)
-
-    if isinstance(endtime, str):
-        endtime = Timestamp(endtime)
-
-    starttime = Timestamp(starttime)
-    endtime = Timestamp(endtime)
-    time_bin_edges = date_range(starttime, endtime, freq=time_bin_width)
-    time_delta = time_bin_edges[1] - time_bin_edges[0]
-    time_bin_centers = [time + time_delta / 2 for time in time_bin_edges]
-    time_bin_centers = time_bin_centers[:-1]
+def group_spectral_peaks_regular_bins(peak_df, time_bin_edges, freq_bin_edges):
 
     # Group the spectral peaks
     peak_df['time_bin'] = cut(peak_df["time"], time_bin_edges, include_lowest=True, right=False)
     peak_df['freq_bin'] = cut(peak_df["frequency"], freq_bin_edges, include_lowest=True, right=False)
     
     grouped = peak_df.groupby(['time_bin', 'freq_bin'], observed = False).size().unstack(fill_value=0)
-    detect_counts = grouped.values
-    detect_counts = detect_counts.T
+    bin_counts = grouped.values
+    bin_counts = bin_counts.T
 
-    return time_bin_centers, freq_bin_centers, detect_counts
+    return bin_counts
 
 # Convert the spectral-peak bin counts to a DataFrame
 def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts, count_threshold = 1):
@@ -1047,6 +1028,7 @@ def read_spectral_peak_bin_counts(inpath, **kwargs):
         file_format = kwargs["file_format"]
     else:
         _, file_format = splitext(inpath)
+        file_format = file_format.replace(".", "")
 
     if file_format == "csv":
         count_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
