@@ -3,7 +3,7 @@ from os.path import join, splitext
 from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
 from h5py import File, special_dtype
@@ -322,6 +322,21 @@ class TraceSTFTPSD:
         end_of_day = ref_time.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         self.trim_time(start_of_day, end_of_day)
+
+    # Pad and resample the spectrogram to a given time axis
+    def resample_time(self, timeax_out):
+        # Convert the input and output time axes to integers
+        timeax_in = self.times
+        timeax_in = datetime2int(timeax_in)
+
+        timeax_out = datetime2int(timeax_out)
+
+
+        for row in self.data:
+            data_out.append(interp(timeax_out, self.times, row))
+
+        self.times = timeax_out
+        self.data = array(data_out)
 
 
 
