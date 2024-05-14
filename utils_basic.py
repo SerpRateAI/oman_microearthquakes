@@ -2,7 +2,7 @@
 
 ## Import libraries
 from os.path import join
-from numpy import amax, array, log10
+from numpy import amax, array, log10, ndarray
 from scipy.stats import gmean
 from pandas import Timestamp, Timedelta, DatetimeIndex
 from pandas import Series
@@ -235,7 +235,7 @@ def datetime2int(datetimes):
 
 # Function to convert a list of integers representing nanoseconds since the Unix epoch to a DateTimeIndex object
 def int2datetime(ints):
-    if not isinstance(ints, array):
+    if not isinstance(ints, ndarray):
         ints = array(ints)
 
     datetimes = DatetimeIndex(ints)

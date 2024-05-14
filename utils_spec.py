@@ -4,7 +4,7 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from scipy.interpolate import RegularGridInterpolator
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez, zeros
 from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
 from h5py import File, special_dtype
@@ -353,8 +353,8 @@ class TraceSTFTPSD:
         for i in range(num_freqs):
             row = self.data[i, :]
             
-        interpolator = RegularGridInterpolator((timeax_in,), row, bounds_error=False, fill_value=nan, method='nearest')
-        data_out[i, :] = interpolator(timeax_out)
+            interpolator = RegularGridInterpolator((timeax_in,), row, bounds_error=False, fill_value=nan, method='nearest')
+            data_out[i, :] = interpolator(timeax_out)
 
         timeax_out = int2datetime(timeax_out)
         self.times = timeax_out
@@ -373,8 +373,10 @@ class TraceSTFTPSD:
 
     # Set the time label of the trace
     def set_time_label(self, block_type):
-        num_time = len(timeax)
-        ref_time = timeax[num_time // 2]
+        num_times = self.num_times
+        timeax = self.times
+        
+        ref_time = timeax[num_times // 2]
         if block_type == "daily":
             start_of_block = ref_time.replace(hour=0, minute=0, second=0, microsecond=0)
         elif block_type == "hourly":

@@ -1,7 +1,7 @@
 # Classes and functions for operations using PyTorch
 from torch import Tensor
 from torch import abs, hann_window, square, stft, sum, tensor
-from numpy import linspace
+from numpy import linspace, round
 
 from utils_basic import SPECTROGRAM_DIR
 from utils_basic import power2db, reltimes_to_timestamps
@@ -13,97 +13,97 @@ from utils_spec import downsample_stft_stream_freq
 # Functions
 ######
     
-# Compute hourly spectrograms of a geophone station from a day-long stream object
-# Window length is in SECONDS!
-# Hours with missing data on ANY of the components are skipped
-def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
-    if downsample and downsample_factor is None:
-        raise ValueError("The downsample factor is not set!")
+# # Compute hourly spectrograms of a geophone station from a day-long stream object
+# # Window length is in SECONDS!
+# # Hours with missing data on ANY of the components are skipped
+# def get_hourly_geo_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
+#     if downsample and downsample_factor is None:
+#         raise ValueError("The downsample factor is not set!")
 
-    station = stream_day[0].stats.station
-    starttime_day = stream_day[0].stats.starttime
-    starttime_day = starttime_day.replace(hour=0, minute=0, second=0, microsecond=0)
-    stream_spec_out = StreamSTFTPSD()
-    stream_spec_ds_out = StreamSTFTPSD()
+#     station = stream_day[0].stats.station
+#     starttime_day = stream_day[0].stats.starttime
+#     starttime_day = starttime_day.replace(hour=0, minute=0, second=0, microsecond=0)
+#     stream_spec_out = StreamSTFTPSD()
+#     stream_spec_ds_out = StreamSTFTPSD()
 
-    for hour in range(24):
-        starttime_hour = starttime_day + hour * 3600.0
-        endtime_hour = starttime_hour + 3600.0
-        stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
+#     for hour in range(24):
+#         starttime_hour = starttime_day + hour * 3600.0
+#         endtime_hour = starttime_hour + 3600.0
+#         stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
 
-        print(f"Computing the spectrograms for starttime {starttime_hour}...")
+#         print(f"Computing the spectrograms for starttime {starttime_hour}...")
         
-        if stream_hour is None:
-            print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
-            continue
-        elif stream_hour[0].stats.npts < 3600001:
-            print(f"The length of the data is less than 1 hour for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
-            continue
+#         if stream_hour is None:
+#             print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
+#             continue
+#         elif stream_hour[0].stats.npts < 3600001:
+#             print(f"The length of the data is less than 1 hour for {station} between {starttime_hour} and {endtime_hour}! Skipped.")
+#             continue
 
-        stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
-        stream_spec_out.extend(stream_spec)
+#         stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
+#         stream_spec_out.extend(stream_spec)
         
-        if downsample:
-            print(f"Downsampling the spectrograms...")
-            stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
-            stream_spec_ds_out.extend(stream_spec_ds)    
+#         if downsample:
+#             print(f"Downsampling the spectrograms...")
+#             stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
+#             stream_spec_ds_out.extend(stream_spec_ds)    
 
-    return stream_spec_out, stream_spec_ds_out
+#     return stream_spec_out, stream_spec_ds_out
 
-# Compute hourly spectrograms for ALL locations of a hydrophone station from a day-long stream object
-# Window length is in SECONDS!
-# Hours with missing data on ANY of the locations are skipped
-def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
-    if downsample and downsample_factor is None:
-        raise ValueError("The downsample factor is not set!")
+# # Compute hourly spectrograms for ALL locations of a hydrophone station from a day-long stream object
+# # Window length is in SECONDS!
+# # Hours with missing data on ANY of the locations are skipped
+# def get_hourly_hydro_spectrograms_for_a_day(stream_day, window_length = 1.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
+#     if downsample and downsample_factor is None:
+#         raise ValueError("The downsample factor is not set!")
 
-    num_loc_in = len(stream_day)
+#     num_loc_in = len(stream_day)
     
-    station = stream_day[0].stats.station
-    starttime_day = stream_day[0].stats.starttime
-    starttime_day = starttime_day.replace(hour=0, minute=0, second=0, microsecond=0)
-    stream_spec_out = StreamSTFTPSD()
-    stream_spec_ds_out = StreamSTFTPSD()
+#     station = stream_day[0].stats.station
+#     starttime_day = stream_day[0].stats.starttime
+#     starttime_day = starttime_day.replace(hour=0, minute=0, second=0, microsecond=0)
+#     stream_spec_out = StreamSTFTPSD()
+#     stream_spec_ds_out = StreamSTFTPSD()
 
-    # Loop over the hours of the day
-    for hour in range(24):
-        starttime_hour = starttime_day + hour * 3600.0
-        endtime_hour = starttime_hour + 3600.0
-        stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
-        skip_hour = False
+#     # Loop over the hours of the day
+#     for hour in range(24):
+#         starttime_hour = starttime_day + hour * 3600.0
+#         endtime_hour = starttime_hour + 3600.0
+#         stream_hour = stream_day.slice(starttime = starttime_hour, endtime = endtime_hour)
+#         skip_hour = False
 
-        print(f"Computing the spectrograms for starttime {starttime_hour}...")
+#         print(f"Computing the spectrograms for starttime {starttime_hour}...")
 
-        # Examine the intergrity of the data of the hour
-        if stream_hour is None:
-            print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! The hour is skipped.")
-            continue
-        elif len(stream_hour) != num_loc_in:
-            print(f"Not all locations are availalbe for the hour! The hour is skipped for all locations.")
-            continue
-        else:
-            for trace in stream_hour:
-                location = trace.stats.location
-                numpts = trace.stats.npts
-                if numpts < 3600001:
-                    print(f"Data of {station}.{location} is shorter than an hour. The hour is skipped for all locations.")
-                    skip_hour = True
-                    break
+#         # Examine the intergrity of the data of the hour
+#         if stream_hour is None:
+#             print(f"No data found for {station} between {starttime_hour} and {endtime_hour}! The hour is skipped.")
+#             continue
+#         elif len(stream_hour) != num_loc_in:
+#             print(f"Not all locations are availalbe for the hour! The hour is skipped for all locations.")
+#             continue
+#         else:
+#             for trace in stream_hour:
+#                 location = trace.stats.location
+#                 numpts = trace.stats.npts
+#                 if numpts < 3600001:
+#                     print(f"Data of {station}.{location} is shorter than an hour. The hour is skipped for all locations.")
+#                     skip_hour = True
+#                     break
 
-        if skip_hour == True:
-            continue
+#         if skip_hour == True:
+#             continue
 
-        # Compute the spectrograms for the hour
-        stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
-        stream_spec_out.extend(stream_spec)
+#         # Compute the spectrograms for the hour
+#         stream_spec = get_stream_spectrograms(stream_hour, window_length, overlap=overlap, cuda = cuda)
+#         stream_spec_out.extend(stream_spec)
 
-        # Downsample the spectrograms
-        if downsample:
-            print(f"Downsampling the spectrograms...")
-            stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
-            stream_spec_ds_out.extend(stream_spec_ds)    
+#         # Downsample the spectrograms
+#         if downsample:
+#             print(f"Downsampling the spectrograms...")
+#             stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
+#             stream_spec_ds_out.extend(stream_spec_ds)    
 
-    return stream_spec_out, stream_spec_ds_out
+#     return stream_spec_out, stream_spec_ds_out
 
 # Compute a day-long spectrogram of a geophone station and return BOTH the original and downsampled spectrograms
 # Window length is in SECONDS!
@@ -182,7 +182,7 @@ def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = F
     stream_spec = StreamSTFTPSD()
 
     for trace in stream:
-        trace_spec = get_trace_spectrogram(trace, range_type, window_length, overlap, cuda = cuda)
+        trace_spec = get_trace_spectrogram(trace, window_length, overlap, cuda = cuda)
         stream_spec.append(trace_spec)
 
     return stream_spec
@@ -198,15 +198,15 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     starttime = trace.stats.starttime
     starttime = starttime.datetime
 
-    num_fft = int(window_length * sampling_rate)
+    num_fft = int(round(window_length * sampling_rate))
     window = hann_window(num_fft)
-    hop_length = int(window_length * sampling_rate * (1 - overlap))
+    hop_length = int(round(window_length * sampling_rate * (1 - overlap)))
     signal_tsr = tensor(signal)
 
     # Determine if GPU is used
     if cuda:
         signal_tsr.to("cuda")
-        
+
     stft_tsr = stft(signal_tsr, num_fft, hop_length = hop_length, window = window, return_complex = True)
 
     # Normalize the STFT
@@ -228,10 +228,12 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     freqax = linspace(0, nyfreq, num_freq)
     
     num_time = psd.shape[1]
-    timeax = linspace(0, (numpts - 1) / sampling_rate, num_time)
+    time_interval = hop_length / sampling_rate
+    timeax = linspace(0, (num_time - 1) * time_interval, num_time)
     timeax = reltimes_to_timestamps(timeax, starttime)
 
-    trace_spec = TraceSTFTPSD(station, location, component, time_label, timeax, freqax, psd, overlap = overlap, db = False)
+
+    trace_spec = TraceSTFTPSD(station, location, component, "", timeax, freqax, psd, overlap = overlap, db = False)
 
     return trace_spec
     
