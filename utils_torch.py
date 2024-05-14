@@ -194,7 +194,6 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     location = trace.stats.location
     component = trace.stats.component
     sampling_rate = trace.stats.sampling_rate
-    numpts = trace.stats.npts
     starttime = trace.stats.starttime
     starttime = starttime.datetime
 
