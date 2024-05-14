@@ -584,8 +584,7 @@ def plot_geo_stft_spectrograms(stream_spec,
     
     ax.set_ylim(freq_lim)
 
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format
- = date_format
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format = date_format
 , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar

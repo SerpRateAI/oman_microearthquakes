@@ -3,6 +3,7 @@ from os.path import join, splitext
 from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
+from scipy.interpolate import RegularGridInterpolator
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez
 from pandas import Series, DataFrame, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
@@ -12,7 +13,7 @@ from multiprocessing import Pool
 
 from utils_basic import GEO_COMPONENTS
 from utils_basic import SPECTROGRAM_DIR 
-from utils_basic import assemble_timeax_from_ints, datetime2int, reltimes_to_timestamps, power2db
+from utils_basic import assemble_timeax_from_ints, datetime2int, int2datetime, reltimes_to_timestamps, power2db
 from utils_preproc import read_and_process_day_long_geo_waveforms
 
 ######
@@ -143,8 +144,6 @@ class StreamSTFTPSD:
 
                         # Delete the original traces
                         self.delete(stream_to_stitch)
-
-
     
     # Sort the traces by start time
     def sort_by_time(self):
@@ -190,6 +189,21 @@ class StreamSTFTPSD:
     def trim_to_day(self):
         for trace in self.traces:
             trace.trim_to_day()
+
+    # Resample the spectrograms to a given time axis
+    def resample_time(self, timeax_out):
+        for trace in self.traces:
+            trace.resample_time(timeax_out)
+
+    # Resample the spectrograms to the begin and end of the day
+    def resample_to_day(self):
+        for trace in self.traces:
+            trace.resample_to_day()
+
+    # Set the time label of the traces
+    def set_time_labels(self, block_type = "daily"):
+        for trace in self.traces:
+            trace.set_time_label(block_type)
 
     # Get the total power spectrogram of the geophone station
     def get_total_power(self):
@@ -331,14 +345,45 @@ class TraceSTFTPSD:
 
         timeax_out = datetime2int(timeax_out)
 
+        # Create the output data matrix
+        num_freqs = self.num_freqs
+        data_out = zeros((num_freqs, len(timeax_out)))
 
-        for row in self.data:
-            data_out.append(interp(timeax_out, self.times, row))
+        # Interpolate each row of the data matrix
+        for i in range(num_freqs):
+            row = self.data[i, :]
+            
+        interpolator = RegularGridInterpolator((timeax_in,), row, bounds_error=False, fill_value=nan, method='nearest')
+        data_out[i, :] = interpolator(timeax_out)
 
+        timeax_out = int2datetime(timeax_out)
         self.times = timeax_out
-        self.data = array(data_out)
+        self.data = data_out
 
+    # Pad and resample the spectrogram to the begin and end of the day
+    def resample_to_day(self):
+        timeax = self.times
+        num_time = len(timeax)
+        ref_time = timeax[num_time // 2]
+        start_of_day = ref_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = ref_time.replace(hour=23, minute=59, second=59, microsecond=999999)
 
+        timeax_out = date_range(start=start_of_day, end=end_of_day, freq=self.time_interval)
+        self.resample_time(timeax_out)
+
+    # Set the time label of the trace
+    def set_time_label(self, block_type):
+        num_time = len(timeax)
+        ref_time = timeax[num_time // 2]
+        if block_type == "daily":
+            start_of_block = ref_time.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif block_type == "hourly":
+            start_of_block = ref_time.replace(minute=0, second=0, microsecond=0)
+        else:
+            raise ValueError("Error: Invalid block type!")
+
+        time_label = start_of_block.strftime("%Y%m%d%H%M%S%f")
+        self.time_label = time_label
 
 ######
 # Functions

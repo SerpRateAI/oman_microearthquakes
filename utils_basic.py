@@ -233,6 +233,15 @@ def datetime2int(datetimes):
 
     return datetimes
 
+# Function to convert a list of integers representing nanoseconds since the Unix epoch to a DateTimeIndex object
+def int2datetime(ints):
+    if not isinstance(ints, array):
+        ints = array(ints)
+
+    datetimes = DatetimeIndex(ints)
+
+    return datetimes
+
 # Convert an array of relative times in seconds to a Pandas DatetimeIndex objects using a given start time
 def reltimes_to_timestamps(reltimes, starttime):
     if not isinstance(starttime, Timestamp):

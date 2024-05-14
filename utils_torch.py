@@ -113,14 +113,16 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, range_type = "day", window_length = window_length, overlap=overlap, cuda = cuda)
+    stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap=overlap, cuda = cuda)
     
-    # Trim the spectrograms to the begin and end of the day
-    print(f"Trimming the spectrograms to the begin and end of the day...")
-    stream_spec.trim_to_day()
+    # Pad and resample the spectrograms to the begin and end of the day
+    print(f"Resampling the spectrograms to the begin and end of the day...")
+    stream_spec.resample_to_day()
+
+    # Set the time labels
+    stream_spec.set_time_labels(block_type = "daily")
     
-    stream_spec.trim_to_day()
-    # Downsample the spectrograms
+    # Downsample the spectrograms along the frequency axis
     if downsample:
         print(f"Downsampling the spectrograms...")
         stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
@@ -139,8 +141,8 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
 
-    # Trim the spectrograms to the begin and end of the day
-    print(f"Trimming the spectrograms to the begin and end of the day...")
+    # Pad and resample the spectrograms to the begin and end of the day
+    print(f"Resampling the spectrograms to the begin and end of the day...")
     stream_spec.trim_to_day()
 
     # Downsample the spectrograms
@@ -161,9 +163,9 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     print(f"Computing the spectrograms...")
     stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
 
-    # Trim the spectrograms to the begin and end of the day
+    # Pad and resample the spectrograms to the begin and end of the day
     print(f"Trimming the spectrograms to the begin and end of the day...")
-    stream_spec.trim_to_day()
+    stream_spec.resample_to_day()
 
     # Downsample the spectrograms
     if downsample:
@@ -176,7 +178,7 @@ def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0
     return stream_spec, stream_spec_ds
     
 # Compute the spectrograms in PSD of a stream using STFT
-def get_stream_spectrograms(stream, range_type = "hour", window_length = 1.0, overlap = 0.5, cuda = False):
+def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = False):
     stream_spec = StreamSTFTPSD()
 
     for trace in stream:
@@ -186,7 +188,7 @@ def get_stream_spectrograms(stream, range_type = "hour", window_length = 1.0, ov
     return stream_spec
 
 # Compute the spectrogram in PSD of a trace using STFT
-def get_trace_spectrogram(trace, range_type = "hour", window_length = 1.0, overlap = 0.0, cuda = False):
+def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = False):
     signal = trace.data
     station = trace.stats.station
     location = trace.stats.location
@@ -228,11 +230,6 @@ def get_trace_spectrogram(trace, range_type = "hour", window_length = 1.0, overl
     num_time = psd.shape[1]
     timeax = linspace(0, (numpts - 1) / sampling_rate, num_time)
     timeax = reltimes_to_timestamps(timeax, starttime)
-
-    if range_type == "hour":
-        time_label = timeax[0].replace(minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S%f")
-    elif range_type == "day":
-        time_label = timeax[0].replace(hour = 0, minute = 0, second = 0, microsecond = 0).strftime("%Y%m%d%H%M%S%f")
 
     trace_spec = TraceSTFTPSD(station, location, component, time_label, timeax, freqax, psd, overlap = overlap, db = False)
 
