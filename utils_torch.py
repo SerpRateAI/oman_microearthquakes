@@ -107,9 +107,12 @@ from utils_spec import downsample_stft_stream_freq
 
 # Compute a day-long spectrogram of a geophone station and return BOTH the original and downsampled spectrograms
 # Window length is in SECONDS!
-def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
-    if downsample and downsample_factor is None:
+def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, resample_in_parallel = False, **kwargs):
+    if downsample and "downsample_factor" not in kwargs:
         raise ValueError("The downsample factor is not set!")
+
+    if resample_in_parallel and "num_process" not in kwargs:
+        raise ValueError("Error: Number of processes is not given!")
     
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
@@ -117,7 +120,11 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     
     # Pad and resample the spectrograms to the begin and end of the day
     print(f"Resampling the spectrograms to the begin and end of the day...")
-    stream_spec.resample_to_day()
+    if resample_in_parallel:
+        num_process = kwargs["num_process"]
+        stream_spec.resample_to_day(parallel = True, num_process = num_process)
+    else:
+        stream_spec.resample_to_day(parallel = False)
 
     # Set the time labels
     stream_spec.set_time_labels(block_type = "daily")
@@ -125,6 +132,7 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     # Downsample the spectrograms along the frequency axis
     if downsample:
         print(f"Downsampling the spectrograms...")
+        downsample_factor = kwargs["downsample_factor"]
         stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
     else:
         stream_spec_ds = None

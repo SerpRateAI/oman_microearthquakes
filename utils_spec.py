@@ -196,9 +196,9 @@ class StreamSTFTPSD:
             trace.resample_time(timeax_out)
 
     # Resample the spectrograms to the begin and end of the day
-    def resample_to_day(self):
+    def resample_to_day(self, parallel = False, **kwargs):         
         for trace in self.traces:
-            trace.resample_to_day()
+            trace.resample_to_day(parallel, **kwargs)
 
     # Set the time label of the traces
     def set_time_labels(self, block_type = "daily"):
@@ -686,7 +686,7 @@ def resample_stft_time_in_parallel(timeax_in, timeax_out, data_in, num_process):
     time_chunks = [timeax_out[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
 
     # Construct the arguments for the parallel processing
-    args = [(timeax_in, data_in, time_chunk) for time_chunk in time_chunks]
+    args = [(timeax_in, time_chunk, data_in) for time_chunk in time_chunks]
 
     # Resample the spectrogram in parallel
     with Pool(num_process) as pool:
