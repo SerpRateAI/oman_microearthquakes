@@ -338,30 +338,33 @@ class TraceSTFTPSD:
         self.trim_time(start_of_day, end_of_day)
 
     # Pad and resample the spectrogram to a given time axis
-    def resample_time(self, timeax_out):
+    def resample_time(self, timeax_out, parallel = False, **kwargs):
+        if parallel and "num_process" not in kwargs:
+            raise ValueError("Error: Number of processes is not given!")
+        
         # Convert the input and output time axes to integers
         timeax_in = self.times
         timeax_in = datetime2int(timeax_in)
 
         timeax_out = datetime2int(timeax_out)
 
-        # Create the output data matrix
-        num_freqs = self.num_freqs
-        data_out = zeros((num_freqs, len(timeax_out)))
-
-        # Interpolate each row of the data matrix
-        for i in range(num_freqs):
-            row = self.data[i, :]
-            
-            interpolator = RegularGridInterpolator((timeax_in,), row, bounds_error=False, fill_value=nan, method='nearest')
-            data_out[i, :] = interpolator(timeax_out)
+        # Resample the spectrogram
+        data_in = self.data
+        if parallel:
+            num_process = kwargs["num_process"]
+            data_out = resample_stft_time_in_parallel(timeax_in, timeax_out, data_in, num_process)
+        else:
+            data_out = resample_stft_time(timeax_in, timeax_out, data_in)
 
         timeax_out = int2datetime(timeax_out)
         self.times = timeax_out
         self.data = data_out
 
     # Pad and resample the spectrogram to the begin and end of the day
-    def resample_to_day(self):
+    def resample_to_day(self, parallel = False, **kwargs):
+        if parallel and "num_process" not in kwargs:
+            raise ValueError("Error: Number of processes is not given!")
+        
         timeax = self.times
         num_time = len(timeax)
         ref_time = timeax[num_time // 2]
@@ -369,7 +372,7 @@ class TraceSTFTPSD:
         end_of_day = ref_time.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         timeax_out = date_range(start=start_of_day, end=end_of_day, freq=self.time_interval)
-        self.resample_time(timeax_out)
+        self.resample_time(timeax_out, parallel, **kwargs)
 
     # Set the time label of the trace
     def set_time_label(self, block_type):
@@ -413,7 +416,10 @@ def find_geo_station_spectral_peaks(stream_spec, num_process, prom_threshold = 5
 # Find spectral peaks satisfying the given criteria
 # The function runs in parallel using the given number of processes
 # The power threshold is in dB!
-def find_trace_spectral_peaks(trace_spec, num_process, prom_threshol, rbw_threshold, freqmin, freqmax):
+def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
+    # Convert the trace to dB
+    trace_spec.to_db()
+    
     # Trim the data to the given frequency range
     if freqmin is None:
         freqmin = trace_spec.freqs[0]
@@ -425,7 +431,6 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshol, rbw_thresh
     freqax = trace_spec.freqs[freq_inds]
     data = trace_spec.data[freq_inds, :]
 
-    data = power2db(data)
     timeax = trace_spec.times
 
     # Divide the data and time axis into chunks for parallel processing
@@ -435,17 +440,54 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshol, rbw_thresh
     time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
 
     # Construct the arguments for the parallel processing
-    args = [(data_chunk, time_chunk, freqax, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
+    args = [(time_chunk, freqax, data_chunk, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
 
     # Find the spectral peaks in parallel
     print(f"Finding the spectral peaks in {num_process} processes...")
     with Pool(num_process) as pool:
-        results = pool.starmap(find_spectral_peak_indices, args)
+        results = pool.starmap(find_spectral_peaks, args)
 
     # Concatenate the results
     peak_df = concat(results, ignore_index=True)
 
     return peak_df
+
+# # Find spectral peaks satisfying the given criteria
+# # The function runs in parallel using the given number of processes
+# # The power threshold is in dB!
+# def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold, rbw_threshold, freqmin, freqmax):
+#     # Trim the data to the given frequency range
+#     if freqmin is None:
+#         freqmin = trace_spec.freqs[0]
+
+#     if freqmax is None:
+#         freqmax = trace_spec.freqs[-1]
+
+#     freq_inds = (trace_spec.freqs >= freqmin) & (trace_spec.freqs <= freqmax)
+#     freqax = trace_spec.freqs[freq_inds]
+#     data = trace_spec.data[freq_inds, :]
+
+#     data = power2db(data)
+#     timeax = trace_spec.times
+
+#     # Divide the data and time axis into chunks for parallel processing
+#     num_chunks = num_process
+#     chunk_size = data.shape[1] // num_chunks
+#     data_chunks = [data[:, i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+#     time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+
+#     # Construct the arguments for the parallel processing
+#     args = [(data_chunk, time_chunk, freqax, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
+
+#     # Find the spectral peaks in parallel
+#     print(f"Finding the spectral peaks in {num_process} processes...")
+#     with Pool(num_process) as pool:
+#         results = pool.starmap(find_spectral_peak_indices, args)
+
+#     # Concatenate the results
+#     peak_df = concat(results, ignore_index=True)
+
+#     return peak_df
 
 # Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
 def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
@@ -471,7 +513,6 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
     peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
 
     return peak_df
-
 
 # Group the spectral-peak detections into regular time and frequency bins
 def group_spectral_peaks_regular_bins(peak_df, time_bin_edges, freq_bin_edges):
@@ -636,69 +677,64 @@ def downsample_stft_freqax(freqax, factor=1000):
 
     return freqax
 
-# Find spectral peaks satisfying the given criteria
-# The function runs in parallel using the given number of processes
-# The power threshold is in dB!
-def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
-    # Convert the trace to dB
-    trace_spec.to_db()
-    
-    # Trim the data to the given frequency range
-    if freqmin is None:
-        freqmin = trace_spec.freqs[0]
+# A wrapper function for resampling a STFT spectrogram to a new time axis using nearest-neighbor interpolation in parallel
+def resample_stft_time_in_parallel(timeax_in, timeax_out, data_in, num_process):
 
-    if freqmax is None:
-        freqmax = trace_spec.freqs[-1]
-
-    freq_inds = (trace_spec.freqs >= freqmin) & (trace_spec.freqs <= freqmax)
-    freqax = trace_spec.freqs[freq_inds]
-    data = trace_spec.data[freq_inds, :]
-
-    timeax = trace_spec.times
-
-    # Divide the data and time axis into chunks for parallel processing
+    # Divide the output time axis into chunks for parallel processing
     num_chunks = num_process
-    chunk_size = data.shape[1] // num_chunks
-    data_chunks = [data[:, i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
-    time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+    chunk_size = len(timeax_out) // num_chunks
+    time_chunks = [timeax_out[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
 
     # Construct the arguments for the parallel processing
-    args = [(time_chunk, freqax, data_chunk, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
+    args = [(timeax_in, data_in, time_chunk) for time_chunk in time_chunks]
 
-    # Find the spectral peaks in parallel
-    print(f"Finding the spectral peaks in {num_process} processes...")
+    # Resample the spectrogram in parallel
     with Pool(num_process) as pool:
-        results = pool.starmap(find_spectral_peaks, args)
+        results = pool.starmap(resample_stft_time, args)
 
     # Concatenate the results
-    peak_df = concat(results, ignore_index=True)
+    data_out = concatenate(results, axis=1)
 
-    return peak_df
+    return data_out
 
-# Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
-def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
-    peak_freqs = []
-    peak_times = []
-    peak_powers = []
-    peak_rbws = []
-    for i, peak_time in enumerate(timeax):
-        power_column = power[:, i]
-        freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
+# Resample a STFT spectrogram to a new time axis using nearest-neighbor interpolation
+def resample_stft_time(timeax_in, timeax_out, data_in):
+    num_freqs = data_in.shape[0]
+    data_out = zeros((num_freqs, len(timeax_out)))
 
-        for j in freq_inds:
-            peak_freq = freqax[j]
-            peak_power = power_column[j]
-            _, rbw = get_quality_factor(freqax, power_column, peak_freq)
+    for i in range(num_freqs):
+        row = data_in[i, :]
+        interpolator = RegularGridInterpolator((timeax_in,), row, bounds_error=False, fill_value=nan, method='nearest')
+        data_out[i, :] = interpolator(timeax_out)
 
-            if rbw >= rbw_threshold:
-                peak_freqs.append(peak_freq)
-                peak_times.append(peak_time)
-                peak_powers.append(peak_power)
-                peak_rbws.append(rbw)
+    return data_out
 
-    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
 
-    return peak_df
+
+# # Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
+# def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
+#     peak_freqs = []
+#     peak_times = []
+#     peak_powers = []
+#     peak_rbws = []
+#     for i, peak_time in enumerate(timeax):
+#         power_column = power[:, i]
+#         freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
+
+#         for j in freq_inds:
+#             peak_freq = freqax[j]
+#             peak_power = power_column[j]
+#             _, rbw = get_quality_factor(freqax, power_column, peak_freq)
+
+#             if rbw >= rbw_threshold:
+#                 peak_freqs.append(peak_freq)
+#                 peak_times.append(peak_time)
+#                 peak_powers.append(peak_power)
+#                 peak_rbws.append(rbw)
+
+#     peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
+
+#     return peak_df
 
 # Assemble the name of a spectrogram file
 def assemble_spec_filename(range_type, block_type, sensor_type, station, window_length, overlap, downsample, **kwargs):
