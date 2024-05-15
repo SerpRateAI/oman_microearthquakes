@@ -680,20 +680,20 @@ def downsample_stft_freqax(freqax, factor=1000):
 # A wrapper function for resampling a STFT spectrogram to a new time axis using nearest-neighbor interpolation in parallel
 def resample_stft_time_in_parallel(timeax_in, timeax_out, data_in, num_process):
 
-    # Divide the output time axis into chunks for parallel processing
+    # Divide the input data along the frequency axis into chunks for parallel processing
     num_chunks = num_process
-    chunk_size = len(timeax_out) // num_chunks
-    time_chunks = [timeax_out[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
+    chunk_size = data_in.shape[0] // num_chunks
+    data_chunks = [data_in[i * chunk_size:(i + 1) * chunk_size, :] for i in range(num_chunks)]
 
     # Construct the arguments for the parallel processing
-    args = [(timeax_in, time_chunk, data_in) for time_chunk in time_chunks]
+    args = [(timeax_in, timeax_out, data_chunk) for data_chunk in data_chunks]
 
     # Resample the spectrogram in parallel
     with Pool(num_process) as pool:
         results = pool.starmap(resample_stft_time, args)
 
     # Concatenate the results
-    data_out = concatenate(results, axis=1)
+    data_out = concatenate(results, axis=0)
 
     return data_out
 
