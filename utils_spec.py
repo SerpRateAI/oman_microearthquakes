@@ -460,6 +460,8 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
     peak_times = []
     peak_powers = []
     peak_rbws = []
+    peak_time_inds = []
+    peak_freq_inds = []
     for i, peak_time in enumerate(timeax):
         power_column = power[:, i]
         freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
@@ -474,8 +476,10 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
                 peak_times.append(peak_time)
                 peak_powers.append(peak_power)
                 peak_rbws.append(rbw)
+                peak_time_inds.append(i)
+                peak_freq_inds.append(j)
 
-    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
+    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws, "time_index": peak_time_inds, "frequency_index": peak_freq_inds})
 
     return peak_df
 
@@ -926,7 +930,12 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
             data_group = file["data"]
             stream_spec = StreamSTFTPSD()
             for time_label in time_labels:
-                block_group = data_group[time_label]
+                try:
+                    block_group = data_group[time_label]
+                except KeyError:
+                    print(f"Warning: Time label {time_label} does not exist!")
+                    return None
+
                 starttime = block_group["start_time"][()]
                 starttime = Timestamp(starttime, unit='ns')
 
