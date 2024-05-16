@@ -912,7 +912,9 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
                             size_scale = 5, marker_size = 1,
                             example_counts = array([5, 20, 35]),
                             xdim = 15, ydim_per_row = 5,
-                            freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
+                            starttime = None, endtime = None,
+                            min_freq = 0.0, max_freq = 500.0,
+                            dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             date_format = "%Y-%m-%d",
                             major_time_spacing="24h", minor_time_spacing="6h", 
                             major_freq_spacing=100, minor_freq_spacing=20,
@@ -935,8 +937,8 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
 
     # Plot the example counts for the legend
     for count in example_counts:
-        marker_size = (count - counts.min()) / (counts.max() - counts.min()) * size_scale
-        ax.scatter([], [], s = marker_size, facecolors = "lightgray", edgecolors = "black", linewidth = 0.1, label = f"{count}")
+        example_size = (count - counts.min()) / (counts.max() - counts.min()) * size_scale
+        ax.scatter([], [], s = example_size, facecolors = "lightgray", edgecolors = "black", linewidth = 0.1, label = f"{count}")
 
     # Add the legend
     ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
@@ -952,10 +954,10 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     peak_powers = peak_df["power"]
 
     ax.set_facecolor("lightgray")
-    ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", edgecolors = None)
+    power_color = ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", edgecolors = None)
 
-    label = "Peak power"
-    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    # label = "Peak power"
+    # ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
@@ -974,8 +976,8 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     cmap_rbw.set_bad(color='lightgray')
     rbw_color = ax.scatter(peak_times, peak_freqs, c = peak_rbw, s = marker_size, cmap = cmap_rbw, norm = LogNorm(vmin = rbwmin, vmax = rbwmax))
 
-    label = "Peak width"
-    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+    # label = "Peak width"
+    # ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
@@ -989,8 +991,21 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
                             , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
+    # Set the x-axis limits
+    if starttime is None:
+        starttime = peak_df["time"].min()
+    elif isinstance(starttime, str):
+        starttime = Timestamp(starttime)
+
+    if endtime is None:
+        endtime = peak_df["time"].max()
+    elif isinstance(endtime, str):
+        endtime = Timestamp(endtime)
+        
+    ax.set_xlim((starttime, endtime))
+    
     # Set the y-axis limits
-    ax.set_ylim(freq_lim)
+    ax.set_ylim((min_freq, max_freq))
 
     return fig, axes, power_cbar, rbw_cbar
     
