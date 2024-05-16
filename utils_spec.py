@@ -1122,7 +1122,7 @@ def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DI
     print(f"Results saved to {outpath}")
 
 # Read spectral peak bin counts from a CSV or HDF file
-def read_spectral_peak_bin_counts(inpath, **kwargs):
+def read_spectral_peak_counts(inpath, **kwargs):
     # If the file format is not given, infer it from the file extension
     if "file_format" in kwargs:
         file_format = kwargs["file_format"]

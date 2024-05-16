@@ -907,6 +907,93 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
 
     return fig, axes, power_cbar, rbw_cbar
 
+# Plot the comparison between the spectral-peak array counts and the peaks found from the stacked spectrograms
+def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
+                            size_scale = 5, marker_size = 1,
+                            example_counts = array([5, 20, 35]),
+                            xdim = 15, ydim_per_row = 5,
+                            freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing="24h", minor_time_spacing="6h", 
+                            major_freq_spacing=100, minor_freq_spacing=20,
+                            panel_label_x = 0.01, panel_label_y = 0.96, panel_label_size=12, 
+                            axis_label_size=12, tick_label_size=10, title_size=15,
+                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+
+    # Generate the figure and axes
+    fig, axes = subplots(3, 1, figsize=(15, 10), sharex=True, sharey=True)
+
+    # Plot the array detection counts
+    ax = axes[0]
+
+    # Calculate the marker sizes
+    counts = count_df["count"]
+    marker_sizes = (counts - counts.min()) / (counts.max() - counts.min()) * size_scale
+
+    # Plot the detection counts
+    ax.scatter(count_df["time"], count_df["frequency"], s = marker_sizes, facecolors = "lightgray", edgecolors = "black", alpha = 0.5, linewidth = 0.1)
+
+    # Plot the example counts for the legend
+    for count in example_counts:
+        marker_size = (count - counts.min()) / (counts.max() - counts.min()) * size_scale
+        ax.scatter([], [], s = marker_size, facecolors = "lightgray", edgecolors = "black", linewidth = 0.1, label = f"{count}")
+
+    # Add the legend
+    ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
+
+    # Format the frequency axis
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the stacked spectrogram peaks color-coded by power
+    ax = axes[1]
+
+    peak_times = peak_df["time"]
+    peak_freqs = peak_df["frequency"]
+    peak_powers = peak_df["power"]
+
+    ax.set_facecolor("lightgray")
+    ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", edgecolors = None)
+
+    label = "Peak power"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the power colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+
+    # Plot the stacked spectrogram peaks color-coded by reverse bandwidth
+    ax = axes[2]
+
+    peak_rbw = peak_df["reverse_bandwidth"]
+    ax.set_facecolor("lightgray")
+
+    cmap_rbw = colormaps["viridis"].copy()
+    cmap_rbw.set_bad(color='lightgray')
+    rbw_color = ax.scatter(peak_times, peak_freqs, c = peak_rbw, s = marker_size, cmap = cmap_rbw, norm = LogNorm(vmin = rbwmin, vmax = rbwmax))
+
+    label = "Peak width"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the reverse-bandwidth colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    rbw_cbar = add_rbw_colorbar(fig, rbw_color, position, tick_label_size=tick_label_size, orientation = "vertical")
+
+    # Format the time axis
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
+                            , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+
+    # Set the y-axis limits
+    ax.set_ylim(freq_lim)
+
+    return fig, axes, power_cbar, rbw_cbar
+    
 ###### Functions for plotting CWT spectra ######
 
 ## Function to plot the 3C seismograms and spectrograms computed using CWT of a list of stations
