@@ -416,18 +416,18 @@ def find_geo_station_spectral_peaks(stream_spec, num_process, prom_threshold = 5
 # Find spectral peaks satisfying the given criteria
 # The function runs in parallel using the given number of processes
 # The power threshold is in dB!
-def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
+def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, min_freq = None, max_freq = None):
     # Convert the trace to dB
     trace_spec.to_db()
     
     # Trim the data to the given frequency range
-    if freqmin is None:
-        freqmin = trace_spec.freqs[0]
+    if min_freq is None:
+        min_freq = trace_spec.freqs[0]
 
-    if freqmax is None:
-        freqmax = trace_spec.freqs[-1]
+    if max_freq is None:
+        max_freq = trace_spec.freqs[-1]
 
-    freq_inds = (trace_spec.freqs >= freqmin) & (trace_spec.freqs <= freqmax)
+    freq_inds = (trace_spec.freqs >= min_freq) & (trace_spec.freqs <= max_freq)
     freqax = trace_spec.freqs[freq_inds]
     data = trace_spec.data[freq_inds, :]
 
