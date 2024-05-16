@@ -730,7 +730,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     return fig, axes
 
 # Plot array spectral-peak bin counts
-def plot_array_spec_peak_bin_counts(count_df,
+def plot_array_spec_peak_counts(count_df,
                             size_scale = 5,
                             example_counts = array([5, 20, 35]),
                             xdim = 15, ydim = 5, 
@@ -753,6 +753,11 @@ def plot_array_spec_peak_bin_counts(count_df,
     # Calculate the marker sizes
     counts = count_df["count"]
     marker_sizes = (counts - counts.min()) / (counts.max() - counts.min()) * size_scale
+    # print(marker_sizes.min())
+    # print(len(count_df["time"]), len(count_df["frequency"]), len(marker_sizes))
+    # print(len(count_df["time"]))
+    # print(len(count_df["frequency"]))
+    # print(len(marker_sizes))
     
     # Plot the detection counts
     fig, ax = subplots(1, 1, figsize=(xdim, ydim))

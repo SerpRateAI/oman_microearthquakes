@@ -400,7 +400,7 @@ class TraceSTFTPSD:
 # The function runs in parallel using the given number of processes
 # A Pandas DataFrame containing the frequency, time, power, and quality factor of each peak is returned
 # The power threshold is in dB!
-def find_geo_station_spectral_peaks(stream_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, freqmin = None, freqmax = None):
+def find_geo_station_spectral_peaks(stream_spec, num_process, prom_threshold = 5, rbw_threshold = 0.2, min_freq = None, max_freq = None):
     # Verify the StreamSTFTPSD object
     if len(stream_spec) != 3:
         raise ValueError("Error: Invalid number of components!")
@@ -409,7 +409,7 @@ def find_geo_station_spectral_peaks(stream_spec, num_process, prom_threshold = 5
     trace_spec_total = stream_spec.get_total_power()
 
     # Find the spectral peaks in the total power spectrogram
-    peak_df = find_trace_spectral_peaks(trace_spec_total, num_process, prom_threshold, rbw_threshold, freqmin, freqmax)
+    peak_df = find_trace_spectral_peaks(trace_spec_total, num_process, prom_threshold, rbw_threshold, min_freq, max_freq)
 
     return peak_df, trace_spec_total
 
@@ -448,46 +448,11 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_t
         results = pool.starmap(find_spectral_peaks, args)
 
     # Concatenate the results
+    results = [df for df in results if not df.empty]
     peak_df = concat(results, ignore_index=True)
+    
 
     return peak_df
-
-# # Find spectral peaks satisfying the given criteria
-# # The function runs in parallel using the given number of processes
-# # The power threshold is in dB!
-# def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold, rbw_threshold, freqmin, freqmax):
-#     # Trim the data to the given frequency range
-#     if freqmin is None:
-#         freqmin = trace_spec.freqs[0]
-
-#     if freqmax is None:
-#         freqmax = trace_spec.freqs[-1]
-
-#     freq_inds = (trace_spec.freqs >= freqmin) & (trace_spec.freqs <= freqmax)
-#     freqax = trace_spec.freqs[freq_inds]
-#     data = trace_spec.data[freq_inds, :]
-
-#     data = power2db(data)
-#     timeax = trace_spec.times
-
-#     # Divide the data and time axis into chunks for parallel processing
-#     num_chunks = num_process
-#     chunk_size = data.shape[1] // num_chunks
-#     data_chunks = [data[:, i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
-#     time_chunks = [timeax[i * chunk_size:(i + 1) * chunk_size] for i in range(num_chunks)]
-
-#     # Construct the arguments for the parallel processing
-#     args = [(data_chunk, time_chunk, freqax, prom_threshold, rbw_threshold) for data_chunk, time_chunk in zip(data_chunks, time_chunks)]
-
-#     # Find the spectral peaks in parallel
-#     print(f"Finding the spectral peaks in {num_process} processes...")
-#     with Pool(num_process) as pool:
-#         results = pool.starmap(find_spectral_peak_indices, args)
-
-#     # Concatenate the results
-#     peak_df = concat(results, ignore_index=True)
-
-#     return peak_df
 
 # Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
 def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
@@ -514,43 +479,71 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
 
     return peak_df
 
-# Group the spectral-peak detections into regular time and frequency bins
-def group_spectral_peaks_regular_bins(peak_df, time_bin_edges, freq_bin_edges):
+# Update the spectral-peak group count
+def update_spectral_peak_group_counts(peak_df, cum_count_df):
+    count_df = peak_df.groupby(['time', 'frequency']).size().reset_index(name='count')
+    cum_count_df = concat([cum_count_df, count_df]).groupby(['time', 'frequency']).sum().reset_index()
+    return cum_count_df
 
-    # Group the spectral peaks
-    peak_df['time_bin'] = cut(peak_df["time"], time_bin_edges, include_lowest=True, right=False)
-    peak_df['freq_bin'] = cut(peak_df["frequency"], freq_bin_edges, include_lowest=True, right=False)
+# Get the file-name suffix for the spectrograms
+def get_spectrogram_file_suffix(window_length, overlap, downsample, **kwargs):
+    suffix = f"window{window_length:.0f}s_overlap{overlap:.1f}"
+    if downsample:
+        downsample_factor = kwargs["downsample_factor"]
+        filename = f"{suffix}_downsample{downsample_factor:d}"
+
+    return suffix
     
-    grouped = peak_df.groupby(['time_bin', 'freq_bin'], observed = False).size().unstack(fill_value=0)
-    bin_counts = grouped.values
-    bin_counts = bin_counts.T
+# Get the file-name suffix for the spectral peaks
+def get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = None, max_freq = None):
+    if min_freq is None and max_freq is None:
+        suffix = f"prom{prom_threshold:.0f}db_rbw{rbw_threshold:.1f}"
+    elif min_freq is not None and max_freq is None:
+        suffix = f"prom{prom_threshold:.0f}db_rbw{rbw_threshold:.1f}_freq{min_freq:.0f}to500hz"
+    elif min_freq is None and max_freq is not None:
+        suffix = f"prom{prom_threshold:.0f}db_rbw{rbw_threshold:.1f}_freq0to{max_freq:.0f}hz"
+    else:
+        suffix = f"prom{prom_threshold:.0f}db_rbw{rbw_threshold:.1f}_freq{min_freq:.0f}to{max_freq:.0f}hz"
 
-    return bin_counts
+    return suffix
 
-# Convert the spectral-peak bin counts to a DataFrame
-def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts, count_threshold = 1):
-    # Convert the time bin centers to nano-second integers
-    time_bin_centers = [time.value for time in time_bin_centers]
+# # Group the spectral-peak detections into regular time and frequency bins
+# def group_spectral_peaks_regular_bins(peak_df, time_bin_edges, freq_bin_edges):
 
-    # Create the 2D meshgrid of time and frequency bin centers
-    time_mesh, freq_mesh = meshgrid(time_bin_centers, freq_bin_centers)
+#     # Group the spectral peaks
+#     peak_df['time_bin'] = cut(peak_df["time"], time_bin_edges, include_lowest=True, right=False)
+#     peak_df['freq_bin'] = cut(peak_df["frequency"], freq_bin_edges, include_lowest=True, right=False)
+    
+#     grouped = peak_df.groupby(['time_bin', 'freq_bin'], observed = False).size().unstack(fill_value=0)
+#     bin_counts = grouped.values
+#     bin_counts = bin_counts.T
 
-    # Flatten the 2D meshgrid
-    time_mesh = time_mesh.flatten()
-    freq_mesh = freq_mesh.flatten()
-    counts = counts.flatten()
+#     return bin_counts
 
-    # Create the DataFrame
-    count_df = DataFrame({"time": time_mesh, "frequency": freq_mesh, "count": counts})
+# # Convert the spectral-peak bin counts to a DataFrame
+# def bin_counts_to_df(time_bin_centers, freq_bin_centers, counts, count_threshold = 1):
+#     # Convert the time bin centers to nano-second integers
+#     time_bin_centers = [time.value for time in time_bin_centers]
 
-    # Convert the time column to Timestamp
-    count_df["time"] = to_datetime(count_df["time"])
+#     # Create the 2D meshgrid of time and frequency bin centers
+#     time_mesh, freq_mesh = meshgrid(time_bin_centers, freq_bin_centers)
 
-    # Remove the rows with counts below the threshold
-    count_df = count_df.loc[count_df["count"] >= count_threshold]
-    count_df.reset_index(drop = True, inplace = True)
+#     # Flatten the 2D meshgrid
+#     time_mesh = time_mesh.flatten()
+#     freq_mesh = freq_mesh.flatten()
+#     counts = counts.flatten()
 
-    return count_df
+#     # Create the DataFrame
+#     count_df = DataFrame({"time": time_mesh, "frequency": freq_mesh, "count": counts})
+
+#     # Convert the time column to Timestamp
+#     count_df["time"] = to_datetime(count_df["time"])
+
+#     # Remove the rows with counts below the threshold
+#     count_df = count_df.loc[count_df["count"] >= count_threshold]
+#     count_df.reset_index(drop = True, inplace = True)
+
+#     return count_df
 
 
 # Stitch spectrograms of multiple time periods together
@@ -682,7 +675,7 @@ def resample_stft_time_in_parallel(timeax_in, timeax_out, data_in, num_process):
 
     # Divide the input data along the frequency axis into chunks for parallel processing
     num_chunks = num_process
-    chunk_size = data_in.shape[0] // num_chunks
+    chunk_size = data_in.shape[0] // num_chunks + 1
     data_chunks = [data_in[i * chunk_size:(i + 1) * chunk_size, :] for i in range(num_chunks)]
 
     # Construct the arguments for the parallel processing
@@ -1138,7 +1131,7 @@ def read_spectral_peak_bin_counts(inpath, **kwargs):
     return count_df
 
 # Save spectral-peak bin counts to a CSV or HDF file
-def save_spectral_peak_bin_counts(count_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
+def save_spectral_peak_counts(count_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
     if file_format == "csv":
         outpath = join(outdir, f"{file_stem}.csv")
         count_df.to_csv(outpath, date_format = "%Y-%m-%d %H:%M:%S.%f")
