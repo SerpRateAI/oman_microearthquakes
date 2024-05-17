@@ -460,8 +460,6 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
     peak_times = []
     peak_powers = []
     peak_rbws = []
-    peak_time_inds = []
-    peak_freq_inds = []
     for i, peak_time in enumerate(timeax):
         power_column = power[:, i]
         freq_inds, _ = find_peaks(power_column, prominence = prominence_threshold)
@@ -476,18 +474,21 @@ def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_thresho
                 peak_times.append(peak_time)
                 peak_powers.append(peak_power)
                 peak_rbws.append(rbw)
-                peak_time_inds.append(i)
-                peak_freq_inds.append(j)
 
-    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws, "time_index": peak_time_inds, "frequency_index": peak_freq_inds})
+    peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws})
 
     return peak_df
 
 # Update the spectral-peak group count
-def update_spectral_peak_group_counts(peak_df, cum_count_df):
+def update_spectral_peak_group_counts(peak_df, counts_to_update = None):
     count_df = peak_df.groupby(['time', 'frequency']).size().reset_index(name='count')
-    cum_count_df = concat([cum_count_df, count_df]).groupby(['time', 'frequency']).sum().reset_index()
-    return cum_count_df
+    
+    if counts_to_update is None:
+        counts_updated_df = count_df.copy()
+    else:     
+        counts_updated_df = concat([counts_to_update, count_df]).groupby(['time', 'frequency']).sum().reset_index()
+        
+    return counts_updated_df
 
 # Get the file-name suffix for the spectrograms
 def get_spectrogram_file_suffix(window_length, overlap, downsample, **kwargs):
