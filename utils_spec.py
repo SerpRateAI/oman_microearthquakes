@@ -395,6 +395,15 @@ class TraceSTFTPSD:
 ######
 
 ###### Functions for handling STFT spectrograms ######
+# Concatenate multiple StreamSTFTPSD objects
+def concat_stream_spec(streams):
+    traces = []
+    for stream in streams:
+        traces.extend(stream.traces)
+
+    stream_concat = StreamSTFTPSD(traces)
+
+    return stream_concat
 
 # Find spectral peaks in the spectrograms of a geophone station
 # The function runs in parallel using the given number of processes
@@ -708,7 +717,6 @@ def resample_stft_time(timeax_in, timeax_out, data_in):
     return data_out
 
 
-
 # # Find the times and frequencies of spectral peaks satisfying the given prominence and reverse bandwidth criteria
 # def find_spectral_peaks(timeax, freqax, power, prominence_threshold, rbw_threshold):
 #     peak_freqs = []
@@ -734,15 +742,25 @@ def resample_stft_time(timeax_in, timeax_out, data_in):
 
 #     return peak_df
 
-# Assemble the name of a spectrogram file
-def assemble_spec_filename(range_type, block_type, sensor_type, station, window_length, overlap, downsample, **kwargs):
-    if downsample:
-        downsample_factor = kwargs["downsample_factor"]
-        filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}_downsample{downsample_factor:d}.h5"
-    else:
-        filename = f"{range_type}_{block_type}_{sensor_type}_spectrograms_{station}_window{window_length:.0f}s_overlap{overlap:.1f}.h5"
+# Get the time and frequency indices of spectral-peak counts
+def get_spec_peak_time_freq_inds(counts_df, timeax, freqax):
+    num_time = len(timeax)
+    time_inds = []
+    freq_inds = []
+    for i, row in counts_df.iterrows():
+        time = row["time"]
+        freq = row["frequency"]
+        time_ind = timeax.searchsorted(time)
+        freq_ind = freqax.searchsorted(freq)
 
-    return filename
+        # Exclude the time and frequency indices that are out of the range
+        if time_ind == num_time or time_ind == 0 or freq_ind == len(freqax) or freq_ind == 0:
+            continue
+
+        time_inds.append(time_ind)
+        freq_inds.append(freq_ind)
+
+    return time_inds, freq_inds
 
 # Create a spectrogram file for a geophone station and save the header information
 def create_geo_spectrogram_file(station, range_type = "whole_deployment", block_type = "daily", window_length = 60.0, overlap = 0.0, freq_interval = 1.0, downsample = False, outdir = SPECTROGRAM_DIR, **kwargs):
@@ -989,7 +1007,7 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
                 
             # Read the spectrograms of the overlapping blocks
             stream_spec = StreamSTFTPSD()
-            for i, row in overlap_df.iterrows():
+            for _, row in overlap_df.iterrows():
                 time_label = row["time_label"]
                 block_group = file["data"][time_label]
 
@@ -1131,6 +1149,8 @@ def read_spectral_peak_counts(inpath, **kwargs):
         _, file_format = splitext(inpath)
         file_format = file_format.replace(".", "")
 
+    # print(file_format)
+
     if file_format == "csv":
         count_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
     elif file_format == "h5" or file_format == "hdf":
@@ -1152,6 +1172,56 @@ def save_spectral_peak_counts(count_df, file_stem, file_format, outdir = SPECTRO
         raise ValueError("Error: Invalid file format!")
 
     print(f"Results saved to {outpath}")
+
+# Read a binary spectrogram file
+def read_binary_spectrogram(inpath, starttime, endtime, min_freq, max_freq):
+    with File(inpath, 'r') as file:
+        # Read the header information
+        header_group = file["headers"]
+        start_time = header_group["start_time"][()]
+        min_freq = header_group["min_freq"][()]
+        num_times = header_group["num_times"][()]
+        num_freqs = header_group["num_freqs"][()]
+        time_interval = header_group["time_interval"][()]
+        freq_interval = header_group["freq_interval"][()]
+
+        # Create the time axis
+        timeax = assemble_timeax_from_ints(start_time, num_times, time_interval)
+        start_time_index = timeax.searchsorted(starttime)
+        end_time_index = timeax.searchsorted(endtime)
+        timeax = timeax[start_time_index:end_time_index]
+
+        # Create the frequency axis
+        freqax = linspace(min_freq, min_freq + (num_freqs - 1) * freq_interval, num_freqs)
+        min_freq_index = freqax.searchsorted(min_freq)
+        max_freq_index = freqax.searchsorted(max_freq)
+        freqax = freqax[min_freq_index:max_freq_index]
+
+        # Read the spectrogram data
+        data_group = file["data"]
+        data = data_group["detections"][min_freq_index:max_freq_index, start_time_index:end_time_index]
+
+        # Construct the output dictionary
+        out_dict = {"times": timeax, "freqs": freqax, "data": data}
+
+    return out_dict
+
+# Save a binary spectrogram file
+def save_binary_spectrogram(timeax, freqax, data, outpath):
+    timeax = datetime2int(timeax)
+    with File(outpath, 'w') as file:
+        header_group = file.create_group('headers')
+        header_group.create_dataset('start_time', data=timeax[0])
+        header_group.create_dataset('min_freq', data=freqax[0])
+        header_group.create_dataset('num_times', data=len(timeax))
+        header_group.create_dataset('num_freqs', data=len(freqax))
+        header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
+        header_group.create_dataset('freq_interval', data=freqax[1] - freqax[0])
+
+        data_group = file.create_group('data')
+        data_group.create_dataset('detections', data=data)
+
+    print(f"Binary spectrogram saved to {outpath}")
 
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method

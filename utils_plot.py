@@ -387,18 +387,20 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
 ###### Functions for plotting STFT power spectrograms and related data ######   
 
 # Plot the 3C seismograms and spectrograms computed using STFT of a list of stations
-def plot_short_term_geo_waveforms_and_stfts(stream_wf, stream_spec,
-                            xdim_per_col = 10, ydim_per_row= 5, 
-                            freq_lim=(0, 490), waveform_lim=(-100, 100),
+def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
+                            xdim_per_col = 8, ydim_per_row= 4,
+                            starttime = None, endtime = None,
+                            min_freq = 0, max_freq = 200,
+                            min_wf = -100, max_wf = 100,
                             linewidth=0.1,
                             dbmin=-30, dbmax=0,
-                            component_label_x = 0.01, component_label_y = 0.96,
-                            date_format = "%Y-%m-%d",
+                            component_label_x = 0.02, component_label_y = 0.96,
+                            date_format = "%Y-%m-%d %H:%M:%S",
+                            major_time_spacing="1min", minor_time_spacing="15s",
                             major_vel_spacing=100, minor_vel_spacing=50,
-                            major_time_spacing=30, minor_time_spacing=5,
-                            major_freq_spacing=100, minor_freq_spacing=20,
+                            major_freq_spacing=50, minor_freq_spacing=10,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
-                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+                            time_tick_rotation=5, time_tick_va="top", time_tick_ha="right"):
     
     # Convert the power to dB
     stream_spec.to_db()
@@ -434,7 +436,13 @@ def plot_short_term_geo_waveforms_and_stfts(stream_wf, stream_spec,
                 ax.set_title(title, fontsize=title_size, fontweight="bold")
             
             if i == 0:
+                label = component_to_label(component)
+                ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
                 format_vel_ylabels(ax, major_tick_spacing=major_vel_spacing, minor_tick_spacing=minor_vel_spacing, tick_label_size=tick_label_size)
+            else:
+                format_vel_ylabels(ax, major_tick_spacing=major_vel_spacing, minor_tick_spacing=minor_vel_spacing, tick_label_size=tick_label_size, label=False)
+
+            ax.set_ylim((min_wf, max_wf))
 
             # Plot the spectrogram
             trace_spec = stream_spec.select(station=station, component=component)[0]
@@ -444,24 +452,41 @@ def plot_short_term_geo_waveforms_and_stfts(stream_wf, stream_spec,
 
             ax = axes[2 * j + 1, i]
             power_color = ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
-            label = component_to_label(component)
-            ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
-
-            if j == 2:
-                format_datetime_xlabels(ax, major_tick_spacing=hour2sec(major_time_spacing), minor_tick_spacing=hour2sec(minor_time_spacing), tick_label_size=tick_label_size, date_format=date_format, rotation=time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
             if i == 0:
-                format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
+                label = component_to_label(component)
+                ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
+
+            if j == 2:
+                format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+                                        axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format,
+                                        rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+            if i == 0:
+                format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, 
+                                    axis_label_size = axis_label_size, tick_label_size=tick_label_size)
+            else:
+                format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing,
+                                    axis_label_size = axis_label_size, tick_label_size=tick_label_size, label=False)
+
+            ax.set_ylim((min_freq, max_freq))
 
     # Set the axis limits
-    axes[0, 0].set_xlim(timeax_wf[0], timeax_wf[-1])
-    axes[0, 0].set_ylim(waveform_lim)
-    axes[1, 0].set_ylim(freq_lim)
+    if starttime is None:
+        starttime = timeax_wf[0]
+    elif isinstance(starttime, str):
+        starttime = Timestamp(starttime)
+
+    if endtime is None:
+        endtime = timeax_wf[-1]
+    elif isinstance(endtime, str):
+        endtime = Timestamp(endtime)
+
+    axes[0, 0].set_xlim(starttime, endtime)
 
     # Add the colorbar
     bbox = axes[-1, -1].get_position()
-    position = [bbox.x0 + 0.1, bbox.y0, 0.02, bbox.height]
-    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+    position = [bbox.x0 + bbox.width + 0.01, bbox.y0, 0.005, bbox.height]
+    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation="vertical")
 
     return fig, axes, cbar
     
@@ -906,6 +931,128 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     ax.set_ylim(freq_lim)
 
     return fig, axes, power_cbar, rbw_cbar
+
+# Plot the geophone total psd, the spectral-peak powers, array detection counts, and the binarized array spectrogram
+def plot_geo_total_psd_to_array_spectrogram(trace_total, peak_df, count_df, bin_array_dict,
+                                            size_scale = 5, marker_size = 1,
+                                            example_counts = array([5, 20, 35]),
+                                            xdim = 15, ydim_per_row = 5,
+                                            min_freq = 0.0, max_freq = 500.0,
+                                            starttime = None, endtime = None,
+                                            dbmin=-30, dbmax=0,
+                                            date_format = "%Y-%m-%d %H:%M:%S",
+                                            major_time_spacing="15min", minor_time_spacing="5min",
+                                            major_freq_spacing=50.0, minor_freq_spacing=10.0,
+                                            panel_label_x = 0.01, panel_label_y = 0.96, panel_label_size=12,
+                                            axis_label_size=12, tick_label_size=10, title_size=15,
+                                            time_tick_rotation=5, time_tick_va="top", time_tick_ha="right"):
+
+    # Define the axes
+    fig, axes = subplots(4, 1, figsize=(xdim, 3 * ydim_per_row), sharex=True, sharey=True)
+
+    # Plot the total PSD
+    ax = axes[0]
+
+    cmap_power = colormaps["inferno"].copy()
+    cmap_power.set_bad(color='lightgray')
+    norm_power = Normalize(vmin=dbmin, vmax=dbmax)
+
+    trace_total.to_db()
+    station = trace_total.station
+    timeax = trace_total.times
+    freqax = trace_total.freqs
+    power = trace_total.data
+
+    ax.set_facecolor("lightgray")
+    power_color = ax.pcolormesh(timeax, freqax, power, cmap = cmap_power, norm = norm_power)
+
+    label = f"{station}, total PSD"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Add the colorbar
+    bbox = ax.get_position()
+    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
+    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+
+    # Plot the spectral peak power
+    ax = axes[1]
+
+    peak_times = peak_df["time"]
+    peak_freqs = peak_df["frequency"]
+    peak_powers = peak_df["power"]
+
+    ax.set_facecolor("lightgray")
+    ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = cmap_power, norm = norm_power, edgecolors = None)
+
+    label = f"{station}, peak power"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the array spectral-peak counts
+    ax = axes[2]
+
+    # Calculate the marker sizes
+    counts = count_df["count"]
+    marker_sizes = (counts - counts.min()) / (counts.max() - counts.min()) * size_scale
+
+    # Plot the detection counts
+    ax.scatter(count_df["time"], count_df["frequency"], s = marker_sizes, facecolors = "lightgray", edgecolors = "black", alpha = 0.5, linewidth = 0.1)
+
+    label = "Array spectral-peak counts"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+
+
+    # Plot the example counts for the legend
+    for count in example_counts:
+        example_size = (count - counts.min()) / (counts.max() - counts.min()) * size_scale
+        ax.scatter([], [], s = example_size, facecolors = "lightgray", edgecolors = "black", linewidth = 0.1, label = f"{count}")
+    
+    # Add the legend
+    ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
+
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Plot the binarized array spectrogram
+    ax = axes[3]
+
+    timeax = bin_array_dict["times"]
+    freqax = bin_array_dict["freqs"]
+    data = bin_array_dict["data"]
+
+    ax.set_facecolor("blue")
+    ax.pcolormesh(timeax, freqax, data, cmap = "binary_r")
+
+    label = "Binarized array spectrogram"
+    ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Format the time axis
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing,
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format,
+                            rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+
+    # Set the x-axis limits
+    if starttime is None:
+        starttime = timeax.min()
+    elif not isinstance(starttime, Timestamp):
+        starttime = Timestamp(starttime)
+    
+    if endtime is None:
+        endtime = timeax.max()
+    elif not isinstance(endtime, Timestamp):
+        endtime = Timestamp(endtime)
+
+    ax.set_xlim((starttime, endtime))
+
+    # Set the y-axis limits
+    ax.set_ylim((min_freq, max_freq))
+
+    return fig, axes, power_cbar
+
 
 # Plot the comparison between the spectral-peak array counts and the peaks found from the stacked spectrograms
 def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,

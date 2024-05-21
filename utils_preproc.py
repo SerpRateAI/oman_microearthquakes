@@ -12,10 +12,13 @@ from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
 from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
 
-from utils_basic import utcdatetime_to_timestamp, timestamp_to_utcdatetime, to_day_of_year
+from utils_basic import get_geo_metadata, timestamp_to_utcdatetime, to_day_of_year
 
 # Read and preprocess day-long geophone waveforms
-def read_and_process_day_long_geo_waveforms(day, metadat, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=None, all_components=True):
+def read_and_process_day_long_geo_waveforms(day, metadat = None, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=None, all_components=True):
+    # Check if metadat is specified
+    if metadat is None:
+        metadat = get_geo_metadata()
 
     # Read the waveforms
     print(f"Reading the waveforms for {day}")
@@ -83,20 +86,37 @@ def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, s
 
 ## Read and preprocess geophone waveforms in a time window
 ## Window length is in second
-def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
+def read_and_process_windowed_geo_waveforms(starttime, metdat, endtime = None, dur = None, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
 
+    # Check if endtime and dur are specified at the same time
+    if endtime is not None and dur is not None:
+        raise ValueError("Error: endtime and dur cannot be specified at the same time!")
+    
     if not isinstance(starttime, Timestamp):
         if type(starttime) is str:
             starttime = Timestamp(starttime, tz="UTC")
         else:
             raise TypeError("Error: starttime must be a string or Pandas Timestamp object!")
 
+    # Define the time window
+    if endtime is not None:
+        if not isinstance(endtime, Timestamp):
+            if type(endtime) is str:
+                endtime = Timestamp(endtime, tz="UTC")
+            else:
+                raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
+    elif dur is not None:
+        if dur is None:
+            raise ValueError("Error: Either endtime or dur must be specified!")
+        else:
+            endtime = starttime + Timedelta(seconds=dur)
+
+
     ### Read the waveforms
     stations_to_read = get_geo_stations_to_read(stations)
     channels_to_read = get_geo_channels_to_read(components)
 
     stream_in = Stream()
-    endtime = starttime + Timedelta(seconds=dur)
     for station in stations_to_read:
         stream_station = Stream()
 
@@ -122,7 +142,7 @@ def read_and_process_windowed_geo_waveforms(starttime, dur, freqmin=None, freqma
     if len(stream_in) < 3 and all_components:
         return None
     else:
-        stream_proc = preprocess_geo_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+        stream_proc = preprocess_geo_stream(stream_in, metdat, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
         return stream_proc
 
 ## Read and preprocess hydrophone waveforms in a time window
