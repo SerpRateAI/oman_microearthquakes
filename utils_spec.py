@@ -5,7 +5,7 @@ from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from scipy.interpolate import RegularGridInterpolator
 from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez, zeros
-from pandas import Series, DataFrame, Timedelta, Timestamp
+from pandas import Series, DataFrame, DatetimeIndex, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
 from h5py import File, special_dtype
 from multitaper import MTSpec
@@ -504,7 +504,7 @@ def get_spectrogram_file_suffix(window_length, overlap, downsample, **kwargs):
     suffix = f"window{window_length:.0f}s_overlap{overlap:.1f}"
     if downsample:
         downsample_factor = kwargs["downsample_factor"]
-        filename = f"{suffix}_downsample{downsample_factor:d}"
+        suffix = f"{suffix}_downsample{downsample_factor:d}"
 
     return suffix
     
@@ -786,7 +786,7 @@ def create_geo_spectrogram_file(station, range_type = "whole_deployment", block_
     header_group.create_dataset('frequency_interval', data=freq_interval)
 
     # Create the group for storing the spectrogram data (blocks)
-    data_group = file.create_group('data')
+    file.create_group('data')
 
     print(f"Created spectrogram file {outpath}")
 
@@ -902,7 +902,7 @@ def finish_geo_spectrogram_file(file, time_labels):
     print("The spectrogram file is closed.")
     
 # Read specific geophone-spectrogram data blocks from an HDF5 file 
-def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None, min_freq = None, max_freq = None):
+def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0):
     components = GEO_COMPONENTS
 
     # Determine if the both start and end times are provided
@@ -929,17 +929,11 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
         
         freq_interval = header_group["frequency_interval"][()]
-        if min_freq is None:
-            min_freq = 0.0
-        
-        if max_freq is None:
-            max_freq = 500.0
+
         min_freq_index = int(min_freq / freq_interval)
         max_freq_index = int(max_freq / freq_interval)
         
-        window_length = header_group["window_length"][()]
-        overlap = header_group["overlap"][()]
-        time_interval = Timedelta(seconds = window_length * (1 - overlap))
+        time_interval = get_geo_spec_time_interval(header_group)
         
         if starttime is None and endtime is None:
             # Option 1: Read the spectrograms of specific time labels
@@ -955,8 +949,7 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
                     print(f"Warning: Time label {time_label} does not exist!")
                     return None
 
-                starttime = block_group["start_time"][()]
-                starttime = Timestamp(starttime, unit='ns')
+                timeax = get_geo_spec_block_timeax(block_group, time_interval)
 
                 comp_group = block_group["components"]
                 for component in components:
@@ -964,10 +957,6 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
         
                     num_freq = data.shape[0]
                     freqax = linspace(min_freq, (num_freq - 1) * freq_interval, num_freq)
-        
-                    num_time = data.shape[1]
-                    
-                    timeax = date_range(start = starttime, periods = num_time, freq = time_interval)
                 
                     trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
                     stream_spec.append(trace_spec)
@@ -1041,6 +1030,58 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
 
     return stream_spec
 
+# Read the power of a specific frequency from a geophone spectrogram file
+def read_freq_from_geo_spectrograms(inpath, freq_out, components = GEO_COMPONENTS):
+    power_dict = {}
+    power_dict["times"] = []
+    for component in components:
+        power_dict[component] = []
+
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+
+        # Get the time interval
+        time_interval = get_geo_spec_time_interval(header_group)
+
+        # Get the frequency index
+        freq_interval = header_group["frequency_interval"][()]
+        freq_index = int(round(freq_out / freq_interval))
+
+        # Read each block
+        time_labels = file["headers"]["time_labels"][:]
+
+        for time_label in time_labels:
+            block_group = file["data"][time_label]
+            timeax = get_geo_spec_block_timeax(block_group, time_interval)
+            power_dict["times"].append(Series(timeax))
+
+            # Read every component
+            comp_group = block_group["components"]
+            for component in components:
+                data = comp_group[component][freq_index, :]
+
+                power_dict[component].append(data)
+
+    # Remove the last point of the time axis if it is the same as the first point of the next block
+    num_time_labels = len(time_labels)
+    for i in range(num_time_labels - 1):
+        timeax_prev = power_dict["times"][i]
+        timeax_next = power_dict["times"][i + 1]
+        if timeax_prev.iloc[-1] >= timeax_next.iloc[0]:
+            timeax_prev = timeax_prev.iloc[:-1]
+            power_dict["times"][i] = timeax_prev
+            for component in components:
+                power_dict[component][i] = power_dict[component][i][:-1]
+
+    # Concatenate the time axis and power data
+    power_dict["times"] = concat(power_dict["times"])
+    power_dict["times"] = DatetimeIndex(power_dict["times"])
+    
+    for component in components:
+        power_dict[component] = concatenate(power_dict[component])
+
+    return power_dict
+
 # Read the headers of a geophone spectrogram file and return them in a dictionary
 def read_geo_spec_headers(inpath):
     header_dict = {}
@@ -1069,43 +1110,61 @@ def read_geo_spec_headers(inpath):
 
     return header_dict
 
-# Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
-# Each location has its own time axis!
-def read_hydro_spectrograms(inpath):
-    with File(inpath, 'r') as file:
-        # Read the header information
-        header_group = file["headers"]
-        station = header_group["station"][()]
-        time_label = header_group["time_label"][()]
-        locations = header_group["locations"][:]
-
-        freq_interval = header_group["frequency_interval"][()]
+# Get the time interval of a geophone spectrogram file
+def get_geo_spec_time_interval(header_group):
+        window_length = header_group["window_length"][()]
         overlap = header_group["overlap"][()]
+        time_interval = Timedelta(seconds = window_length * (1 - overlap))
 
-        # Decode the strings
-        station = station.decode("utf-8")
-        time_label = time_label.decode("utf-8")
-        locations = [location.decode("utf-8") for location in locations]
+        return time_interval
 
-        # Read the spectrogram data
-        data_group = file["data"]
-        stream_spec = StreamSTFTPSD()
-        for location in locations:
-            loc_group = data_group[location]
-            data = loc_group["psd"][:]
-            starttime = loc_group["start_time"][()]
-            time_interval = loc_group["time_interval"][()]
+# Get the time axis of a geophone spectrogram block
+def get_geo_spec_block_timeax(block_group, time_interval):
+    starttime = block_group["start_time"][()]
+    starttime = Timestamp(starttime, unit='ns')
+    num_times = block_group["num_times"][()]
+    endtime = starttime + (num_times - 1) * time_interval
+    timeax = date_range(start = starttime, end = endtime, periods = num_times)
 
-            num_freq = data.shape[0]
-            freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
+    return timeax
+
+# # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
+# # Each location has its own time axis!
+# def read_hydro_spectrograms(inpath):
+#     with File(inpath, 'r') as file:
+#         # Read the header information
+#         header_group = file["headers"]
+#         station = header_group["station"][()]
+#         time_label = header_group["time_label"][()]
+#         locations = header_group["locations"][:]
+
+#         freq_interval = header_group["frequency_interval"][()]
+#         overlap = header_group["overlap"][()]
+
+#         # Decode the strings
+#         station = station.decode("utf-8")
+#         time_label = time_label.decode("utf-8")
+#         locations = [location.decode("utf-8") for location in locations]
+
+#         # Read the spectrogram data
+#         data_group = file["data"]
+#         stream_spec = StreamSTFTPSD()
+#         for location in locations:
+#             loc_group = data_group[location]
+#             data = loc_group["psd"][:]
+#             starttime = loc_group["start_time"][()]
+#             time_interval = loc_group["time_interval"][()]
+
+#             num_freq = data.shape[0]
+#             freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
             
-            num_time = data.shape[1]
-            timeax = assemble_timeax_from_ints(starttime, num_time, time_interval)
+#             num_time = data.shape[1]
+#             timeax = assemble_timeax_from_ints(starttime, num_time, time_interval)
             
-            trace_spec = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
-            stream_spec.append(trace_spec)
+#             trace_spec = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
+#             stream_spec.append(trace_spec)
 
-        return stream_spec    
+#         return stream_spec    
 
 # Read detected spectral peaks from a CSV or HDF file
 def read_spectral_peaks(inpath, **kwargs):

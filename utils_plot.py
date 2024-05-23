@@ -12,6 +12,7 @@ from matplotlib.colors import LogNorm, Normalize
 from matplotlib.ticker import MultipleLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
+from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE
 from utils_basic import days_to_timestamps, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
@@ -933,7 +934,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     return fig, axes, power_cbar, rbw_cbar
 
 # Plot the geophone total psd, the spectral-peak powers, array detection counts, and the binarized array spectrogram
-def plot_geo_total_psd_to_array_spectrogram(trace_total, peak_df, count_df, bin_array_dict,
+def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, bin_array_dict,
                                             size_scale = 5, marker_size = 1,
                                             example_counts = array([5, 20, 35]),
                                             xdim = 15, ydim_per_row = 5,
@@ -1155,7 +1156,41 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     ax.set_ylim((min_freq, max_freq))
 
     return fig, axes, power_cbar, rbw_cbar
+
+# Plot the cumulative frequency counts of the spectral peaks
+def plot_cum_freq_counts(count_df, 
+                        xdim = 15, ydim = 5,
+                        log_scale = True,
+                        min_freq = 0.0, max_freq = 500.0,
+                        major_freq_spacing = 100, minor_freq_spacing = 20,
+                        axis_label_size = 12, tick_label_size = 10):
+    # Generate the figure and axes
+    fig, ax = subplots(1, 1, figsize=(xdim, ydim))
+
+    # Plot the cumulative frequency counts with stems and markers
+    if log_scale:
+        ax.set_yscale("log")
+        count_df.loc[count_df["count"] == 0, "count"] = 1
+
+    freqs = count_df["frequency"]
+    counts = count_df["count"]
+
+    ax.set_ylabel("Time-interval counts", fontsize = axis_label_size)
+
+    markerline, stemlines, _ = ax.stem(freqs, counts)
+    markerline.set_markerfacecolor("black")
+    markerline.set_markeredgecolor("black")
+    stemlines.set_linewidth(0.5)
+    stemlines.set_color("black")
     
+    # Format the frequency axis
+    format_freq_xlabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Set the x-axis limits
+    ax.set_xlim((min_freq, max_freq))
+
+    return fig, ax
+          
 ###### Functions for plotting CWT spectra ######
 
 ## Function to plot the 3C seismograms and spectrograms computed using CWT of a list of stations
@@ -2199,7 +2234,7 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
 
     return fig, axes, cbar
 
-## Function for getting windowed particle-motion data
+# Function for getting windowed particle-motion data
 def get_windowed_pm_data(stream_in, window_length):
     ### Determine if all three components are present
     components = GEO_COMPONENTS
@@ -2249,7 +2284,116 @@ def get_windowed_pm_data(stream_in, window_length):
 
     return pm_data_list
 
+###### Functions for adding elements to the plots ######
 
+# Add day-night shading to the plot
+def add_day_night_shading(ax, sun_df, day_color="mistyrose", night_color="lightblue"):
+    for i in range(len(sun_df) - 1):
+        sunrise = sun_df.iloc[i]["sunrise"]
+        sunset = sun_df.iloc[i]["sunset"]
+        ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0)
+
+        surise_next = sun_df.iloc[i + 1]["sunrise"]
+        ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0)
+
+    return ax
+
+# Add a station map to the plot
+# Make sure that the axis has the correct aspect ratio!
+def add_station_map(ax, loc_df, 
+                    stations_highlight = [], 
+                    station_size = 30, station_label_size = 6, edge_width = 0.5,
+                    station_color = "lightgray", hightlight_color = "crimson", 
+                    label_offset_x = 1.0, label_offset_y = 1.0,
+                    axis_label_size = 10, tick_label_size = 8):
+    
+    # Get the label alignments
+    ha, va = get_label_alignments(label_offset_x, label_offset_y)
+    
+    # Plot each station and its label
+    for i, row in loc_df.iterrows():
+        east = row["east"]
+        north = row["north"]
+        station = row["name"]
+
+        if station in stations_highlight:
+            ax.scatter(east, north, s = station_size, marker = "^", color = station_color, edgecolor = hightlight_color, linewidths = edge_width, zorder = 1)
+            ax.text(east + label_offset_x, north + label_offset_y, station, fontsize = station_label_size, color = hightlight_color, ha = ha, va = va, zorder = 2)
+        else:
+            ax.scatter(east, north, s = station_size, marker = "^", color = station_color, edgecolor = "black", linewidths = edge_width, zorder = 1)
+            ax.text(east + label_offset_x, north + label_offset_y, station, fontsize = station_label_size, color = "black", ha = ha, va = va, zorder = 2)
+
+    # Set the aspect ratio
+    ax.set_aspect("equal")
+
+    # Format the axes
+    ax.set_xlim(EASTMIN_WHOLE, EASTMAX_WHOLE)
+    ax.set_ylim(NORTHMIN_WHOLE, NORTHMAX_WHOLE)
+
+    format_east_xlabels(ax, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_north_ylabels(ax, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    return ax
+
+# Add a power colorbar to the plot
+def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=12, tick_label_size=12):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("Power (dB)", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(tick_spacing)
+    cbar.update_ticks() 
+
+    return cbar
+
+# Add a phase colorbar to the plot
+def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spacing=pi/2, axis_label_size=12, tick_label_size=10):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("Phase (rad)", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(tick_spacing)
+    cbar.update_ticks() 
+
+    return cbar
+
+# Add a coherence colorbar to the plot
+def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_spacing=0.1, axis_label_size=12, tick_label_size=10):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("Coherence", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(tick_spacing)
+    cbar.update_ticks() 
+
+    return cbar
+
+# Add a reverse-bandwidth colorbar to the plot
+def add_rbw_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("Bandwidth$^{-1}$ (Hz$^{-1}$)", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.update_ticks()
+
+# Add a count colorbar to the plot
+def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spacing=10, axis_label_size=12, tick_label_size=10):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label("Count", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(tick_spacing)
+    cbar.update_ticks()
+
+# Function to generate a scale bar
+def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
+    x = coordinates[0]
+    y = coordinates[1]
+    ax.errorbar(x, y, yerr=amplitude * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
+
+    return ax
+
+###### Format the axis labels of the plots ######
 
 # Format the x labels in datetime
 def format_datetime_xlabels(ax, label=True, date_format
@@ -2276,7 +2420,22 @@ def format_datetime_xlabels(ax, label=True, date_format
 
     return ax
 
-## Format the x labels in relative time
+# Format the x labels in frequency
+def format_freq_xlabels(ax, label=True, major_tick_spacing=100.0, minor_tick_spacing=20.0, axis_label_size=12, tick_label_size=12):
+    if label:
+        ax.set_xlabel("Frequency (Hz)", fontsize=axis_label_size)
+
+    ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.xaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+
+    for label in ax.get_xticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('top')
+        label.set_horizontalalignment('center')
+
+    return ax
+
+# Format the x labels in relative time
 def format_rel_time_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12):
     if label:
         ax.set_xlabel("Time (s)", fontsize=axis_label_size)
@@ -2291,7 +2450,37 @@ def format_rel_time_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_sp
 
     return ax
 
-## Function to format the y labels in depth
+# Format the x labels in easting
+def format_east_xlabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
+    if label:
+        ax.set_xlabel("East (m)", fontsize=axis_label_size)
+
+    ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.xaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+
+    for label in ax.get_xticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('top')
+        label.set_horizontalalignment('center')
+
+    return ax
+
+# Format the y labels in northing
+def format_north_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
+    if label:
+        ax.set_ylabel("North (m)", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+
+    for label in ax.get_yticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('center')
+        label.set_horizontalalignment('right')
+
+    return ax
+
+# Format the y labels in depth
 def format_depth_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
     if label:
         ax.set_ylabel("Depth (m)", fontsize=axis_label_size)
@@ -2361,6 +2550,12 @@ def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spaci
 
     return ax
 
+
+
+
+
+###### Basic utility functions ######
+
 # Convert a Timedelta to a datetime locator
 def timedelta_to_locator(time_delta):
     if time_delta.days > 0:
@@ -2374,65 +2569,7 @@ def timedelta_to_locator(time_delta):
 
     return locator
 
-# Add a power colorbar to the plot
-def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=12, tick_label_size=12):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Power (dB)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
-
-    return cbar
-
-# Add a phase colorbar to the plot
-def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spacing=pi/2, axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Phase (rad)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
-
-    return cbar
-
-# Add a coherence colorbar to the plot
-def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_spacing=0.1, axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Coherence", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
-
-    return cbar
-
-# Add a reverse-bandwidth colorbar to the plot
-def add_rbw_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Bandwidth$^{-1}$ (Hz$^{-1}$)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.update_ticks()
-
-# Add a count colorbar to the plot
-def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spacing=10, axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Count", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks()
-
-## Function to generate a scale bar
-def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
-    x = coordinates[0]
-    y = coordinates[1]
-    ax.errorbar(x, y, yerr=amplitude * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
-
-    return ax
-
-### Function for getting the color for the three geophone components
+# Function for getting the color for the three geophone components
 def get_geo_component_color(component):
     if component == "Z":
         color = "black"
@@ -2445,7 +2582,7 @@ def get_geo_component_color(component):
 
     return color
 
-### Function to convert component names to subplot titles
+# Function to convert component names to subplot titles
 def component_to_label(component):
     if component == "Z":
         title = "Up"
@@ -2458,7 +2595,7 @@ def component_to_label(component):
 
     return title
 
-### Function to convert the frequency band to a label
+# Function to convert the frequency band to a label
 def freq_band_to_label(freqmin, freqmax):
     if freqmin is not None and freqmax is not None:
         label = f"Bandpass {freqmin}-{freqmax} Hz"
@@ -2471,7 +2608,24 @@ def freq_band_to_label(freqmin, freqmax):
 
     return label
 
-### Function for saving a figure
+# Get label alignment from the x and y offsets
+def get_label_alignments(x_offset, y_offset):
+    if x_offset > 0 and y_offset > 0:
+        va = "bottom"
+        ha = "left"
+    elif x_offset > 0 and y_offset < 0:
+        va = "top"
+        ha = "left"
+    elif x_offset < 0 and y_offset > 0:
+        va = "bottom"
+        ha = "right"
+    elif x_offset < 0 and y_offset < 0:
+        va = "top"
+        ha = "right"
+
+    return ha, va
+
+# Function for saving a figure
 def save_figure(fig, filename, outdir=FIGURE_DIR, dpi=300):
     fig.patch.set_alpha(0)
 

@@ -65,8 +65,9 @@ EASTMAX_B = 65
 NORTHMIN_B = 15
 NORTHMAX_B = 105
 
-DAYS_PATH = join(ROOTDIR_GEO, "days.csv")
-NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")
+# DAYS_PATH = join(ROOTDIR_GEO, "days.csv")
+# NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")
+SUNRISE_SUNSET_PATH = join(ROOTDIR_GEO, "sunrise_sunset_times.csv")
 STATIONS_PATH = join(ROOTDIR_GEO, "stations.csv")
 
 WINDOW_LENGTH_GEO = 3600 # in seconds
@@ -156,25 +157,35 @@ def get_geo_metadata():
     
 # Get the geophone station coordinates
 def get_geophone_coords():
-    inpath = join(ROOTDIR, "geo_stations.csv")
+    inpath = join(ROOTDIR_GEO, "geo_stations.csv")
     sta_df = read_csv(inpath, index_col=0)
 
     return sta_df
 
-### Function to get the hydrophone station coordinates
+# Function to get the hydrophone station coordinates
 def get_hydrophone_coords():
     inpath = join(ROOTDIR, "hydro_stations.csv")
     sta_df = read_csv(inpath, index_col=0, dtype = {"location": str})
 
     return sta_df
 
-### Function to get the days of the geophone deployment
-def get_geophone_days():
+# Function to get the days of the geophone deployment
+def get_geophone_days(format = "string"):
     inpath = join(ROOTDIR_GEO, "days.csv")
     days_df = read_csv(inpath)
     days = days_df["day"].values
 
+    if format == "timestamp":
+        days = to_datetime(days)
+
     return days
+
+# Function to get the sunrise and sunset times for the geophone deployment
+def get_geo_sunrise_sunset_times():
+    inpath = SUNRISE_SUNSET_PATH
+    times_df = read_csv(inpath, index_col=0, date_format = "%Y-%m-%d %H:%M:%S")
+
+    return times_df
 
 ######
 # Functions for handling times

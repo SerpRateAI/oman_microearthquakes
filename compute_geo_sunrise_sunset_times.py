@@ -1,0 +1,33 @@
+# Compute sunrise and sunset times for the geophone deployment
+
+# Imports
+from os.path import join
+from astral import LocationInfo
+from astral.sun import sun
+from pandas import Timestamp, DataFrame
+
+from utils_basic import CENTER_LONGITUDE as longitude, CENTER_LATITUDE as latitude, ROOTDIR_GEO as outdir
+from utils_basic import get_geophone_days
+
+# Get the days of the geophone deployment
+days = get_geophone_days(format = "timestamp")
+
+# Get the location information
+location = LocationInfo(longitude = longitude, latitude = latitude)
+
+# Compute the sunrise and sunset times
+sunrise_times = []
+sunset_times = []
+
+for day in days:
+    s = sun(location.observer, date = day)
+    sunrise_times.append(s["sunrise"])
+    sunset_times.append(s["sunset"])
+
+# Construct the output DataFrame
+out_df = DataFrame({"day": days, "sunrise": sunrise_times, "sunset": sunset_times})
+
+# Save the output
+outpath = join(outdir, "sunrise_sunset_times.csv")
+out_df.to_csv(outpath, index = True, date_format = "%Y-%m-%d %H:%M:%S")
+print(f"Saved sunrise and sunset times to {outpath}")
