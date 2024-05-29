@@ -61,11 +61,11 @@ def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, s
     # Read the waveforms
     print(f"Reading the waveforms for {day}")
     stations_to_read = get_hydro_stations_to_read(stations)
-    locations_to_read = get_hydro_locations_to_read(locations)
 
     stream_in = Stream()
     for station in stations_to_read:
         stream_station = Stream()
+        locations_to_read = get_hydro_locations_to_read(station, locations)
 
         for location in locations_to_read:
             stream = read_day_long_hydro_waveforms(day, station, location)
@@ -431,17 +431,25 @@ def get_hydro_stations_to_read(stations):
     return stations_to_read
 
 ## Get the list of hydrophone locations to read
-def get_hydro_locations_to_read(locations):
+def get_hydro_locations_to_read(station, locations):
+    loc_dict = HYDRO_LOCATIONS
+
     if locations is None:
-        locations_to_read = HYDRO_LOCATIONS
+        locations_to_read = loc_dict[station]
     else:
         if type(locations) is not list:
             if type(locations) is str:
-                locations_to_read = [locations]
+                if locations in loc_dict[station]:
+                    locations_to_read = [locations]
             else:
                 raise TypeError("Error: locations must be a list of strings!")
         else:
             locations_to_read = locations
+
+        locations_to_read = [location in loc_dict[station] for location in locations_to_read]
+
+    if len(locations_to_read) == 0:
+        raise ValueError("Error: No valid locations to read!")
 
     return locations_to_read
 

@@ -33,7 +33,7 @@ SAMPLING_RATE_GEO = 1000.0
 NETWORK = "7F"
 
 HYDRO_STATIONS = ["A00", "B00"]
-HYDRO_LOCATIONS = ["01", "02", "03", "04", "05", "06"]
+HYDRO_LOCATIONS = {"A00": ["03", "04", "05", "06"], "B00": ["01", "02", "03", "04", "05", "06"]}
 
 GEO_COMPONENTS = ["Z", "1", "2"]
 PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
@@ -88,6 +88,13 @@ def get_unique_stations(stream):
     stations.sort()
 
     return stations
+
+### Function to get the unique locations from a stream
+def get_unique_locations(stream):
+    locations = list(set([trace.stats.location for trace in stream]))
+    locations.sort()
+
+    return locations
 
 ### Function to convert from ObsPy UTCDateTime objects to Pandas Timestamp objects
 def utcdatetime_to_timestamp(utcdatetime):
@@ -169,9 +176,20 @@ def get_hydrophone_coords():
 
     return sta_df
 
-# Function to get the days of the geophone deployment
+# Get the days of the geophone deployment
 def get_geophone_days(format = "string"):
     inpath = join(ROOTDIR_GEO, "days.csv")
+    days_df = read_csv(inpath)
+    days = days_df["day"].values
+
+    if format == "timestamp":
+        days = to_datetime(days)
+
+    return days
+
+# Get the days of the hydrophone deployment
+def get_hydrophone_days(format = "string"):
+    inpath = join(ROOTDIR_HYDRO, "hydrophone_days.csv")
     days_df = read_csv(inpath)
     days = days_df["day"].values
 

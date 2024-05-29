@@ -116,7 +116,7 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
     
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap=overlap, cuda = cuda)
+    stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap = overlap, cuda = cuda)
     
     # Pad and resample the spectrograms to the begin and end of the day
     print(f"Resampling the spectrograms to the begin and end of the day...")
@@ -141,44 +141,32 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
 
 # Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
 # Window length is in SECONDS!
-def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
-    if downsample and downsample_factor is None:
+def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, resample_in_parallel = False, downsample = False, **kwargs):
+    if downsample and "downsample_factor" not in kwargs:
         raise ValueError("The downsample factor is not set!")
+
+    if resample_in_parallel and "num_process_resample" not in kwargs:
+        raise ValueError("Error: Number of processes is not given!")
     
     # Compute the spectrograms
     print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
+    stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap = overlap, cuda = cuda)
 
     # Pad and resample the spectrograms to the begin and end of the day
     print(f"Resampling the spectrograms to the begin and end of the day...")
-    stream_spec.trim_to_day()
-
-    # Downsample the spectrograms
-    if downsample:
-            stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
+    if resample_in_parallel:
+        num_process = kwargs["num_process_resample"]
+        stream_spec.resample_to_day(parallel = True, num_process = num_process)
     else:
-        stream_spec_ds = None
-    
-    return stream_spec, stream_spec_ds
+        stream_spec.resample_to_day(parallel = False)
 
-# Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
-# Window length is in SECONDS!
-def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, downsample = False, downsample_factor = None):
-    if downsample and downsample_factor is None:
-        raise ValueError("The downsample factor is not set!")
-    
-    # Compute the spectrograms
-    print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, window_length, overlap=overlap, cuda = cuda)
+    # Set the time labels
+    stream_spec.set_time_labels(block_type = "daily")
 
-    # Pad and resample the spectrograms to the begin and end of the day
-    print(f"Trimming the spectrograms to the begin and end of the day...")
-    stream_spec.resample_to_day()
-
-    # Downsample the spectrograms
+    # Downsample the spectrograms along the frequency axis
     if downsample:
         print(f"Downsampling the spectrograms...")
-        stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
+        downsample_factor = kwargs["downsample_factor"]
         stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
     else:
         stream_spec_ds = None
