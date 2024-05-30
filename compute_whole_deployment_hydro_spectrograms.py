@@ -13,6 +13,7 @@ from utils_spec import create_hydro_spectrogram_file, write_hydro_spectrogram_bl
 from utils_torch import get_daily_hydro_spectrograms
 
 # Inputs
+stations_to_compute = ["A00"]
 window_length = 60.0 # IN SECONDS
 overlap = 0.0
 downsample = True # Downsample along the frequency axis
@@ -35,7 +36,7 @@ freq_interval = 1.0 / window_length
 freq_interval_ds = freq_interval * downsample_factor
 
 # Process each station
-for station in loc_dict.keys():
+for station in stations_to_compute:
     print("######")
     print(f"Processing {station}...")
     print("######")

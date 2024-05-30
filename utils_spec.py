@@ -1053,10 +1053,7 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
     if starttime is not None and endtime is not None and time_labels is not None:
         raise ValueError("Error: Time labels and start/end times cannot be given at the same time!")
     
-    # Convert the time labels to a list
-    if not isinstance(time_labels, list):
-        if isinstance(time_labels, str):
-            time_labels = [time_labels]
+
 
     with File(inpath, 'r') as file:
         # Read the header information
@@ -1067,6 +1064,7 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
 
         time_labels_in = header_group["time_labels"][:]
         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
+
 
         locations = header_group["locations"][:]
         locations = [location.decode("utf-8") for location in locations]
@@ -1084,9 +1082,15 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
             # If the input time labels are not provided, read only the first time label
             if time_labels is None:
                 time_labels = time_labels_in[:1]
+            else:
+                # Convert the time labels to a list
+                if not isinstance(time_labels, list):
+                    if isinstance(time_labels, str):
+                        time_labels = [time_labels]
                 
             stream_spec = StreamSTFTPSD()
             for time_label in time_labels:
+                print(f"Reading spectrogram block {time_label}...")
                 try:
                     block_group = data_group[time_label]
                 except KeyError:
@@ -1156,8 +1160,51 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
 
     return stream_spec
 
+# Read the power at a specific time from a geophone spectrogram file
+def read_time_from_geo_spectrograms(inpath, time_out, components = GEO_COMPONENTS):
+    # Convert string to Timestamp
+    if isinstance(time_out, str):
+        time_out = Timestamp(time_out)
 
-# Read the power of a specific frequency from a geophone spectrogram file
+    power_dict = {}
+    
+
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+
+        # Get the time labels and start times of each block
+        time_labels = get_spec_time_labels(header_group)
+        starttimes = to_datetime(time_labels, format = "%Y%m%d%H%M%S%f")
+
+        # Get the time and frequency interval
+        time_interval = get_spec_time_interval(header_group)
+        freq_interval = header_group["frequency_interval"][()]
+
+        # Get the time label of the block that contains the time_out
+        index = starttimes.searchsorted(time_out)
+
+        if index == 0 or index == len(starttimes):
+            raise ValueError("Error: The time is out of the range of the spectrogram file!")
+        
+        time_label = time_labels[index - 1]
+
+        # Read the time slice of the spectrogram
+        block_group = file["data"][time_label]
+        timeax = get_spec_block_timeax(block_group, time_interval)
+        freqax = get_spec_block_freqax(block_group, freq_interval)
+
+        time_index = timeax.searchsorted(time_out)
+
+        power_dict["frequencies"] = freqax
+
+        comp_group = block_group["components"]
+        for component in components:
+            data = comp_group[component][:, time_index]
+            power_dict[component] = data
+
+    return power_dict
+
+# Read the power at a specific frequency from a geophone spectrogram file
 def read_freq_from_geo_spectrograms(inpath, freq_out, components = GEO_COMPONENTS):
     power_dict = {}
     power_dict["times"] = []
@@ -1209,6 +1256,53 @@ def read_freq_from_geo_spectrograms(inpath, freq_out, components = GEO_COMPONENT
 
     return power_dict
 
+# Read the power at a specific time from a hydrophone spectrogram file
+def read_time_from_hydro_spectrograms(inpath, time_out, locations = None):
+    # Convert string to Timestamp
+    if isinstance(time_out, str):
+        time_out = Timestamp(time_out)
+
+    power_dict = {}
+
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+
+        # Get the time labels and start times of each block
+        time_labels = get_spec_time_labels(header_group)
+        starttimes = to_datetime(time_labels, format = "%Y%m%d%H%M%S%f")
+
+        # Get the time and frequency interval
+        time_interval = get_spec_time_interval(header_group)
+        freq_interval = header_group["frequency_interval"][()]
+
+        # Get the time label of the block that contains the time_out
+        index = starttimes.searchsorted(time_out)
+
+        if index == 0 or index == len(starttimes):
+            raise ValueError("Error: The time is out of the range of the spectrogram file!")
+        
+        time_label = time_labels[index - 1]
+
+        # Read the time slice of each location
+        block_group = file["data"][time_label]
+        timeax = get_spec_block_timeax(block_group, time_interval)
+        freqax = get_spec_block_freqax(block_group, freq_interval)
+        
+        power_dict["frequencies"] = freqax
+
+        time_index = timeax.searchsorted(time_out)
+
+        loc_group = block_group["locations"]
+
+        if locations is None:
+            locations = get_hydro_spec_locations(header_group)
+
+        for location in locations:
+            data = loc_group[location][:, time_index]
+            power_dict[location] = data
+
+    return power_dict
+
 # Read the headers of a geophone spectrogram file and return them in a dictionary
 def read_geo_spec_headers(inpath):
     header_dict = {}
@@ -1237,6 +1331,13 @@ def read_geo_spec_headers(inpath):
 
     return header_dict
 
+# Get the time labels of a geophone spectrogram file from the headers
+def get_spec_time_labels(header_group):
+    time_labels = header_group["time_labels"][:]
+    time_labels = [time_label.decode("utf-8") for time_label in time_labels]
+
+    return time_labels
+
 # Get the time interval of a geophone spectrogram file
 def get_spec_time_interval(header_group):
         window_length = header_group["window_length"][()]
@@ -1244,6 +1345,14 @@ def get_spec_time_interval(header_group):
         time_interval = Timedelta(seconds = window_length * (1 - overlap))
 
         return time_interval
+
+# Get the frequency axis from the headers of a spectrogram file
+def get_spec_block_freqax(block_group, freq_interval):
+    num_freqs = block_group["num_freqs"][()]
+    freqax = linspace(0, (num_freqs - 1) * freq_interval, num_freqs)
+
+    return freqax
+
 
 # Get the time axis of a geophone spectrogram block
 def get_spec_block_timeax(block_group, time_interval):
@@ -1288,6 +1397,14 @@ def get_data_block_time_indices(starttime_block, num_times, time_interval, start
     end_index = amin([num_times, int((endtime_to_read - starttime_block) / time_interval)])
 
     return start_index, end_index
+
+# Get the locations of a hydrophone spectrogram file from the headers
+def get_hydro_spec_locations(header_group):
+    locations = header_group["locations"][:]
+    locations = [location.decode("utf-8") for location in locations]
+
+    return locations
+
 
 # # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
 # # Each location has its own time axis!

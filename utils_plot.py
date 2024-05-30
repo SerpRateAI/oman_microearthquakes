@@ -577,7 +577,7 @@ def plot_geo_stft_spectrograms(stream_spec,
     else:
         fig, axes = subplots(3, 1, figsize=(xdim, 3 * ydim_per_comp), sharex=True, sharey=True)
 
-    cmap = colormaps["inferno"]
+    cmap = colormaps["inferno"].copy()
     cmap.set_bad(color="lightgray")
 
     ax = axes[0]
@@ -624,13 +624,14 @@ def plot_geo_stft_spectrograms(stream_spec,
 
     return fig, axes, cbar
 
-# Plot the long-term spectrograms of all locations of a hydrophone station computed using STFT
-def plot_long_term_hydro_stft_spectrograms(stream_spec,
-                            xdim = 15, ydim_per_loc= 5, 
-                            freq_lim=(0, 490), dbmin=-30, dbmax=0,
+# Plot the hydrophone spectrograms of all locations of a station computed using STFT
+def plot_hydro_stft_spectrograms(stream_spec,
+                            xdim = 15.0, ydim_per_loc= 3.0,
+                            starttime = None, endtime = None,
+                            min_freq = 0.0, max_freq = 500.0,
+                            dbmin=-80, dbmax=-50,
                             component_label_x = 0.01, component_label_y = 0.96,
-                            date_format
- = "%Y-%m-%d",
+                            date_format = "%Y-%m-%d %H:%M:%S",
                             major_time_spacing=24, minor_time_spacing=6, 
                             major_freq_spacing=100, minor_freq_spacing=20,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
@@ -643,7 +644,8 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
     num_loc = len(locations)
 
     # Plot the spectrograms
-    fig, axes = subplots(num_loc, 1, figsize=(xdim, 3 * ydim_per_loc), sharex=True, sharey=True)
+    fig, axes = subplots(num_loc, 1, figsize=(xdim, num_loc * ydim_per_loc), sharex=True, sharey=True)
+    cmap = get_power_colormap()
 
     for i, location in enumerate(locations):
         trace_spec = stream_spec.select(location = location)[0]
@@ -652,18 +654,23 @@ def plot_long_term_hydro_stft_spectrograms(stream_spec,
         data = trace_spec.data
         
         ax = axes[i]
-        power_color = ax.pcolormesh(timeax, freqax, data, cmap = "inferno", vmin = dbmin, vmax = dbmax)
+        power_color = ax.pcolormesh(timeax, freqax, data, cmap = cmap, vmin = dbmin, vmax = dbmax)
         label = location
         ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
-    
-    ax.set_ylim(freq_lim)
+        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
-    major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
-    minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
+    if starttime is None:
+        starttime = timeax[0]
+    
+    if endtime is None:
+        endtime = timeax[-1]
+
+    ax.set_xlim(starttime, endtime)
+    ax.set_ylim((min_freq, max_freq))
+
     format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format
  = date_format
-, rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+, rotation = time_tick_rotation, axis_label_size = axis_label_size ,vertical_align = time_tick_va, horizontal_align = time_tick_ha)
 
     # Add the colorbar
     bbox = axes[num_loc - 1].get_position()
@@ -2393,6 +2400,13 @@ def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
 
     return ax
 
+###### Get colormaps for the plots ######
+def get_power_colormap():
+    cmap = colormaps["inferno"].copy()
+    cmap.set_bad(color='lightgray')
+
+    return cmap
+
 ###### Format the axis labels of the plots ######
 
 # Format the x labels in datetime
@@ -2495,7 +2509,6 @@ def format_depth_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spaci
 
     return ax
 
-
 ## Function to format the y labels in frequency
 def format_freq_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=20, minor_tick_spacing=5, axis_label_size=12, tick_label_size=12):
     if label:
@@ -2549,9 +2562,6 @@ def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spaci
         label.set_horizontalalignment('right')
 
     return ax
-
-
-
 
 
 ###### Basic utility functions ######
