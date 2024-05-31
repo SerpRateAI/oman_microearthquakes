@@ -34,7 +34,8 @@ NETWORK = "7F"
 
 HYDRO_STATIONS = ["A00", "B00"]
 HYDRO_LOCATIONS = {"A00": ["03", "04", "05", "06"], "B00": ["01", "02", "03", "04", "05", "06"]}
-
+HYDRO_DEPTHS = {"01": 30.0, "02": 100.0, "03": 170.0, "04": 240.0, "05": 310.0, "06": 380.0}
+                
 GEO_COMPONENTS = ["Z", "1", "2"]
 PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
 WAVELET_COMPONENT_PAIRS = [("1", "2"), ("Z", "1"), ("Z", "2")]
@@ -327,7 +328,7 @@ def time2suffix(input):
     else:
         raise TypeError("Invalid input type!")
     
-    output = timestamp.strftime("%Y%m%dT%H%M%S")
+    output = timestamp.strftime("%Y%m%d%H%M%S")
 
     return output
 
