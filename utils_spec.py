@@ -1043,7 +1043,14 @@ def finish_hydro_spectrogram_file(file, time_labels):
     print("The spectrogram file is closed.")
 
 # Read specific segments of hydrophone-spectrogram data from an HDF5 file
-def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0):
+def read_hydro_spectrograms(inpath, time_labels = None, locations = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0):
+    # Convert the locations to a list
+    if locations is not None:
+        if not isinstance(locations, list):
+            if isinstance(locations, str):
+                locations = [locations]
+        else:
+            raise ValueError("Error: Invalid location format!")
 
     # Deterimine if both start and end times are provided
     if (starttime is not None and endtime is None) or (starttime is None and endtime is not None):
@@ -1053,8 +1060,6 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
     if starttime is not None and endtime is not None and time_labels is not None:
         raise ValueError("Error: Time labels and start/end times cannot be given at the same time!")
     
-
-
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
@@ -1065,9 +1070,9 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
         time_labels_in = header_group["time_labels"][:]
         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
 
-
-        locations = header_group["locations"][:]
-        locations = [location.decode("utf-8") for location in locations]
+        if locations is None:
+            locations = header_group["locations"][:]
+            locations = [location.decode("utf-8") for location in locations]
 
         freq_interval = header_group["frequency_interval"][()]
 
@@ -1101,7 +1106,11 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
 
                 loc_group = block_group["locations"]
                 for location in locations:
-                    data = loc_group[location][min_freq_index:max_freq_index, :]
+                    try:
+                        data = loc_group[location][min_freq_index:max_freq_index, :]
+                    except KeyError:
+                        print(f"Warning: Location {location} does not exist for time label {time_label}!")
+                        continue
         
                     num_freq = data.shape[0]
                     freqax = linspace(min_freq, max_freq, num_freq)
@@ -1142,7 +1151,11 @@ def read_hydro_spectrograms(inpath, time_labels = None, starttime = None, endtim
                     start_index, end_index = get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read)
 
                     # Slice the data matrix
-                    data = loc_group[location][min_freq_index:max_freq_index, start_index:end_index]
+                    try:
+                        data = loc_group[location][min_freq_index:max_freq_index, start_index:end_index]
+                    except KeyError:
+                        print(f"Warning: Location {location} does not exist for time label {time_label}!")
+                        continue
 
                     # Create the frequency axis
                     freqax = linspace(min_freq, max_freq, data.shape[0])
@@ -1365,7 +1378,7 @@ def get_spec_block_timeax(block_group, time_interval):
     return timeax
 
 # Get the timing of a list of spectrogram blocks
-def get_block_timings(data_group, time_interval, time_labels):
+def get_block_timings(data_group, time_labels, time_interval):
     block_starttimes = []
     block_endtimes = []
     block_numtimes = []

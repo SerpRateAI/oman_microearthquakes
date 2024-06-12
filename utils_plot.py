@@ -9,11 +9,11 @@ from matplotlib.patches import Rectangle
 from matplotlib import colormaps
 from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
 from matplotlib.colors import LogNorm, Normalize
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
-from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE
-from utils_basic import days_to_timestamps, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
+from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
+from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
 GROUND_VELOCITY_UNIT = "nm s$^{-1}$"
@@ -185,29 +185,52 @@ def plot_3c_seismograms(stream, stations=GEO_STATIONS, xdim_per_comp=25, ydim_pe
 
     return fig, axes
 
-## Plot the hydrophone waveforms of one borehole in a given time window
-def plot_windowed_hydro_waveforms(stream, station_df, 
-                                station_to_plot = "A00", locations_to_plot = None, normalize=False,
+# Plot the hydrophone waveforms of one borehole in a given time window
+def plot_windowed_hydro_waveforms(stream,
+                                locations_to_plot = None, 
+                                normalize=False,
                                 scale = 1e-3, xdim = 10, ydim_per_loc = 2, 
-                                linewidth_wf = 1, linewidth_sb = 0.5,
-                                major_time_spacing = 5.0, minor_time_spacing = 1.0, major_depth_spacing=50.0, minor_depth_spacing=10.0,
+                                linewidth_wf = 1,
+                                date_format = "%Y-%m-%d %H:%M:%S",
+                                major_time_spacing = "1s", num_minor_time_ticks = 5, major_depth_spacing = 50.0, num_minor_depth_ticks = 5,
+                                va = "top", ha = "center", rotation = 0,
                                 station_label_size = 12, axis_label_size = 12, tick_label_size = 12,
-                                depth_lim = (0.0, 420.0), location_label_offset = (0.05, -15), 
-                                scalebar_offset = (0.2, -15), scalebar_length = 0.2, scalebar_label_size=12):
-    unit = PRESSURE_UNIT
+                                depth_lim = (0.0, 420.0), location_label_offset = (0.02, -15),
+                                plot_pa_scalebar = False, plot_time_scalebar = False,
+                                **kwargs):
+    pa_unit = PRESSURE_UNIT
+    loc_dict = HYDRO_LOCATIONS
+    depth_dict = HYDRO_DEPTHS
+    station_to_plot = stream[0].stats.station
 
-    ### Get the number of locations
+    # Determine if the scalebar parameters are given
+    if plot_pa_scalebar or plot_time_scalebar:
+        scalebar_label_size = kwargs["scalebar_label_size"]
+        scalebar_width = kwargs["scalebar_width"]
+
+        if plot_pa_scalebar:
+            pa_scalebar_offset_x = kwargs["pa_scalebar_offset_x"]
+            pa_scalebar_offset_y = kwargs["pa_scalebar_offset_y"]
+            pa_scalebar_length = kwargs["pa_scalebar_length"]
+        
+        if plot_time_scalebar:
+            time_scalebar_offset_x = kwargs["time_scalebar_offset_x"]
+            time_scalebar_offset_y = kwargs["time_scalebar_offset_y"]
+            time_scalebar_length = kwargs["time_scalebar_length"]
+
+    # Get the number of locations
     if locations_to_plot is None:
-        locations_to_plot = HYDRO_LOCATIONS
+        locations_to_plot = loc_dict[station_to_plot]
     
     numloc = len(locations_to_plot)
     
-    ### Generate the figure and axes
-    fig, ax  = subplots(1, 1, figsize=(xdim, ydim_per_loc * numloc))
+    # Generate the figure and axes
+    fig, ax  = subplots(1, 1, figsize = (xdim, ydim_per_loc * numloc))
 
-    ### Plot each location
+    # Plot each location
     for location in locations_to_plot:
-        #### Plot the trace
+        print(f"Plotting {station_to_plot}.{location}...")
+        # Plot the trace
         try:
             trace = stream.select(station=station_to_plot, location=location)[0]
         except:
@@ -215,7 +238,7 @@ def plot_windowed_hydro_waveforms(stream, station_df,
             continue
 
         data = trace.data
-        depth = station_df.loc[(station_df["station"] == station_to_plot) & (station_df["location"] == location), "depth"].values[0]
+        depth = depth_dict[location]
         if normalize:
             data = data / amax(abs(data))
         
@@ -224,7 +247,7 @@ def plot_windowed_hydro_waveforms(stream, station_df,
 
         ax.plot(timeax, data, color="darkviolet", linewidth=linewidth_wf)
 
-        #### Add the location label
+        # Add the location label
         offset_x = location_label_offset[0]
         offset_y = location_label_offset[1]
         label = f"{station_to_plot}.{location}"
@@ -237,23 +260,39 @@ def plot_windowed_hydro_waveforms(stream, station_df,
     ### Reverse the y-axis
     ax.invert_yaxis()
 
-    ### Plot the scale bar
+    # Plot the scale bar
     if not normalize:
+        if plot_pa_scalebar:
+            if isinstance(pa_scalebar_offset_x, str):
+                pa_scalebar_offset_x = Timedelta(pa_scalebar_offset_x)
+            max_depth = ax.get_ylim()[0]
+
+            scalebar_coord = (timeax[0] + pa_scalebar_offset_x, max_depth - pa_scalebar_offset_y)
+            label_offsets = (0.25 * pa_scalebar_offset_x, 0.0)
+
+            add_vertical_scalebar(ax, scalebar_coord, pa_scalebar_length, scale, label_offsets, label_unit = pa_unit, fontsize = scalebar_label_size, linewidth = scalebar_width)
+
+    if plot_time_scalebar:
+        if isinstance(time_scalebar_offset_x, str):
+            time_scalebar_offset_x = Timedelta(time_scalebar_offset_x)
         max_depth = ax.get_ylim()[0]
-        if major_time_spacing > 1.0:
-            scalebar_coord = (timeax[0] + Timedelta(seconds=scalebar_offset[0]), max_depth + scalebar_offset[1])
-        else:
-            scalebar_coord = (timeax[0] + scalebar_offset[0], max_depth + scalebar_offset[1])
 
-        add_scalebar(ax, scalebar_coord, scalebar_length, scale, linewidth=linewidth_sb)
-        ax.annotate(f"{scalebar_length} {unit}", scalebar_coord, xytext=(0.5, 0), textcoords="offset fontsize", fontsize=scalebar_label_size, ha="left", va="center")
+        scalebar_coord = (timeax[0] + time_scalebar_offset_x, max_depth - time_scalebar_offset_y)
+        label_offsets = (Timedelta(0.0), 10.0)
 
+        add_horizontal_scalebar(ax, scalebar_coord, time_scalebar_length, 1.0, label_offsets, label_unit = "ms", fontsize = scalebar_label_size, linewidth = scalebar_width)
 
-    ### Format the x-axis labels
-    ax  = format_datetime_xlabels(ax, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+    # Format the x-axis labels
+    ax  = format_datetime_xlabels(ax,
+                                  date_format = date_format, 
+                                  major_tick_spacing=major_time_spacing, num_minor_ticks=num_minor_time_ticks,
+                                  va = va, ha = ha, rotation = rotation,
+                                  axis_label_size=axis_label_size, tick_label_size=tick_label_size)
 
-    ### Format the y-axis labels
-    ax = format_depth_ylabels(ax, major_tick_spacing=major_depth_spacing, minor_tick_spacing=minor_depth_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+    # Format the y-axis labels
+    ax = format_depth_ylabels(ax, 
+                              major_tick_spacing=major_depth_spacing, num_minor_ticks=num_minor_depth_ticks, 
+                              axis_label_size=axis_label_size, tick_label_size=tick_label_size)
 
     return fig, ax     
 
@@ -769,8 +808,8 @@ def plot_array_spec_peak_counts(count_df,
                             xdim = 15, ydim = 5, 
                             starttime = STARTTIME_GEO, endtime = ENDTIME_GEO, freq_lim = (0, 490),
                             date_format = "%Y-%m-%d",
-                            major_time_spacing="24h", minor_time_spacing="6h", 
-                            major_freq_spacing=100, minor_freq_spacing=20,
+                            major_time_spacing="24h", num_minor_time_ticks = 6,
+                            major_freq_spacing=100, num_minor_freq_ticks=5,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
 
@@ -806,12 +845,12 @@ def plot_array_spec_peak_counts(count_df,
     ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
 
     # Format the frequency axis
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Format the time axis
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
-                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
-                            , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks,
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format, 
+                            rotation = time_tick_rotation, va=time_tick_va, ha=time_tick_ha)
 
     # Set the x-axis limits
     ax.set_xlim([count_df["time"].min(), count_df["time"].max()])
@@ -820,7 +859,7 @@ def plot_array_spec_peak_counts(count_df,
     ax.set_ylim(freq_lim)
 
     # Add the title
-    ax.set_title("Array detection bin counts", fontsize = title_size, fontweight = "bold")
+    ax.set_title("Array detection counts", fontsize = title_size, fontweight = "bold")
 
     return fig, ax
 
@@ -2307,28 +2346,50 @@ def add_day_night_shading(ax, sun_df, day_color="mistyrose", night_color="lightb
 
 # Add a station map to the plot
 # Make sure that the axis has the correct aspect ratio!
-def add_station_map(ax, loc_df, 
-                    stations_highlight = [], 
+def add_station_map(ax, 
+                    geo_df = None,
+                    bh_df = None,
+                    stations_highlight = [],
+                    label_boreholes = True,
+                    label_all_stations = False,
                     station_size = 30, station_label_size = 6, edge_width = 0.5,
-                    station_color = "lightgray", hightlight_color = "crimson", 
-                    label_offset_x = 1.0, label_offset_y = 1.0,
+                    borehole_size = 30, borehole_label_size = 6,
+                    borehole_color = "darkviolet", station_color = "lightgray", hightlight_color = "crimson",
+                    bh_label_offset_x = 20.0, bh_label_offset_y = -20.0,
+                    geo_label_offset_x = 1.0, geo_label_offset_y = 1.0,
                     axis_label_size = 10, tick_label_size = 8):
+
+    if geo_df is None:
+        geo_df = get_geophone_coords()
+
+    if bh_df is None:
+        bh_df = get_borehole_coords()
     
     # Get the label alignments
-    ha, va = get_label_alignments(label_offset_x, label_offset_y)
+    ha, va = get_label_alignments(geo_label_offset_x, geo_label_offset_y)
     
     # Plot each station and its label
-    for i, row in loc_df.iterrows():
+    for station, row in geo_df.iterrows():
         east = row["east"]
         north = row["north"]
-        station = row["name"]
 
         if station in stations_highlight:
             ax.scatter(east, north, s = station_size, marker = "^", color = station_color, edgecolor = hightlight_color, linewidths = edge_width, zorder = 1)
-            ax.text(east + label_offset_x, north + label_offset_y, station, fontsize = station_label_size, color = hightlight_color, ha = ha, va = va, zorder = 2)
+            ax.text(east + geo_label_offset_x, north + geo_label_offset_y, station, fontsize = station_label_size, color = hightlight_color, ha = ha, va = va, zorder = 2)
         else:
             ax.scatter(east, north, s = station_size, marker = "^", color = station_color, edgecolor = "black", linewidths = edge_width, zorder = 1)
-            ax.text(east + label_offset_x, north + label_offset_y, station, fontsize = station_label_size, color = "black", ha = ha, va = va, zorder = 2)
+            if label_all_stations:
+                ax.text(east + geo_label_offset_x, north + geo_label_offset_y, station, fontsize = station_label_size, color = "black", ha = ha, va = va, zorder = 2)
+
+    # Plot the boreholes
+    for borehole, row in bh_df.iterrows():
+        east = row["east"]
+        north = row["north"]
+
+        ax.scatter(east, north, s = borehole_size, marker = "o", color = borehole_color, edgecolor = "black", linewidths = edge_width, zorder = 1)
+        if label_boreholes:
+            ha, va = get_label_alignments(bh_label_offset_x, bh_label_offset_y)
+            ax.annotate(borehole, (east, north), xytext = (bh_label_offset_x, bh_label_offset_y), textcoords = "offset points", fontsize = borehole_label_size, color = borehole_color, ha = ha, va = va, arrowprops = dict(arrowstyle = "-", color = "black"), zorder = 2)
 
     # Set the aspect ratio
     ax.set_aspect("equal")
@@ -2343,11 +2404,11 @@ def add_station_map(ax, loc_df,
     return ax
 
 # Add a power colorbar to the plot
-def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=12, tick_label_size=12):
+def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Power (dB)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.set_label("Power (dB)", fontsize=axis_label_size, labelpad=labelpad)
+    cbar.ax.tick_params(labelsize=tick_label_size, length=tick_length, width=tick_width)
     cbar.locator = MultipleLocator(tick_spacing)
     cbar.update_ticks() 
 
@@ -2392,12 +2453,33 @@ def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spac
     cbar.locator = MultipleLocator(tick_spacing)
     cbar.update_ticks()
 
-# Function to generate a scale bar
-def add_scalebar(ax, coordinates, amplitude, scale, linewidth=1):
-    x = coordinates[0]
-    y = coordinates[1]
-    ax.errorbar(x, y, yerr=amplitude * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
+# Add a vertical scale bar
+def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = GROUND_VELOCITY_UNIT, linewidth = 1.0, fontsize = 12):
+    scale_x = coordinates[0]
+    scale_y = coordinates[1]
 
+    label_x = scale_x + label_offsets[0]
+    label_y = scale_y + label_offsets[1]
+
+    ax.errorbar(scale_x, scale_y, yerr=length * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
+    ax.text(label_x, label_y, f"{length} {label_unit}", fontsize=fontsize, color='black', ha='left', va='center')
+    
+    return ax
+
+# Add a horizontal scale bar
+def add_horizontal_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = "ms", linewidth = 1.0, fontsize = 12):
+    scale_x = coordinates[0]
+    scale_y = coordinates[1]
+
+    label_x = scale_x + label_offsets[0]
+    label_y = scale_y + label_offsets[1]
+
+    if isinstance(length, str):
+        length = Timedelta(length)
+
+    ax.errorbar(scale_x, scale_y, xerr=length * scale/2, yerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
+    ax.text(label_x, label_y, f"{length.microseconds / 1000:.0f} {label_unit}", fontsize=fontsize, color='black', ha='center', va='bottom')
+    
     return ax
 
 ###### Get colormaps for the plots ######
@@ -2410,47 +2492,61 @@ def get_power_colormap():
 ###### Format the axis labels of the plots ######
 
 # Format the x labels in datetime
-def format_datetime_xlabels(ax, label=True, date_format
- = '%m-%dT%H:%M:%S', major_tick_spacing = "24h", minor_tick_spacing = "1h", axis_label_size = 12, tick_label_size = 12, rotation = 0, vertical_align = "top", horizontal_align = "center"):
+def format_datetime_xlabels(ax, 
+                            label=True, date_format = '%Y-%m-%d %H:%M:%S', 
+                            major_tick_spacing = "24h", num_minor_ticks = 5,
+                            axis_label_size = 12, tick_label_size = 12, rotation = 0,
+                            major_tick_length = 5, minor_tick_length = 2.5, tick_width = 1,
+                            va = "top", ha = "center"):
     if label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
     # Convert to time deltas
     major_tick_spacing = Timedelta(major_tick_spacing)
-    minor_tick_spacing = Timedelta(minor_tick_spacing)
   
     major_locator = timedelta_to_locator(major_tick_spacing)
-    minor_locator = timedelta_to_locator(minor_tick_spacing)
 
     ax.xaxis.set_major_locator(major_locator)
-    ax.xaxis.set_minor_locator(minor_locator)
+    ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
     ax.xaxis.set_major_formatter(DateFormatter(date_format))
 
     for label in ax.get_xticklabels():
         label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment(vertical_align)
-        label.set_horizontalalignment(horizontal_align)
+        label.set_verticalalignment(va)
+        label.set_horizontalalignment(ha)
         label.set_rotation(rotation)
+
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
 
     return ax
 
 # Format the x labels in frequency
-def format_freq_xlabels(ax, label=True, major_tick_spacing=100.0, minor_tick_spacing=20.0, axis_label_size=12, tick_label_size=12):
+def format_freq_xlabels(ax, label=True, 
+                        major_tick_spacing=100.0, num_minor_ticks=5,
+                        axis_label_size=12, tick_label_size=12,
+                        major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("Frequency (Hz)", fontsize=axis_label_size)
 
     ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.xaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_xticklabels():
         label.set_fontsize(tick_label_size) 
         label.set_verticalalignment('top')
         label.set_horizontalalignment('center')
 
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 # Format the x labels in relative time
-def format_rel_time_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_spacing=15, axis_label_size=12, tick_label_size=12):
+def format_rel_time_xlabels(ax, label=True, 
+                            major_tick_spacing=60, minor_tick_spacing=15, 
+                            axis_label_size=12, tick_label_size=12,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("Time (s)", fontsize=axis_label_size)
 
@@ -2462,10 +2558,16 @@ def format_rel_time_xlabels(ax, label=True, major_tick_spacing=60, minor_tick_sp
         label.set_verticalalignment('top')
         label.set_horizontalalignment('center')
 
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 # Format the x labels in easting
-def format_east_xlabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
+def format_east_xlabels(ax, label=True, 
+                        major_tick_spacing=50, minor_tick_spacing=10, 
+                        axis_label_size=12, tick_label_size=12,
+                        major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("East (m)", fontsize=axis_label_size)
 
@@ -2477,10 +2579,16 @@ def format_east_xlabels(ax, label=True, major_tick_spacing=50, minor_tick_spacin
         label.set_verticalalignment('top')
         label.set_horizontalalignment('center')
 
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 # Format the y labels in northing
-def format_north_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
+def format_north_ylabels(ax, label=True, 
+                         major_tick_spacing=50, minor_tick_spacing=10, 
+                         axis_label_size=12, tick_label_size=12,
+                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_ylabel("North (m)", fontsize=axis_label_size)
 
@@ -2492,25 +2600,38 @@ def format_north_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spaci
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 # Format the y labels in depth
-def format_depth_ylabels(ax, label=True, major_tick_spacing=50, minor_tick_spacing=10, axis_label_size=12, tick_label_size=12):
+def format_depth_ylabels(ax, label=True, 
+                         major_tick_spacing=50, num_minor_ticks=5,
+                         axis_label_size=12, tick_label_size=12,
+                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_ylabel("Depth (m)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_yticklabels():
         label.set_fontsize(tick_label_size) 
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 ## Function to format the y labels in frequency
-def format_freq_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=20, minor_tick_spacing=5, axis_label_size=12, tick_label_size=12):
+def format_freq_ylabels(ax, label=True, 
+                        abbreviation=False, 
+                        major_tick_spacing=20, num_minor_ticks=4,
+                        axis_label_size=12, tick_label_size=12,
+                        major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         if abbreviation:
             ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
@@ -2518,17 +2639,24 @@ def format_freq_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=2
             ax.set_ylabel("Frequency (Hz)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_yticklabels():
         label.set_fontsize(tick_label_size) 
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 ## Function to format the ylabel in ground velocity
-def format_vel_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=100, minor_tick_spacing=50, axis_label_size=12,  tick_label_size=12):
+def format_vel_ylabels(ax, label=True, 
+                       abbreviation=False, 
+                       major_tick_spacing=100, minor_tick_spacing=50, 
+                       axis_label_size=12,  tick_label_size=12,
+                       major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         if abbreviation:
             ax.set_ylabel(f"{GROUND_VELOCITY_LABEL_SHORT}", fontsize=axis_label_size)
@@ -2543,10 +2671,17 @@ def format_vel_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=10
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 # Format the ylabel in pressure
-def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spacing=5, minor_tick_spacing=1, axis_label_size=12,  tick_label_size=12):
+def format_pressure_ylabels(ax, label=True, 
+                            abbreviation=False, 
+                            major_tick_spacing=5, minor_tick_spacing=1, 
+                            axis_label_size=12, tick_label_size=12,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         if abbreviation:
             ax.set_ylabel(f"Press. (Pa)", fontsize=axis_label_size)
@@ -2561,6 +2696,9 @@ def format_pressure_ylabels(ax, label=True, abbreviation=False, major_tick_spaci
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
     return ax
 
 
@@ -2574,8 +2712,11 @@ def timedelta_to_locator(time_delta):
         locator = HourLocator(interval=time_delta.seconds // 3600)  # Use HourLocator for hours
     elif time_delta.seconds >= 60:
         locator = MinuteLocator(interval=time_delta.seconds // 60)  # Use MinuteLocator for minutes
-    else:
+    elif time_delta.seconds >= 1:
         locator = SecondLocator(interval=time_delta.seconds)  # Use SecondLocator for seconds
+    elif time_delta.microseconds >= 1:
+        locator = MicrosecondLocator(interval=time_delta.microseconds)  # Use MicrosecondLocator for microseconds
+
 
     return locator
 
@@ -2615,6 +2756,15 @@ def freq_band_to_label(freqmin, freqmax):
         label = f"Lowpass {freqmax} Hz"
     else:
         label = "Raw data"
+
+    return label
+
+# Get STFT parameter labels
+def get_stft_param_labels(window_length, freq_interval):
+    if freq_interval < 1:
+        label = f"Window length: {window_length:.0f} s, Freq. sampling: {freq_interval:.3} Hz"
+    else:
+        label = f"Window length: {window_length:.0f} s, Freq. sampling: {freq_interval:.0f} Hz"
 
     return label
 

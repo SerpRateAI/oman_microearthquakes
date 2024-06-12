@@ -5,11 +5,12 @@
 from numpy import zeros, complex128, exp, pi, real, amax, amin, argmax, abs, array, conj, mean, arctan2, sqrt, arctan, arccos, arctan2, sin, cos, arccos, arcsin, arctan2, row_stack, column_stack, radians
 from numpy.linalg import eigh, norm
 from scipy.signal import hilbert
-from numpy import mean, cov, stack
+from numpy import mean, cov, stack, column_stack
 from matplotlib.pyplot import subplots, Normalize, cm, colorbar
 from matplotlib import ticker
-import numpy as np
-import numpy as np
+
+from utils_basic import GEO_COMPONENTS
+from utils_basic import get_unique_stations
 
 ## Classes
 class PolParams:
@@ -28,7 +29,21 @@ class PolParams:
     def __repr__(self):
         return f"Coordinate system: {self.coordinate}\n Strike: {self.strike}\nDip: {self.dip}\nEllipticity: {self.ellipticity}\nStrength: {self.strength}\nPlanarity: {self.planarity}"
 
-## Functions
+###### Functions ######
+# Get the horizontal particle motions of a waveform stream object
+def get_horizontal_particle_motions(stream):
+    # Get the list of unique stations in the stream
+    stations = get_unique_stations(stream)
+
+    # Loop over each station
+    station_pms = {}
+    for station in stations:
+        data1 = stream.select(station=station, component = "1")[0].data
+        data2 = stream.select(station=station, component = "2")[0].data
+        data = column_stack((data1, data2))
+        station_pms[station] = data
+
+    return station_pms
 
 ### Get the polarization paramters of the the 3C data using the Vidale 1986 method
 ### Vertical component is positive UPWARD!

@@ -86,11 +86,22 @@ def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, s
 
 ## Read and preprocess geophone waveforms in a time window
 ## Window length is in second
-def read_and_process_windowed_geo_waveforms(starttime, metdat, endtime = None, dur = None, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10, all_components=True):
+def read_and_process_windowed_geo_waveforms(starttime, 
+                                            dur = None, endtime = None, 
+                                            metdat=None, 
+                                            min_freq = None, max_freq = None, 
+                                            stations = None, components = None, 
+                                            zerophase = False, corners=4, normalize=False, 
+                                            decimate=False, 
+                                            all_components=True, **kwargs):
 
-    # Check if endtime and dur are specified at the same time
+    # Check if both endtime and dur are specified
     if endtime is not None and dur is not None:
-        raise ValueError("Error: endtime and dur cannot be specified at the same time!")
+        raise ValueError("Error: Only one of endtime and dur can be specified!")
+    
+    # Check if meta data is specified
+    if metdat is None:
+        metdat = get_geo_metadata()
     
     if not isinstance(starttime, Timestamp):
         if type(starttime) is str:
@@ -106,10 +117,14 @@ def read_and_process_windowed_geo_waveforms(starttime, metdat, endtime = None, d
             else:
                 raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
     elif dur is not None:
-        if dur is None:
-            raise ValueError("Error: Either endtime or dur must be specified!")
+        endtime = starttime + Timedelta(seconds=dur)
+
+    # Check if the decimation factor is specified
+    if decimate:
+        if "decimate_factor" in kwargs:
+            decimate_factor = kwargs["decimate_factor"]
         else:
-            endtime = starttime + Timedelta(seconds=dur)
+            raise ValueError("Error: decimate_factor must be specified if decimate is True!")
 
 
     ### Read the waveforms
@@ -142,37 +157,70 @@ def read_and_process_windowed_geo_waveforms(starttime, metdat, endtime = None, d
     if len(stream_in) < 3 and all_components:
         return None
     else:
-        stream_proc = preprocess_geo_stream(stream_in, metdat, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+        stream_proc = preprocess_geo_stream(stream_in, metdat, min_freq, max_freq, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
         return stream_proc
 
-## Read and preprocess hydrophone waveforms in a time window
-## Window length is in second
-def read_and_process_windowed_hydro_waveforms(starttime, dur, freqmin=None, freqmax=None, stations=None, locations=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10):
+# Read and preprocess hydrophone waveforms in a time window
+# Window length is in second
+def read_and_process_windowed_hydro_waveforms(starttime,
+                                              dur = None, endtime = None, 
+                                              min_freq=None, max_freq=None, 
+                                              loc_dict = None, station = None,
+                                              zerophase=False, corners=4, normalize=False, 
+                                              decimate=False, decimate_factor=10):
+    # Check if both the location dictionary and stations are specified
+    if loc_dict is None and station is None:
+        raise ValueError("Error: Only one of loc_dict and stations can be specified!")
+    
+    # Check if both endtime and dur are specified
+    if endtime is not None and dur is not None:
+        raise ValueError("Error: Only one of endtime and dur can be specified!")
+    
     if not isinstance(starttime, Timestamp):
         if type(starttime) is str:
             starttime = Timestamp(starttime, tz="UTC")
         else:   
             raise TypeError("Error: starttime must be a Pandas Timestamp object!")
-    
-    ### Read the waveforms
-    stations_to_read = get_hydro_stations_to_read(stations)
-    locations_to_read = get_hydro_locations_to_read(locations)
 
-    stream_in = Stream()
-    endtime = starttime + Timedelta(seconds=dur)
-    for station in stations_to_read:
-        for location in locations_to_read:
+    # Define the time window
+    if endtime is not None:
+        if not isinstance(endtime, Timestamp):
+            if type(endtime) is str:
+                endtime = Timestamp(endtime, tz="UTC")
+            else:
+                raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
+    elif dur is not None:
+        endtime = starttime + Timedelta(seconds=dur)
+    
+    # Read the waveforms
+    if loc_dict is not None:
+        # Option One, read all station-location combinations in loc_dict
+        stream_in = Stream()
+        for station in loc_dict.keys():
+            locations = loc_dict[station]
+            for location in locations:
+                stream = read_hydro_waveforms_in_timewindow(starttime, endtime, station, location)
+                
+                if stream is not None:
+                    stream_in += stream
+    else:
+        # Option Two, read all locations of the specified station
+        if loc_dict is None:
+            loc_dict = HYDRO_LOCATIONS
+        locations = loc_dict[station]
+
+        stream_in = Stream()
+        for location in locations:
             stream = read_hydro_waveforms_in_timewindow(starttime, endtime, station, location)
 
             if stream is not None:
                 stream_in += stream
 
     ### Process the waveforms
-    stream_proc = preprocess_hydro_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+    stream_proc = preprocess_hydro_stream(stream_in, min_freq, max_freq, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
 
     return stream_proc
     
-
 ## Read and preprocess waveforms in a set of defined time windows
 def read_and_process_picked_geo_waveforms(pickdf, freqmin=None, freqmax=None, stations=None, components=None, begin=-0.01, end=0.2, reference="common", zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=10):
     
@@ -431,7 +479,7 @@ def get_hydro_stations_to_read(stations):
     return stations_to_read
 
 ## Get the list of hydrophone locations to read
-def get_hydro_locations_to_read(station, locations):
+def get_hydro_locations_to_read(station, locations = None):
     loc_dict = HYDRO_LOCATIONS
 
     if locations is None:
@@ -547,9 +595,8 @@ def preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, corners=4, zerop
         trace.data *= 1e9
 
     # Detrend, taper, and filter
-    if freqmin is not None or freqmax is not None:
-        stream_out.detrend("linear")
-        stream_out.taper(0.001)
+    stream_out.detrend("linear")
+    stream_out.taper(0.001)
 
     if freqmin is not None and freqmax is not None:
         stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
@@ -580,9 +627,8 @@ def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=Fa
     stream_out = correct_hydro_polarity(stream_out)
 
     ### Detrend, taper, and filter
-    if freqmin is not None or freqmax is not None:
-        stream_out.detrend("linear")
-        stream_out.taper(0.001)
+    stream_out.detrend("linear")
+    stream_out.taper(0.001)
 
     if freqmin is not None and freqmax is not None:
         stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)

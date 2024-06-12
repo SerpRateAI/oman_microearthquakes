@@ -167,15 +167,17 @@ def get_geo_metadata():
 def get_geophone_coords():
     inpath = join(ROOTDIR_GEO, "geo_stations.csv")
     sta_df = read_csv(inpath, index_col=0)
-
+    sta_df.set_index("name", inplace=True)
+    
     return sta_df
 
 # Function to get the hydrophone station coordinates
-def get_hydrophone_coords():
-    inpath = join(ROOTDIR, "hydro_stations.csv")
-    sta_df = read_csv(inpath, index_col=0, dtype = {"location": str})
+def get_borehole_coords():
+    inpath = join(ROOTDIR_HYDRO, "boreholes.csv")
+    bh_df = read_csv(inpath, index_col=0)
+    bh_df.set_index("name", inplace=True)
 
-    return sta_df
+    return bh_df
 
 # Get the days of the geophone deployment
 def get_geophone_days(format = "string"):

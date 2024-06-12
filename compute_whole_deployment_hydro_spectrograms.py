@@ -13,10 +13,10 @@ from utils_spec import create_hydro_spectrogram_file, write_hydro_spectrogram_bl
 from utils_torch import get_daily_hydro_spectrograms
 
 # Inputs
-stations_to_compute = ["A00"]
-window_length = 60.0 # IN SECONDS
+stations_to_compute = ["A00", "B00"]
+window_length = 1.0 # IN SECONDS
 overlap = 0.0
-downsample = True # Downsample along the frequency axis
+downsample = False # Downsample along the frequency axis
 downsample_factor = 60 # Downsample factor for the frequency axis
 resample_in_parallel = True # Resample along the time axis in parallel
 num_process_resample = 16 # Number of processes while resampling along the time axis in parallel
