@@ -6,13 +6,14 @@ from numpy import amax, array, log10, ndarray
 from scipy.stats import gmean
 from pandas import Timestamp, Timedelta, DatetimeIndex
 from pandas import Series
-from pandas import date_range, to_datetime, read_csv
+from pandas import date_range, to_datetime, read_csv, read_excel
 from obspy import UTCDateTime, read_inventory
 
 ## Constants
 
 POWER_FLOOR = 1e-50
 
+ROOTDIR_OTHER = "/fp/projects01/ec332/data/other_observables"
 ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
 ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
@@ -167,7 +168,7 @@ def get_geo_metadata():
 def get_geophone_coords():
     inpath = join(ROOTDIR_GEO, "geo_stations.csv")
     sta_df = read_csv(inpath, index_col=0)
-    sta_df.set_index("name", inplace=True)
+    sta_df.set_index("name", inplace=True, drop=True)
     
     return sta_df
 
@@ -207,6 +208,19 @@ def get_geo_sunrise_sunset_times():
     times_df = read_csv(inpath, index_col=0, date_format = "%Y-%m-%d %H:%M:%S")
 
     return times_df
+
+# Get the temperature and barometric data
+def get_baro_temp_data():
+    inpath = join(ROOTDIR_OTHER, "baro_temp_log.xlsx")
+    baro_temp_df = read_excel(inpath)
+
+    # Change the column names
+    baro_temp_df.columns = ["time", "elapsed_seconds", "pressure", "temperature"]
+
+    # Set the time column as the index
+    baro_temp_df.set_index("time", inplace=True)
+
+    return baro_temp_df
 
 ######
 # Functions for handling times

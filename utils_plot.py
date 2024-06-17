@@ -13,7 +13,7 @@ from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
-from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
+from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
 GROUND_VELOCITY_UNIT = "nm s$^{-1}$"
@@ -1203,39 +1203,55 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
 
     return fig, axes, power_cbar, rbw_cbar
 
-# Plot the cumulative frequency counts of the spectral peaks
-def plot_cum_freq_counts(count_df, 
+# Plot the cumulative fraction of the total observation time of the spectral peaks
+def plot_cum_freq_fractions(count_df,
+                        xtick_labels = True,
                         xdim = 15, ydim = 5,
                         log_scale = True,
                         min_freq = 0.0, max_freq = 500.0,
-                        major_freq_spacing = 100, minor_freq_spacing = 20,
-                        axis_label_size = 12, tick_label_size = 10):
-    # Generate the figure and axes
-    fig, ax = subplots(1, 1, figsize=(xdim, ydim))
+                        linewdith = 1.0, marker_size = 10.0,
+                        major_freq_spacing = 100, num_minor_freq_ticks = 5,
+                        axis_label_size = 12, tick_label_size = 10,
+                        **kwargs):
+
+    # Determin if an axis object is provided
+    if "axis" in kwargs:
+        ax = kwargs["axis"]
+    else:
+        fig, ax = subplots(1, 1, figsize=(xdim, ydim))
 
     # Plot the cumulative frequency counts with stems and markers
     if log_scale:
         ax.set_yscale("log")
-        count_df.loc[count_df["count"] == 0, "count"] = 1
+        count_df.loc[count_df["fraction"] == 0, "fraction"] = 1e-10
 
     freqs = count_df["frequency"]
-    counts = count_df["count"]
+    fracs = count_df["fraction"]
 
-    ax.set_ylabel("Time-interval counts", fontsize = axis_label_size)
+    ax.set_ylabel("Fraction", fontsize = axis_label_size)
 
-    markerline, stemlines, _ = ax.stem(freqs, counts)
+    markerline, stemlines, _ = ax.stem(freqs, fracs)
+    markerline.set_markersize(marker_size)
     markerline.set_markerfacecolor("black")
     markerline.set_markeredgecolor("black")
-    stemlines.set_linewidth(0.5)
+    stemlines.set_linewidth(linewdith)
     stemlines.set_color("black")
-    
-    # Format the frequency axis
-    format_freq_xlabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Set the x-axis limits
     ax.set_xlim((min_freq, max_freq))
 
-    return fig, ax
+    # Format the frequency axis
+    format_freq_xlabels(ax, 
+                        label = xtick_labels,
+                        major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, 
+                        axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+
+
+    if "axis" in kwargs:
+        return ax
+    else:
+        return fig, ax
           
 ###### Functions for plotting CWT spectra ######
 
@@ -2333,14 +2349,17 @@ def get_windowed_pm_data(stream_in, window_length):
 ###### Functions for adding elements to the plots ######
 
 # Add day-night shading to the plot
-def add_day_night_shading(ax, sun_df, day_color="mistyrose", night_color="lightblue"):
+def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray"):
+    if sun_df is None:
+        sun_df = get_geo_sunrise_sunset_times()
+
     for i in range(len(sun_df) - 1):
         sunrise = sun_df.iloc[i]["sunrise"]
         sunset = sun_df.iloc[i]["sunset"]
-        ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0)
+        ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0, edgecolor=None)
 
         surise_next = sun_df.iloc[i + 1]["sunrise"]
-        ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0)
+        ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0, edgecolor=None)
 
     return ax
 
@@ -2349,14 +2368,12 @@ def add_day_night_shading(ax, sun_df, day_color="mistyrose", night_color="lightb
 def add_station_map(ax, 
                     geo_df = None,
                     bh_df = None,
-                    stations_highlight = [],
+                    stations_highlight = {},
                     label_boreholes = True,
-                    label_all_stations = False,
                     station_size = 30, station_label_size = 6, edge_width = 0.5,
                     borehole_size = 30, borehole_label_size = 6,
                     borehole_color = "darkviolet", station_color = "lightgray", hightlight_color = "crimson",
                     bh_label_offset_x = 20.0, bh_label_offset_y = -20.0,
-                    geo_label_offset_x = 1.0, geo_label_offset_y = 1.0,
                     axis_label_size = 10, tick_label_size = 8):
 
     if geo_df is None:
@@ -2365,22 +2382,21 @@ def add_station_map(ax,
     if bh_df is None:
         bh_df = get_borehole_coords()
     
-    # Get the label alignments
-    ha, va = get_label_alignments(geo_label_offset_x, geo_label_offset_y)
-    
     # Plot each station and its label
     for station, row in geo_df.iterrows():
         east = row["east"]
         north = row["north"]
 
-        if station in stations_highlight:
+        if station in stations_highlight.keys():
+            offset_x = stations_highlight[station][0]
+            offset_y = stations_highlight[station][1]
+            ha, va = get_label_alignments(offset_x, offset_y)
+            
             ax.scatter(east, north, s = station_size, marker = "^", color = station_color, edgecolor = hightlight_color, linewidths = edge_width, zorder = 1)
-            ax.text(east + geo_label_offset_x, north + geo_label_offset_y, station, fontsize = station_label_size, color = hightlight_color, ha = ha, va = va, zorder = 2)
+            ax.text(east + offset_x, north + offset_y, station, fontsize = station_label_size, color = hightlight_color, ha = ha, va = va, zorder = 2)
         else:
             ax.scatter(east, north, s = station_size, marker = "^", color = station_color, edgecolor = "black", linewidths = edge_width, zorder = 1)
-            if label_all_stations:
-                ax.text(east + geo_label_offset_x, north + geo_label_offset_y, station, fontsize = station_label_size, color = "black", ha = ha, va = va, zorder = 2)
-
+           
     # Plot the boreholes
     for borehole, row in bh_df.iterrows():
         east = row["east"]
@@ -2403,6 +2419,17 @@ def add_station_map(ax,
 
     return ax
 
+# Add a colorbar to the plot 
+def add_colorbar(fig, color, label, position, orientation="horizontal", axis_label_size=12, tick_label_size=10, major_tick_spacing=10):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    cbar.set_label(label, fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(major_tick_spacing)
+    cbar.update_ticks()
+
+    return cbar
+
 # Add a power colorbar to the plot
 def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
     cax = fig.add_axes(position)
@@ -2411,6 +2438,18 @@ def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spac
     cbar.ax.tick_params(labelsize=tick_label_size, length=tick_length, width=tick_width)
     cbar.locator = MultipleLocator(tick_spacing)
     cbar.update_ticks() 
+
+    return cbar
+
+# Add a frequency colorba to the plot
+def add_freq_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10, major_tick_spacing = 0.1):
+    cax = fig.add_axes(position)
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+
+    cbar.set_label("Frequency (Hz)", fontsize=axis_label_size)
+    cbar.ax.tick_params(labelsize=tick_label_size)
+    cbar.locator = MultipleLocator(major_tick_spacing)
+    cbar.update_ticks()
 
     return cbar
 
@@ -2483,19 +2522,26 @@ def add_horizontal_scalebar(ax, coordinates, length, scale, label_offsets, label
     return ax
 
 ###### Get colormaps for the plots ######
-def get_power_colormap():
+def get_power_colormap(**kwargs):
     cmap = colormaps["inferno"].copy()
-    cmap.set_bad(color='lightgray')
+    cmap.set_bad(color='darkgray')
 
-    return cmap
+    if "min_db" in kwargs and "max_db" in kwargs:
+        min_db = kwargs["min_db"]
+        max_db = kwargs["max_db"]
+        norm = Normalize(vmin=min_db, vmax=max_db)
 
+        return cmap, norm
+    else:
+        return cmap
+    
 ###### Format the axis labels of the plots ######
 
 # Format the x labels in datetime
 def format_datetime_xlabels(ax, 
                             label=True, date_format = '%Y-%m-%d %H:%M:%S', 
                             major_tick_spacing = "24h", num_minor_ticks = 5,
-                            axis_label_size = 12, tick_label_size = 12, rotation = 0,
+                            axis_label_size = 12, tick_label_size = 10, rotation = 0,
                             major_tick_length = 5, minor_tick_length = 2.5, tick_width = 1,
                             va = "top", ha = "center"):
     if label:
@@ -2524,7 +2570,7 @@ def format_datetime_xlabels(ax,
 # Format the x labels in frequency
 def format_freq_xlabels(ax, label=True, 
                         major_tick_spacing=100.0, num_minor_ticks=5,
-                        axis_label_size=12, tick_label_size=12,
+                        axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("Frequency (Hz)", fontsize=axis_label_size)
@@ -2545,7 +2591,7 @@ def format_freq_xlabels(ax, label=True,
 # Format the x labels in relative time
 def format_rel_time_xlabels(ax, label=True, 
                             major_tick_spacing=60, minor_tick_spacing=15, 
-                            axis_label_size=12, tick_label_size=12,
+                            axis_label_size=12, tick_label_size=10,
                             major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("Time (s)", fontsize=axis_label_size)
@@ -2566,7 +2612,7 @@ def format_rel_time_xlabels(ax, label=True,
 # Format the x labels in easting
 def format_east_xlabels(ax, label=True, 
                         major_tick_spacing=50, minor_tick_spacing=10, 
-                        axis_label_size=12, tick_label_size=12,
+                        axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("East (m)", fontsize=axis_label_size)
@@ -2587,7 +2633,7 @@ def format_east_xlabels(ax, label=True,
 # Format the y labels in northing
 def format_north_ylabels(ax, label=True, 
                          major_tick_spacing=50, minor_tick_spacing=10, 
-                         axis_label_size=12, tick_label_size=12,
+                         axis_label_size=12, tick_label_size=10,
                          major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_ylabel("North (m)", fontsize=axis_label_size)
@@ -2608,7 +2654,7 @@ def format_north_ylabels(ax, label=True,
 # Format the y labels in depth
 def format_depth_ylabels(ax, label=True, 
                          major_tick_spacing=50, num_minor_ticks=5,
-                         axis_label_size=12, tick_label_size=12,
+                         axis_label_size=12, tick_label_size=10,
                          major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_ylabel("Depth (m)", fontsize=axis_label_size)
@@ -2630,7 +2676,7 @@ def format_depth_ylabels(ax, label=True,
 def format_freq_ylabels(ax, label=True, 
                         abbreviation=False, 
                         major_tick_spacing=20, num_minor_ticks=4,
-                        axis_label_size=12, tick_label_size=12,
+                        axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         if abbreviation:
@@ -2655,7 +2701,7 @@ def format_freq_ylabels(ax, label=True,
 def format_vel_ylabels(ax, label=True, 
                        abbreviation=False, 
                        major_tick_spacing=100, minor_tick_spacing=50, 
-                       axis_label_size=12,  tick_label_size=12,
+                       axis_label_size=12,  tick_label_size=10,
                        major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         if abbreviation:

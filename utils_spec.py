@@ -10,6 +10,7 @@ from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
 from h5py import File, special_dtype
 from multitaper import MTSpec
 from multiprocessing import Pool
+from skimage.morphology import remove_small_objects
 
 from utils_basic import GEO_COMPONENTS
 from utils_basic import SPECTROGRAM_DIR 
@@ -887,6 +888,7 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
         
         freq_interval = header_group["frequency_interval"][()]
+        # print(f"Frequency interval is {freq_interval}")
 
         min_freq_index = int(min_freq / freq_interval)
         max_freq_index = int(max_freq / freq_interval)
@@ -913,8 +915,7 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
                 for component in components:
                     data = comp_group[component][min_freq_index:max_freq_index, :]
         
-                    num_freq = data.shape[0]
-                    freqax = linspace(min_freq, (num_freq - 1) * freq_interval, num_freq)
+                    freqax = linspace(min_freq, max_freq, data.shape[0])
                 
                     trace_spec = TraceSTFTPSD(station, "", component, time_label, timeax, freqax, data)
                     stream_spec.append(trace_spec)
@@ -969,6 +970,69 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
     stream_spec.stitch()
 
     return stream_spec
+
+# Read the frequency and time axes of a geophone spectrogram file for specific ranges
+def read_geo_spec_axes(inpath, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0):
+    with File(inpath, 'r') as file:
+        # Read the header information
+        header_group = file["headers"]
+
+        time_labels = header_group["time_labels"][:]
+        time_labels = [time_label.decode("utf-8") for time_label in time_labels]
+        
+        freq_interval = header_group["frequency_interval"][()]
+        min_freq_index = int(min_freq / freq_interval)
+        max_freq_index = int(max_freq / freq_interval)
+        freqax = linspace(min_freq, max_freq, max_freq_index - min_freq_index + 1)  
+
+        time_interval = get_spec_time_interval(header_group)
+        data_group = file["data"]
+        
+        if starttime is None and endtime is None:
+            # Option 1: Read the axes of the whole deployment
+            timeaxes = []
+            for time_label in time_labels:
+                block_group = data_group[time_label]
+                timeax_block = get_spec_block_timeax(block_group, time_interval)
+                timeaxes.append(timeax_block)
+
+            timeax = DatetimeIndex(concatenate(timeaxes))
+        else:
+            # Option 2: Read the axes of a specific time range
+            # Convert the start and end times to Timestamp objects
+            if isinstance(starttime, str):
+                starttime_to_read = Timestamp(starttime)
+            
+            if isinstance(endtime, str):
+                endtime_to_read = Timestamp(endtime)
+            
+            # Check the start time is greater than the end time
+            if starttime_to_read > endtime_to_read:
+                raise ValueError("Error: Start time must be less than the end time!")
+
+            # Get the start and end times of each block
+            block_timing_df = get_block_timings(data_group, time_labels, time_interval)
+
+            # Find the blocks that overlap with the given time range
+            overlap_df = get_overlapping_blocks(block_timing_df, starttime_to_read, endtime_to_read)
+                
+            # Read the axes of the overlapping blocks
+            timeaxes = []
+            for _, row in overlap_df.iterrows():
+                starttime_block = row["start_time"]
+                num_times = row["num_times"]
+
+                # Find the start and end indices of the time axis
+                start_index, end_index = get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read)
+
+                # Create the time axis
+                starttime_out = max([starttime_to_read, starttime_block])
+                timeax = date_range(start = starttime_out, periods = end_index - start_index + 1, freq = time_interval)
+                timeaxes.append(timeax)
+
+            timeax = DatetimeIndex(concatenate(timeaxes))
+
+    return timeax, freqax
 
 # Create a hydrophone spectrogram file and save the header information
 def create_hydro_spectrogram_file(station, locations, window_length = 60.0,  overlap = 0.0, freq_interval = 1.0, downsample = False, outdir = SPECTROGRAM_DIR, **kwargs):
@@ -1344,6 +1408,12 @@ def read_geo_spec_headers(inpath):
 
     return header_dict
 
+# Append a new header variable to an opened spectrogram file
+def append_header_variable(file, var_name, var_value):
+    header_group = file["headers"]
+    header_group.create_dataset(var_name, data=var_value)
+    print(f"Appended variable {var_name} to the header.")
+
 # Get the time labels of a geophone spectrogram file from the headers
 def get_spec_time_labels(header_group):
     time_labels = header_group["time_labels"][:]
@@ -1365,7 +1435,6 @@ def get_spec_block_freqax(block_group, freq_interval):
     freqax = linspace(0, (num_freqs - 1) * freq_interval, num_freqs)
 
     return freqax
-
 
 # Get the time axis of a geophone spectrogram block
 def get_spec_block_timeax(block_group, time_interval):
@@ -1418,45 +1487,6 @@ def get_hydro_spec_locations(header_group):
 
     return locations
 
-
-# # Read the hydrophone spectrograms of ALL locations of one stations from an HDF5 file
-# # Each location has its own time axis!
-# def read_hydro_spectrograms(inpath):
-#     with File(inpath, 'r') as file:
-#         # Read the header information
-#         header_group = file["headers"]
-#         station = header_group["station"][()]
-#         time_label = header_group["time_label"][()]
-#         locations = header_group["locations"][:]
-
-#         freq_interval = header_group["frequency_interval"][()]
-#         overlap = header_group["overlap"][()]
-
-#         # Decode the strings
-#         station = station.decode("utf-8")
-#         time_label = time_label.decode("utf-8")
-#         locations = [location.decode("utf-8") for location in locations]
-
-#         # Read the spectrogram data
-#         data_group = file["data"]
-#         stream_spec = StreamSTFTPSD()
-#         for location in locations:
-#             loc_group = data_group[location]
-#             data = loc_group["psd"][:]
-#             starttime = loc_group["start_time"][()]
-#             time_interval = loc_group["time_interval"][()]
-
-#             num_freq = data.shape[0]
-#             freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
-            
-#             num_time = data.shape[1]
-#             timeax = assemble_timeax_from_ints(starttime, num_time, time_interval)
-            
-#             trace_spec = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
-#             stream_spec.append(trace_spec)
-
-#         return stream_spec    
-
 # Read detected spectral peaks from a CSV or HDF file
 def read_spectral_peaks(inpath, **kwargs):
     # If the file format is not given, infer it from the file extension
@@ -1476,6 +1506,86 @@ def read_spectral_peaks(inpath, **kwargs):
         raise ValueError("Error: Invalid file format!")
 
     return peak_df
+
+# Extract a stationary resonance from the spectral-peak data of a geophone station
+def extract_stationary_resonance(peak_df, array_count_df, timeax, freqax, min_patch_size = 3):
+    # Create the boolean array with each True value representing a peak
+    print("Creating the boolean array representing the peaks")
+    peak_array = array([[False] * len(timeax)] * len(freqax))
+    peak_row_ind_array = zeros(peak_array.shape, dtype = int)
+
+    # print(data.shape)
+    # print(peak_array.shape)
+
+    for index, row in peak_df.iterrows():
+        time = row["time"]
+        freq = row["frequency"]
+
+        # print(type(time))
+        # print(type(timeax[0]))
+        time_index = timeax.searchsorted(time)
+        freq_index = freqax.searchsorted(freq)
+        peak_array[freq_index, time_index] = True
+        peak_row_ind_array[freq_index, time_index] = index
+
+    # Remove isolated peaks
+    print("Removing isolated peaks...")
+    peak_array_clean = remove_small_objects(peak_array, min_size = min_patch_size, connectivity = 2)
+
+    # Recover the peaks from the cleaned array
+    print("Recovering the peaks from the cleaned array...")
+    peak_clean_indices = peak_array_clean.nonzero()
+    peak_clean_row_inds = peak_row_ind_array[peak_clean_indices]
+
+    peak_clean_df = peak_df.loc[peak_clean_row_inds]
+    print(f"{peak_clean_df.shape[0]:d} peaks are left after removing isolated peaks.")
+
+    # Group the peaks by time
+    print("Grouping the peaks by time...")
+    peak_group_by_time = peak_clean_df.groupby("time")
+    print(f"In total {len(peak_group_by_time):d} time groups of peaks.")
+
+    # Extract the peaks using the array counts as a guide
+    print("Extracting the stationary resonance peaks...")
+    resonance_peaks = []
+    for time, group in peak_group_by_time:
+        if len(group) == 1:
+            resonance_peaks.append(group)
+        else:
+            freq_peak = get_peak_freq_w_max_detection(array_count_df, time)
+            if freq_peak is None:
+                continue
+            else:
+                # print(f"Time: {time}, Peak frequency: {freq_peak}")
+                max_detect_peak = group.loc[group["frequency"] == freq_peak]
+                if len(max_detect_peak) == 0:
+                    # print("No peak is found!")
+                    continue
+                else:
+                    # print(type(max_detect_peak))
+                    resonance_peaks.append(max_detect_peak)
+            
+    # Construct a data frame using the elements of resonance_peaks
+    resonance_df = concat(resonance_peaks, ignore_index=True)
+    print(f"Found {len(resonance_peaks):d} stationary resonance peaks.")
+
+    # Sort the data frame by time
+    resonance_df.sort_values("time", inplace = True)
+    resonance_df.set_index("time", inplace = True)
+
+    return resonance_df
+
+# Get the spectral peak with the maximum number of array detection at a specific time
+def get_peak_freq_w_max_detection(count_df, time):
+    time_slice_df = count_df.loc[count_df["time"] == time]
+
+    if len(time_slice_df) == 0:
+        return None
+    else:
+        peak = time_slice_df.loc[time_slice_df["count"].idxmax()]
+        freq = peak["frequency"]
+
+        return freq
 
 # Save the detected spectral peaks to a CSV or HDF file
 def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
