@@ -4,11 +4,12 @@ from pandas import Timestamp, Timedelta
 from numpy import arctan, array, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
 from numpy.linalg import norm
 from scipy.stats import gmean
-from matplotlib.pyplot import subplots, Circle
+from matplotlib.pyplot import subplots, get_cmap, Circle
 from matplotlib.patches import Rectangle
 from matplotlib import colormaps
-from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator
-from matplotlib.colors import LogNorm, Normalize
+from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator, DateLocator
+from matplotlib.dates import num2date, date2num
+from matplotlib.colors import LogNorm, Normalize, LinearSegmentedColormap
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
@@ -23,6 +24,7 @@ WAVE_VELOCITY_UNIT = "m s$^{-1}$"
 WAVE_SLOWNESS_UNIT = "s km$^{-1}$"
 PRESSURE_UNIT = "Pa"
 APPARENT_VELOCITY_UNIT = "m s$^{-1}$"
+POWER_LABEL = "Power (dB)"
 X_SLOW_LABEL = "East slowness (s km$^{-1}$)"
 Y_SLOW_LABEL = "North slowness (s km$^{-1}$)"
 
@@ -491,7 +493,7 @@ def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
             spec = trace_spec.data
 
             ax = axes[2 * j + 1, i]
-            power_color = ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
+            quadmesh = ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
             if i == 0:
                 label = component_to_label(component)
@@ -526,63 +528,9 @@ def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
     # Add the colorbar
     bbox = axes[-1, -1].get_position()
     position = [bbox.x0 + bbox.width + 0.01, bbox.y0, 0.005, bbox.height]
-    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation="vertical")
+    cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation="vertical")
 
     return fig, axes, cbar
-    
-# # Function to plot the 3C seismograms and spectrograms computed using STFT of a list of stations
-# def plot_3c_waveforms_and_stfts(stream, specdict, 
-#                                        linewidth=0.1, xdim_per_comp=10, ydim_per_sta=3, ylim_wf=(-50, 50), dbmin=-50, dbmax=0, ylim_spec=(0, 200), 
-#                                        major_tick_spacing=5, minor_tick_spacing=1, station_label_size=12, axis_label_size=12, tick_label_size=12, title_size=15):
-#     components = GEO_COMPONENTS
-#     vel_label = GROUND_VELOCITY_LABEL_SHORT
-
-#     stations = get_unique_stations(stream)
-#     numsta = len(stations)
-
-#     fig, axes = subplots(2 * numsta, 3, figsize=(xdim_per_comp * 3, ydim_per_sta * numsta * 2), sharex=True)
-
-#     for i, component in enumerate(components):
-#         for j, station in enumerate(stations):
-#             trace = stream.select(station=station, component=component)[0]
-
-#             # Plot the waveforms
-#             signal = trace.data
-#             timeax_wf = get_datetime_axis_from_trace(trace)
-
-#             ax = axes[2 * j, i]
-#             color = get_geo_component_color(component)
-#             ax.plot(timeax_wf, signal, color=color, linewidth=linewidth)
-
-#             ax.set_ylim(ylim_wf)
-
-#             if j == 0:
-#                 title = component_to_label(component)
-#                 ax.set_title(f"{title}", fontsize=title_size, fontweight="bold")
-
-#             if i == 0:
-#                 ax.set_ylabel(vel_label, fontsize=tick_label_size)
-#                 ax.text(0.01, 0.98, f"{station}", fontsize=station_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top") 
-
-
-#             # Plot the spectrograms
-#             timeax_spec, freqax, spec = specdict[(station, component)]
-#             ax = axes[2 * j + 1, i]
-#             ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
-
-#             ax.set_ylim(ylim_spec)
-
-#             if j == numsta - 1:
-#                 ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
-
-#             if i == 0:
-#                 ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
-
-#     format_datetime_xlabels(axes)
-
-#     fig.patch.set_alpha(0.0)
-
-#     return fig, axes
 
 # Plot the 3C geophone spectrograms of a station computed using STFT
 def plot_geo_stft_spectrograms(stream_spec,
@@ -620,19 +568,19 @@ def plot_geo_stft_spectrograms(stream_spec,
     cmap.set_bad(color="lightgray")
 
     ax = axes[0]
-    power_color = ax.pcolormesh(timeax, freqax, data_z, cmap = cmap, vmin = dbmin, vmax = dbmax)
+    quadmesh = ax.pcolormesh(timeax, freqax, data_z, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("Z")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
 
     ax = axes[1]
-    power_color = ax.pcolormesh(timeax, freqax, data_1, cmap = cmap, vmin = dbmin, vmax = dbmax)
+    quadmesh = ax.pcolormesh(timeax, freqax, data_1, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("1")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
 
     ax = axes[2]
-    power_color = ax.pcolormesh(timeax, freqax, data_2, cmap = cmap, vmin = dbmin, vmax = dbmax)
+    quadmesh = ax.pcolormesh(timeax, freqax, data_2, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("2")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
@@ -642,7 +590,7 @@ def plot_geo_stft_spectrograms(stream_spec,
         trace_total = kwargs["total_psd_trace"]
         trace_total.to_db()
         data_total = trace_total.data
-        power_color = ax.pcolormesh(timeax, freqax, data_total, cmap = cmap, vmin = dbmin, vmax = dbmax)
+        quadmesh = ax.pcolormesh(timeax, freqax, data_total, cmap = cmap, vmin = dbmin, vmax = dbmax)
         label = "Total"
         ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
         format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
@@ -655,7 +603,7 @@ def plot_geo_stft_spectrograms(stream_spec,
     # Add the colorbar
     bbox = axes[-1].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
-    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
+    cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size)
     cbar.set_label("Power spectral density (dB)")
 
     station = trace_spec_z.station
@@ -665,16 +613,19 @@ def plot_geo_stft_spectrograms(stream_spec,
 
 # Plot the hydrophone spectrograms of all locations of a station computed using STFT
 def plot_hydro_stft_spectrograms(stream_spec,
-                            xdim = 15.0, ydim_per_loc= 3.0,
+                            axes = None,
                             starttime = None, endtime = None,
-                            min_freq = 0.0, max_freq = 500.0,
+                            min_freq = None, max_freq = None,
                             dbmin=-80, dbmax=-50,
-                            component_label_x = 0.01, component_label_y = 0.96,
-                            date_format = "%Y-%m-%d %H:%M:%S",
-                            major_time_spacing=24, minor_time_spacing=6, 
-                            major_freq_spacing=100, minor_freq_spacing=20,
-                            component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
-                            time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
+                            location_label_x = 0.02, location_label_y = 0.96,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing = "24h", num_minor_time_ticks = 4,
+                            major_freq_spacing = 10.0, num_minor_freq_ticks = 4,
+                            component_label_size=12, axis_label_size=12, tick_label_size=10, title_size=12,
+                            time_tick_rotation=30, time_tick_va="top", time_tick_ha="right",
+                            title = None,
+                            **kwargs):
+    
     # Convert the power to dB
     stream_spec.to_db()
 
@@ -682,9 +633,18 @@ def plot_hydro_stft_spectrograms(stream_spec,
     locations = stream_spec.get_locations()
     num_loc = len(locations)
 
+    # Generate the figure and axes if not provided
+    if axes is None:
+        width = kwargs["width"]
+        row_height = kwargs["column_height"]
+        fig, axes = subplots(num_loc, 1, figsize=(width, num_loc * row_height), sharex=True, sharey=True)
+    else:
+        if len(axes) != num_loc:
+            print(len(axes), num_loc)
+            raise ValueError("Inconsistent number of axes and locations!")
+
     # Plot the spectrograms
-    fig, axes = subplots(num_loc, 1, figsize=(xdim, num_loc * ydim_per_loc), sharex=True, sharey=True)
-    cmap = get_power_colormap()
+    cmap = get_quadmeshmap()
 
     for i, location in enumerate(locations):
         trace_spec = stream_spec.select(location = location)[0]
@@ -693,10 +653,12 @@ def plot_hydro_stft_spectrograms(stream_spec,
         data = trace_spec.data
         
         ax = axes[i]
-        power_color = ax.pcolormesh(timeax, freqax, data, cmap = cmap, vmin = dbmin, vmax = dbmax)
-        label = location
-        ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+        quadmesh = ax.pcolormesh(timeax, freqax, data, cmap = cmap, vmin = dbmin, vmax = dbmax)
+
+        station = trace_spec.station
+        label = f"{station}.{location}"
+        ax.text(location_label_x, location_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
+        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     if starttime is None:
         starttime = timeax[0]
@@ -704,23 +666,26 @@ def plot_hydro_stft_spectrograms(stream_spec,
     if endtime is None:
         endtime = timeax[-1]
 
+    if min_freq is None:
+        min_freq = freqax[0]
+
+    if max_freq is None:
+        max_freq = freqax[-1]
+
     ax.set_xlim(starttime, endtime)
     ax.set_ylim((min_freq, max_freq))
 
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks, tick_label_size = tick_label_size, date_format
  = date_format
-, rotation = time_tick_rotation, axis_label_size = axis_label_size ,vertical_align = time_tick_va, horizontal_align = time_tick_ha)
+, rotation = time_tick_rotation, axis_label_size = axis_label_size ,va = time_tick_va, ha = time_tick_ha)
 
-    # Add the colorbar
-    bbox = axes[num_loc - 1].get_position()
-    position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
-    cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size)
-    cbar.set_label("Power spectral density (dB)")
+    if title is not None:
+        axes[0].set_title(title, fontsize = title_size, fontweight = "bold")
 
-    station = trace_spec.station
-    fig.suptitle(station, fontsize = title_size, fontweight = "bold", y = 0.9)
-
-    return fig, axes, cbar
+    if axes is None:
+        return fig, axes, quadmesh
+    else:
+        return axes, quadmesh
 
 # Plot the total PSD of a geophone station and the detected spectral peaks
 def plot_geo_total_psd_and_peaks(trace_total, peak_df,
@@ -749,7 +714,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     timeax = trace_total.times
     freqax = trace_total.freqs
     power = trace_total.data
-    power_color = ax.pcolormesh(timeax, freqax, power, cmap = "inferno", norm = color_norm)
+    quadmesh = ax.pcolormesh(timeax, freqax, power, cmap = "inferno", norm = color_norm)
 
     label = "Total PSD"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
@@ -769,7 +734,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     # Plot the power colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the spectral peak reversed bandwidths
     ax = axes[2]
@@ -892,7 +857,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     freqax = trace_total.freqs
     power = trace_total.data
     ax.set_facecolor("lightgray")
-    power_color = ax.pcolormesh(timeax, freqax, power, cmap = cmap_power, norm = norm_power)
+    quadmesh = ax.pcolormesh(timeax, freqax, power, cmap = cmap_power, norm = norm_power)
 
     label = "Total PSD"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
@@ -920,7 +885,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     # Plot the power colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the spectral peak reverse bandwidths
     ax = axes[2]
@@ -1011,7 +976,7 @@ def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, 
     power = trace_total.data
 
     ax.set_facecolor("lightgray")
-    power_color = ax.pcolormesh(timeax, freqax, power, cmap = cmap_power, norm = norm_power)
+    quadmesh = ax.pcolormesh(timeax, freqax, power, cmap = cmap_power, norm = norm_power)
 
     label = f"{station}, total PSD"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
@@ -1021,7 +986,7 @@ def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, 
     # Add the colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the spectral peak power
     ax = axes[1]
@@ -1148,7 +1113,7 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     peak_powers = peak_df["power"]
 
     ax.set_facecolor("lightgray")
-    power_color = ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", edgecolors = None)
+    quadmesh = ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", edgecolors = None)
 
     # label = "Peak power"
     # ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
@@ -1158,7 +1123,7 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     # Plot the power colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_power_colorbar(fig, power_color, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the stacked spectrogram peaks color-coded by reverse bandwidth
     ax = axes[2]
@@ -1206,6 +1171,7 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
 # Plot the cumulative fraction of the total observation time of the spectral peaks
 def plot_cum_freq_fractions(count_df,
                         xtick_labels = True,
+                        ytick_labels = True,
                         xdim = 15, ydim = 5,
                         log_scale = True,
                         min_freq = 0.0, max_freq = 500.0,
@@ -1228,7 +1194,8 @@ def plot_cum_freq_fractions(count_df,
     freqs = count_df["frequency"]
     fracs = count_df["fraction"]
 
-    ax.set_ylabel("Fraction", fontsize = axis_label_size)
+    if ytick_labels:
+        ax.set_ylabel("Fraction", fontsize = axis_label_size)
 
     markerline, stemlines, _ = ax.stem(freqs, fracs)
     markerline.set_markersize(marker_size)
@@ -1245,8 +1212,6 @@ def plot_cum_freq_fractions(count_df,
                         label = xtick_labels,
                         major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, 
                         axis_label_size = axis_label_size, tick_label_size = tick_label_size)
-
-
 
     if "axis" in kwargs:
         return ax
@@ -1305,7 +1270,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
                 #### Get the power spectrum in dB
                 power = spec.get_power()
                 ax = axes[2 * j + 1, i]
-                power_color = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+                quadmesh = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
                 #### Set the frequency limits
                 ax.set_ylim(ylim_freq)
@@ -1326,7 +1291,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
 
     ### Plot the colorbar at the bottom
     cax = fig.add_axes([0.35, 0.0, 0.3, 0.02])
-    cbar = fig.colorbar(power_color, cax=cax, orientation="horizontal", label="Power (dB)")
+    cbar = fig.colorbar(quadmesh, cax=cax, orientation="horizontal", label="Power (dB)")
     cbar.locator = MultipleLocator(base=10)
     cbar.update_ticks()
 
@@ -1353,7 +1318,7 @@ def plot_cwt_powers(specs,
             
             ### Plot the power
             ax = axes[j, i]
-            power_color = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+            quadmesh = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
             # ### Plot the noise window
             # box = Rectangle((noise_window[0], noise_window[2]), noise_window[1] - noise_window[0], noise_window[3] - noise_window[2], edgecolor="white", facecolor="none", linestyle=":", linewidth=linewidth_box)
@@ -1374,7 +1339,7 @@ def plot_cwt_powers(specs,
 
     ### Add the colorbar
     caxis = fig.add_axes([0.35, -0.03, 0.3, 0.03])
-    cbar = fig.colorbar(power_color, cax=caxis, orientation="horizontal", label="Power (dB)")
+    cbar = fig.colorbar(quadmesh, cax=caxis, orientation="horizontal", label="Power (dB)")
 
     return fig, axes, cbar
 
@@ -1461,7 +1426,7 @@ def plot_cascade_zoom_in_geo_waveforms_and_cwt_powers(stream, specs, window_dict
 
             power = spec.get_power()
             ax = axes[j + 1, i]
-            power_color = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+            quadmesh = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
             endtime = starttime + Timedelta(seconds=duration)
             ax.set_xlim(starttime, endtime)
             ax.set_ylim(min_freq, max_freq)
@@ -1489,7 +1454,7 @@ def plot_cascade_zoom_in_geo_waveforms_and_cwt_powers(stream, specs, window_dict
 
     #### Plot the power colorbar
     position = [0.42, 0.01, 0.15, 0.02]
-    cbar = add_power_colorbar(fig, power_color, position, orientation="horizontal")
+    cbar = add_quadmeshbar(fig, quadmesh, position, orientation="horizontal")
 
     return fig, axes, cbar
 
@@ -1575,7 +1540,7 @@ def plot_cascade_zoom_in_hydro_waveforms_and_cwt_powers(stream, specs, window_di
 
             power = spec.get_power()
             ax = axes[j + 1, i]
-            power_color = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+            quadmesh = ax.pcolormesh(timeax, freqax, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
             endtime = starttime + Timedelta(seconds=duration)
             ax.set_xlim(starttime, endtime)
             ax.set_ylim(min_freq, max_freq)
@@ -1603,7 +1568,7 @@ def plot_cascade_zoom_in_hydro_waveforms_and_cwt_powers(stream, specs, window_di
 
     #### Plot the power colorbar
     position = [0.42, 0.01, 0.15, 0.02]
-    cbar = add_power_colorbar(fig, power_color, position, orientation="horizontal")
+    cbar = add_quadmeshbar(fig, quadmesh, position, orientation="horizontal")
 
     return fig, axes, cbar
 
@@ -1637,7 +1602,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
         ### Plot the power
         timeax = cross_spec.times
         ax = axes[0, i]
-        power_color = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+        quadmesh = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
 
         label = component_to_label(component)
@@ -1703,7 +1668,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
     ### Plot the power, phase, and coherence colorbars
     bbox = axes[3, 0].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
-    power_cbar = add_power_colorbar(fig, power_color, position, orientation="horizontal")
+    power_cbar = add_quadmeshbar(fig, quadmesh, position, orientation="horizontal")
 
     bbox = axes[3, 1].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
@@ -1744,7 +1709,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
         ### Plot the power
         timeax = cross_spec.times
         ax = axes[0, i]
-        power_color = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+        quadmesh = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
         label = f"{component_to_label(component1)}-{component_to_label(component2)}"
         ax.text(component_label_x, component_label_y, label, fontsize=compoent_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
@@ -1811,7 +1776,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
     ### Plot the colorbars
     bbox = axes[3, 0].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
-    power_cbar = add_power_colorbar(fig, power_color, position, orientation="horizontal")
+    power_cbar = add_quadmeshbar(fig, quadmesh, position, orientation="horizontal")
 
     bbox = axes[3, 1].get_position()
     position = [bbox.x0, bbox.y0 - 0.07, bbox.width, 0.01]
@@ -1964,7 +1929,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         timeax = spec.times
 
         ax = axes[1, i]
-        power_color = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+        quadmesh = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
         ax.set_xlim(timeax[0], timeax[-1])
         ax.set_ylim(freq_lim)
@@ -2008,7 +1973,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         timeax = spec.times
 
         ax = axes[3, i]
-        power_color = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
+        quadmesh = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
         ax.set_xlim(timeax[0], timeax[-1])
         ax.set_ylim(freq_lim)
@@ -2047,7 +2012,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
     ### Add the poewr colorbar
     bbox = axes[4, 1].get_position()
     position = [bbox.x0, bbox.y0 - cbar_y_offset, bbox.width, cbar_width]
-    add_power_colorbar(fig, power_color, position, orientation="horizontal", tick_spacing=dbspacing)
+    add_quadmeshbar(fig, quadmesh, position, orientation="horizontal", tick_spacing=dbspacing)
 
     return fig, axes
 
@@ -2153,10 +2118,10 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
     power = spec.get_power(reference_type="mean")
     timeax = spec.times
     freqs = spec.freqs
-    power_color = ax.pcolormesh(timeax, freqs, power, shading="auto", cmap="inferno", vmin=dbmin, vmax=dbmax)
+    quadmesh = ax.pcolormesh(timeax, freqs, power, shading="auto", cmap="inferno", vmin=dbmin, vmax=dbmax)
 
     cbar_coord = [0.91, 0.8, 0.01, 0.07]
-    cbar = add_power_colorbar(fig, power_color, cbar_coord, orientation="vertical", dbspacing=dbspacing)
+    cbar = add_quadmeshbar(fig, quadmesh, cbar_coord, orientation="vertical", dbspacing=dbspacing)
 
     ax.text(0.01, 0.85, component_to_label("Z"), fontsize=component_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
     
@@ -2431,7 +2396,7 @@ def add_colorbar(fig, color, label, position, orientation="horizontal", axis_lab
     return cbar
 
 # Add a power colorbar to the plot
-def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
+def add_quadmeshbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
     cbar.set_label("Power (dB)", fontsize=axis_label_size, labelpad=labelpad)
@@ -2441,7 +2406,7 @@ def add_power_colorbar(fig, color, position, orientation="horizontal", tick_spac
 
     return cbar
 
-# Add a frequency colorba to the plot
+# Add a frequency colorbar to the plot
 def add_freq_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10, major_tick_spacing = 0.1):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
@@ -2493,12 +2458,24 @@ def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spac
     cbar.update_ticks()
 
 # Add a vertical scale bar
+# Coordinates are in fractions of the axis
 def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = GROUND_VELOCITY_UNIT, linewidth = 1.0, fontsize = 12):
-    scale_x = coordinates[0]
-    scale_y = coordinates[1]
+    xlim = ax.get_xlim()
+    xmin = xlim[0]
+    xmax = xlim[1]
+    xdim = xmax - xmin
 
-    label_x = scale_x + label_offsets[0]
-    label_y = scale_y + label_offsets[1]
+    ylim = ax.get_ylim()
+    ymin = ylim[0]
+    ymax = ylim[1]
+    ydim = ymax - ymin
+
+    scale_x = coordinates[0] * xdim + xmin
+    scale_y = coordinates[1] * ydim + ymin
+
+    label_x = scale_x + label_offsets[0] * xdim
+    label_y = scale_y + label_offsets[1] * ydim
+
 
     ax.errorbar(scale_x, scale_y, yerr=length * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
     ax.text(label_x, label_y, f"{length} {label_unit}", fontsize=fontsize, color='black', ha='left', va='center')
@@ -2506,12 +2483,23 @@ def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_u
     return ax
 
 # Add a horizontal scale bar
+# Coordinates are in fractions of the axis
 def add_horizontal_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = "ms", linewidth = 1.0, fontsize = 12):
-    scale_x = coordinates[0]
-    scale_y = coordinates[1]
+    xlim = ax.get_xlim()
+    xmin = xlim[0]
+    xmax = xlim[1]
+    xdim = xmax - xmin
 
-    label_x = scale_x + label_offsets[0]
-    label_y = scale_y + label_offsets[1]
+    ylim = ax.get_ylim()
+    ymin = ylim[0]
+    ymax = ylim[1]
+    ydim = ymax - ymin
+
+    scale_x = coordinates[0] * xdim + xmin
+    scale_y = coordinates[1] * ydim + ymin
+
+    label_x = scale_x + label_offsets[0] * xdim
+    label_y = scale_y + label_offsets[1] * ydim
 
     if isinstance(length, str):
         length = Timedelta(length)
@@ -2522,7 +2510,7 @@ def add_horizontal_scalebar(ax, coordinates, length, scale, label_offsets, label
     return ax
 
 ###### Get colormaps for the plots ######
-def get_power_colormap(**kwargs):
+def get_quadmeshmap(**kwargs):
     cmap = colormaps["inferno"].copy()
     cmap.set_bad(color='darkgray')
 
@@ -2747,6 +2735,20 @@ def format_pressure_ylabels(ax, label=True,
 
     return ax
 
+
+###### Functions for handling colors ######
+
+# Create a categorical colormap with more categories by interpolating a segment of an existing colormap
+def get_interp_cat_colors(cmap, begin_index, end_index, num_cat):
+    # Extract the segment of the colormap
+    cmap_in = get_cmap(cmap)
+    colors_in = [cmap_in(i) for i in range(begin_index, end_index + 1)]
+    
+    # Interpolate the colors
+    custom_cmap = LinearSegmentedColormap.from_list("customized_cmap", colors_in, N=num_cat)
+    colors_out = [custom_cmap(i) for i in range(num_cat)]
+
+    return colors_out
 
 ###### Basic utility functions ######
 

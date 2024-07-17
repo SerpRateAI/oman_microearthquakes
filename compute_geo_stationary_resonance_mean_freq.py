@@ -7,14 +7,14 @@ from pandas import read_hdf
 from utils_basic import GEO_STATIONS as stations, SPECTROGRAM_DIR as indir
 
 # Inputs
-name = "SR38a"
+name = "SR191a"
 time_window = 'min'
 
 min_num_sta = 9
 
 # Read the data
 print(f"Reading the properties of {name}...")
-filename = f"geo_stationary_resonance_properties_{name}.h5"
+filename = f"stationary_resonance_properties_{name}_geo.h5"
 inpath = join(indir, filename)
 
 resonance_df = read_hdf(inpath, key="properties")
@@ -36,6 +36,6 @@ mean_freq_by_time = mean_freq_by_time.asfreq(time_window)
 
 # Save the results
 print("Saving the results to CSV...")
-outpath = join(indir, f"geo_stationary_resonance_mean_freq_{name}_num{min_num_sta}.csv")
+outpath = join(indir, f"stationary_resonance_mean_freq_{name}_geo_num{min_num_sta}.csv")
 mean_freq_by_time.to_csv(outpath, index = True, na_rep = "NaN")
 print(f"Results saved to {outpath}.")

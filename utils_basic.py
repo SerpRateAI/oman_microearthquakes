@@ -37,6 +37,7 @@ HYDRO_STATIONS = ["A00", "B00"]
 HYDRO_LOCATIONS = {"A00": ["03", "04", "05", "06"], "B00": ["01", "02", "03", "04", "05", "06"]}
 HYDRO_DEPTHS = {"01": 30.0, "02": 100.0, "03": 170.0, "04": 240.0, "05": 310.0, "06": 380.0}
                 
+ALL_COMPONENTS = ["Z", "1", "2", "H"]
 GEO_COMPONENTS = ["Z", "1", "2"]
 PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
 WAVELET_COMPONENT_PAIRS = [("1", "2"), ("Z", "1"), ("Z", "2")]
@@ -73,10 +74,10 @@ SUNRISE_SUNSET_PATH = join(ROOTDIR_GEO, "sunrise_sunset_times.csv")
 STATIONS_PATH = join(ROOTDIR_GEO, "stations.csv")
 
 WINDOW_LENGTH_GEO = 3600 # in seconds
-STARTTIME_GEO = Timestamp("2020-01-10T00:00:00")
-ENDTIME_GEO = Timestamp("2020-02-01T23:59:59")
-STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00")
-ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59")
+STARTTIME_GEO = Timestamp("2020-01-10T00:00:00", tz="UTC")
+ENDTIME_GEO = Timestamp("2020-02-01T23:59:59", tz="UTC")
+STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00", tz="UTC")
+ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59", tz="UTC")
 HAMMER_DATE = "2020-01-25"
 
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
@@ -217,6 +218,12 @@ def get_baro_temp_data():
     # Change the column names
     baro_temp_df.columns = ["time", "elapsed_seconds", "pressure", "temperature"]
 
+    # Set the time zone to Gulf Standard Time
+    baro_temp_df["time"] = baro_temp_df["time"].dt.tz_localize("Asia/Muscat")
+
+    # Convet to UTC
+    baro_temp_df["time"] = baro_temp_df["time"].dt.tz_convert("UTC")
+
     # Set the time column as the index
     baro_temp_df.set_index("time", inplace=True)
 
@@ -309,9 +316,16 @@ def assemble_timeax_from_ints(starttime, num_time, time_step):
 
     return timeax
 
-######
-# Functions for handling file names
-######
+###### Reading CSV files ######
+def convert_boolean(value):
+    if value.lower() in ['true', 'yes']:
+        return True
+    elif value.lower() in ['false', 'no']:
+        return False
+    
+    return value
+
+###### Handling file names and paths ######
 
 ### Function to generate a suffix for output filename from the input frequency limits
 def freq2suffix(freqmin, freqmax):

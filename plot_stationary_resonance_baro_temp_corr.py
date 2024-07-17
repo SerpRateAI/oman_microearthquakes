@@ -10,15 +10,16 @@ from utils_basic import get_baro_temp_data
 from utils_plot import add_day_night_shading, format_datetime_xlabels, save_figure
 
 # Inputs
-name = "SR38a"
+name = "SR25a"
 min_num_sta = 9
 
 # Read the data
 print(f"Reading the mean frequency of the stationary resonance for {name}...")
-filename = f"geo_stationary_resonance_mean_freq_{name}_num{min_num_sta}.csv"
+filename = f"stationary_resonance_mean_freq_{name}_geo_num{min_num_sta}.csv"
 inpath = join(indir, filename)
 
 mean_freq_by_time = read_csv(inpath, index_col=0, parse_dates=True)
+mean_freq_by_time.index = mean_freq_by_time.index.tz_localize('UTC')
 
 baro_temp_df = get_baro_temp_data()
 
@@ -67,7 +68,11 @@ format_datetime_xlabels(ax,
                         va = "top", ha = "right", rotation = 30,
                         axis_label_size = 12, tick_label_size = 10)
 
+# Set the super title
+fig.suptitle(f"{name}",
+             fontsize = 15, fontweight = "bold", y = 0.93)
+
 
 # Save the figure
-filename = "test_stationary_resonance_baro_temp_corr.png"
+filename = f"stationary_resonance_{name}_geo_baro_temp_corr.png"
 save_figure(fig, filename)

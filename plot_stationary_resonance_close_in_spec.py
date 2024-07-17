@@ -15,9 +15,9 @@ from utils_plot import add_power_colorbar, add_station_map, format_datetime_xlab
 
 # Inputs
 # Data
-geo_to_plot = ["A01", "A16", "A19", "B01", "B19", "B20"]
-hydro_a_to_plot = "06"
-hydro_b_to_plot = "06"
+geo_to_plot = {"A01": (-3, 3), "A16": (3, -3), "A19": (3, -3), "B01":(-3, 3), "B19": (3, 3), "B20": (3, 3)}
+hydro_a_to_plot = "04"
+hydro_b_to_plot = "02"
 starttime = "2020-01-13T19:30:00"
 endtime = "2020-01-13T20:30:00"
 
@@ -26,8 +26,8 @@ overlap = 0.0
 downsample = False
 downsample_factor = 60
 
-min_freq = 37.0
-max_freq = 40.0
+min_freq = 24.0
+max_freq = 27.0
 
 # Plotting
 # Spectrograms
@@ -37,8 +37,8 @@ spec_height = 2.0
 dbmin_geo = -10.0
 dbmax_geo = 10.0
 
-dbmin_hydro = -70.0
-dbmax_hydro = -50.0
+dbmin_hydro = -80.0
+dbmax_hydro = -60.0
 
 major_time_spacing = "15min"
 num_minor_ticks = 3
@@ -71,7 +71,7 @@ tick_label_size = 10.0
 print("Reading the geophone spectrograms...")
 stream_spec_geo = StreamSTFTPSD()
 suffix = get_spectrogram_file_suffix(window_length, overlap, downsample = downsample, downsample_factor = downsample_factor)
-for station in geo_to_plot:
+for station in geo_to_plot.keys():
     inpath = join(indir, f"whole_deployment_daily_geo_spectrograms_{station}_{suffix}.h5")
     stream_spec_sta = read_geo_spectrograms(inpath, 
                                         starttime = starttime, endtime = endtime, 
@@ -120,7 +120,7 @@ gs = GridSpec(num_geo + 2, 2, width_ratios=[1, map_width / spec_width])
 
 print("Plotting the geophone spectrograms...")
 spec_axes = []
-for i, station in enumerate(geo_to_plot):
+for i, station in enumerate(geo_to_plot.keys()):
     ax = fig.add_subplot(gs[i, 0])
     spec_axes.append(ax)
 

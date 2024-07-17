@@ -12,9 +12,9 @@ from multitaper import MTSpec
 from multiprocessing import Pool
 from skimage.morphology import remove_small_objects
 
-from utils_basic import GEO_COMPONENTS
+from utils_basic import ALL_COMPONENTS, GEO_COMPONENTS
 from utils_basic import SPECTROGRAM_DIR 
-from utils_basic import assemble_timeax_from_ints, datetime2int, int2datetime, reltimes_to_timestamps, power2db
+from utils_basic import assemble_timeax_from_ints, convert_boolean, datetime2int, int2datetime, reltimes_to_timestamps, power2db
 from utils_preproc import read_and_process_day_long_geo_waveforms
 
 ######
@@ -131,7 +131,7 @@ class StreamSTFTPSD:
             locations = self.get_locations()
 
         if components is None:
-            components = GEO_COMPONENTS
+            components = ALL_COMPONENTS
 
         # Stitch the spectrograms of each station, location, and component
         for station in stations:
@@ -1179,16 +1179,20 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
                     num_freq = data.shape[0]
                     freqax = linspace(min_freq, max_freq, num_freq)
                 
-                    trace_spec = TraceSTFTPSD(station, location, "", time_label, timeax, freqax, data)
+                    trace_spec = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
                     stream_spec.append(trace_spec)
         else:
             # Option 2: Read the spectrograms of a specific time range
             # Convert the start and end times to Timestamp objects
             if isinstance(starttime, str):
                 starttime_to_read = Timestamp(starttime)
+            else:
+                starttime_to_read = starttime
             
             if isinstance(endtime, str):
                 endtime_to_read = Timestamp(endtime)
+            else:
+                endtime_to_read = endtime
             
             # Check the start time is greater than the end time
             if starttime_to_read > endtime_to_read:
@@ -1229,7 +1233,7 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
                     timeax = date_range(start = starttime_out, periods = data.shape[1], freq = time_interval)
 
                     # Create the TraceSTFTPSD object
-                    trace_spec = TraceSTFTPSD(station, location, "", time_label, timeax, freqax, data)
+                    trace_spec = TraceSTFTPSD(station, location, "H", time_label, timeax, freqax, data)
                     stream_spec.append(trace_spec)
 
     # Stitch the spectrograms if there are multiple blocks
@@ -1241,7 +1245,7 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
 def read_time_from_geo_spectrograms(inpath, time_out, components = GEO_COMPONENTS):
     # Convert string to Timestamp
     if isinstance(time_out, str):
-        time_out = Timestamp(time_out)
+        time_out = Timestamp(time_out, tz = "UTC")
 
     power_dict = {}
     
@@ -1251,7 +1255,7 @@ def read_time_from_geo_spectrograms(inpath, time_out, components = GEO_COMPONENT
 
         # Get the time labels and start times of each block
         time_labels = get_spec_time_labels(header_group)
-        starttimes = to_datetime(time_labels, format = "%Y%m%d%H%M%S%f")
+        starttimes = to_datetime(time_labels, format = "%Y%m%d%H%M%S%f", utc = True)
 
         # Get the time and frequency interval
         time_interval = get_spec_time_interval(header_group)
@@ -1337,7 +1341,7 @@ def read_freq_from_geo_spectrograms(inpath, freq_out, components = GEO_COMPONENT
 def read_time_from_hydro_spectrograms(inpath, time_out, locations = None):
     # Convert string to Timestamp
     if isinstance(time_out, str):
-        time_out = Timestamp(time_out)
+        time_out = Timestamp(time_out, tz = "UTC")
 
     power_dict = {}
 
@@ -1346,7 +1350,7 @@ def read_time_from_hydro_spectrograms(inpath, time_out, locations = None):
 
         # Get the time labels and start times of each block
         time_labels = get_spec_time_labels(header_group)
-        starttimes = to_datetime(time_labels, format = "%Y%m%d%H%M%S%f")
+        starttimes = to_datetime(time_labels, format = "%Y%m%d%H%M%S%f", utc = True)
 
         # Get the time and frequency interval
         time_interval = get_spec_time_interval(header_group)
@@ -1439,7 +1443,7 @@ def get_spec_block_freqax(block_group, freq_interval):
 # Get the time axis of a geophone spectrogram block
 def get_spec_block_timeax(block_group, time_interval):
     starttime = block_group["start_time"][()]
-    starttime = Timestamp(starttime, unit='ns')
+    starttime = Timestamp(starttime, unit='ns', tz = "UTC")
     num_times = block_group["num_times"][()]
     endtime = starttime + (num_times - 1) * time_interval
     timeax = date_range(start = starttime, end = endtime, periods = num_times)
@@ -1455,7 +1459,7 @@ def get_block_timings(data_group, time_labels, time_interval):
         block_group = data_group[time_label]
         starttime = block_group["start_time"][()]
         num_times = block_group["num_times"][()]
-        starttime = Timestamp(starttime, unit='ns')
+        starttime = Timestamp(starttime, unit='ns', tz = "UTC")
         endtime = starttime + (num_times - 1) * time_interval
         block_starttimes.append(starttime)
         block_endtimes.append(endtime)
@@ -1505,6 +1509,8 @@ def read_spectral_peaks(inpath, **kwargs):
     else:
         raise ValueError("Error: Invalid file format!")
 
+    peak_df["time"] = peak_df["time"].dt.tz_localize("UTC")
+ 
     return peak_df
 
 # Extract a stationary resonance from the spectral-peak data of a geophone station
@@ -1521,8 +1527,9 @@ def extract_stationary_resonance(peak_df, array_count_df, timeax, freqax, min_pa
         time = row["time"]
         freq = row["frequency"]
 
-        # print(type(time))
-        # print(type(timeax[0]))
+        # print(timeax[0].tzinfo)
+        # print(time.tzinfo)
+
         time_index = timeax.searchsorted(time)
         freq_index = freqax.searchsorted(freq)
         peak_array[freq_index, time_index] = True
@@ -1618,6 +1625,8 @@ def read_spectral_peak_counts(inpath, **kwargs):
     else:
         raise ValueError("Error: Invalid file format!")
 
+    count_df["time"] = count_df["time"].dt.tz_localize("UTC")
+
     return count_df
 
 # Save spectral-peak bin counts to a CSV or HDF file
@@ -1683,6 +1692,13 @@ def save_binary_spectrogram(timeax, freqax, data, outpath):
 
     print(f"Binary spectrogram saved to {outpath}")
 
+###### Handling harmonic data tables
+def read_harmonic_data_table(inpath):
+    harmo_df = read_csv(inpath, index_col = "name", converters = {"exist": convert_boolean})
+
+    return harmo_df
+
+###### Multi-taper spectral analysis ######
 
 # Calculate the VELOCITY PSD of a VELOCITY signal using multitaper method
 def get_vel_psd_mt(vel, sampling_rate=1000.0, nw=2):    

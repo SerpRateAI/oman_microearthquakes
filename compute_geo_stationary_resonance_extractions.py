@@ -2,10 +2,10 @@
 
 # Imports
 from os.path import join
-from pandas import concat
+from pandas import concat, read_csv
 
 from utils_basic import SPECTROGRAM_DIR as indir, GEO_STATIONS as stations
-from utils_spec import extract_stationary_resonance, get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_geo_spec_axes, read_geo_spectrograms, read_spectral_peaks, read_spectral_peak_counts
+from utils_spec import extract_stationary_resonance, get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_geo_spec_axes, read_spectral_peaks, read_spectral_peak_counts
 
 # Inputs
 # Spectrogram
@@ -29,11 +29,7 @@ count_fille_ext = "h5"
 
 # Resonance extracting
 # Name
-name = "SR38a"
-
-# Frequency range for extracing the resonance
-min_freq_res = 38.1
-max_freq_res = 38.4
+name = "SR140a"
 
 # Frequency buffer zone width for constructing the boolean array
 freq_buffer = 0.1
@@ -45,10 +41,17 @@ min_patch_size = 3
 to_csv = True
 to_hdf = True
 
+# Read the stationary-resonance extraction parameters
+inpath = join(indir, "stationary_resonance_extraction_params.csv")
+params_df = read_csv(inpath, index_col = "name")
+min_freq_res = params_df.loc[name, "min_freq"]
+max_freq_res = params_df.loc[name, "max_freq"]
+
 # Process each station
 print(f"Extracting the properties of {name}... in the frequency range of [{min_freq_res}, {max_freq_res}] Hz.")
 
 all_resonance_dfs = []
+# stations = ["A01"]
 for station in stations:
     print(f"### Working on {station}... ###")
 
@@ -66,7 +69,9 @@ for station in stations:
     inpath = join(indir, f"geo_spectral_peaks_{station}_{suffix_spec}_{suffix_peak}.{peak_file_ext}")
 
     peak_df = read_spectral_peaks(inpath)
+    # print(peak_df.head())
     peak_df = peak_df.loc[(peak_df["frequency"] >= min_freq_res) & (peak_df["frequency"] <= max_freq_res)]
+
 
     # Read the spectral peak counts
     print("Reading the spectral peak array counts...")
@@ -83,6 +88,7 @@ for station in stations:
     # Fill the time gaps with NaN
     print("Filling the time gaps with NaN...")
     resonance_df = resonance_df.asfreq("min")
+    resonance_df["station"] = station
 
     # Compute the quality factors
     print("Computing the quality factors...")
@@ -93,12 +99,6 @@ for station in stations:
 
 resonance_df = concat(all_resonance_dfs)
 
-# Compute the average frequency for each group with more than 9 NaN values and disregard NaN values
-group = resonance_df.groupby("time")
-filtered_resonance_df = group.filter(lambda x: x["frequency"].notna().sum() > 9)
-print(type(filtered_resonance_df))
-print(filtered_resonance_df)
-
 # # Compute the average frequency for each group while disregarding NaN values
 # average_frequency = filtered_resonance_df.groupby("time")["frequency"].mean()
 # print("Average frequency for each group:")
@@ -107,10 +107,10 @@ print(filtered_resonance_df)
 # Save the results
 if to_csv:
     print("Saving the results to CSV...")
-    outpath = join(indir, f"stationary_resonance_properties_geo_{name}.csv")
+    outpath = join(indir, f"stationary_resonance_properties_{name}_geo.csv")
     resonance_df.to_csv(outpath, index = True, na_rep = "NaN")
 
 if to_hdf:
     print("Saving the results to HDF...")
-    outpath = join(indir, f"stationary_resonance_properties_geo_{name}.h5")
+    outpath = join(indir, f"stationary_resonance_properties_{name}_geo.h5")
     resonance_df.to_hdf(outpath, key = "properties", mode = "w")

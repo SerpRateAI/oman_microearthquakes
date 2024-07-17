@@ -17,7 +17,7 @@ from utils_plot import add_day_night_shading, add_colorbar, add_station_map, for
 
 # Inputs
 # Name of the stationary resonance
-name = "SR38a"
+name = "SR152a"
 
 # Spectrogram
 window_length = 60.0
@@ -37,16 +37,16 @@ count_threshold = 9
 
 # Plotting
 # Curves
-factor = 7 # Multiplicative factor for the curves
+factor = 5 # Multiplicative factor for the curves
 
-min_freq_plot = 38.05
-max_freq_plot = 38.35
+min_freq_plot = 152.5
+max_freq_plot = 153.3
 
-min_db = -5.0
-max_db = 25.0
+min_db = -15.0
+max_db = 15.0
 
-min_qf = 600.0
-max_qf = 900.0
+min_qf = 1700.0
+max_qf = 2100.0
 
 curve_plot_width = 7.0
 curve_plot_hw_ratio = 0.8
@@ -88,7 +88,7 @@ sun_df = get_geo_sunrise_sunset_times()
 
 # Read the stationary resonance properties
 print("Reading the stationary resonance properties...")
-filename_in = f"geo_stationary_resonance_properties_{name}.h5"
+filename_in = f"stationary_resonance_properties_{name}_geo.h5"
 inpath = join(indir, filename_in)
 resonance_df = read_hdf(inpath, key = "properties")
 
@@ -189,7 +189,7 @@ add_station_map(map_ax,
 
 # Save the figure
 print("Saving the figure...")
-figname = f"geo_stationary_resonance_freq_vs_time_{name}.png"
+figname = f"stationary_resonance_freq_vs_time_{name}_geo.png"
 save_figure(fig, figname, dpi = 600)
 print("")
 
@@ -279,7 +279,7 @@ add_station_map(map_ax,
 
 # Save the figure
 print("Saving the figure...")
-figname = f"geo_stationary_resonance_power_vs_time_{name}.png"
+figname = f"stationary_resonance_power_vs_time_{name}_geo.png"
 save_figure(fig, figname, dpi = 600)
 print("")
 
@@ -368,7 +368,7 @@ add_station_map(map_ax,
 
 # Save the figure
 print("Saving the figure...")
-figname = f"geo_stationary_resonance_qf_vs_time_{name}.png"
+figname = f"stationary_resonance_qf_vs_time_{name}_geo.png"
 
 save_figure(fig, figname, dpi = 600)
 print("")

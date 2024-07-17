@@ -9,7 +9,7 @@ from numpy import array, zeros
 
 from utils_basic import SPECTROGRAM_DIR as indir, STARTTIME_GEO as starttime_plot, ENDTIME_GEO as endtime_plot
 from utils_spec import get_peak_freq_w_max_detection, get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_geo_spectrograms, read_spectral_peaks, read_spectral_peak_counts
-from utils_plot import format_datetime_xlabels, format_freq_ylabels, get_power_colormap, save_figure
+from utils_plot import format_datetime_xlabels, format_freq_ylabels, save_figure
 
 # Inputs
 station = "A01"
@@ -35,8 +35,8 @@ count_fille_ext = "h5"
 
 # Resonance extracting
 # Frequency range
-min_freq_res = 38.1
-max_freq_res = 38.4
+min_freq_res = 99.9
+max_freq_res = 100.1
 
 # Isolated peak removal
 min_patch_size = 3
@@ -45,8 +45,8 @@ min_patch_size = 3
 fig_width = 15.0
 row_height = 4.0
 
-min_freq_plot = 37.7
-max_freq_plot = 38.7
+min_freq_plot = 25.0
+max_freq_plot = 26.0
 
 min_db = -10.0
 max_db = 20.0
@@ -158,78 +158,75 @@ outpath = join(indir, filename_out)
 resonance_df.to_csv(outpath, index = True)
 print(f"Results are saved to {outpath}")
 
-# # Plotting
-# print("Plotting the results...")
-# fig, axes = subplots(nrows = 5, ncols = 1, sharex = True, sharey = True, figsize = (fig_width, row_height * 5))
+# Plotting
+print("Plotting the results...")
+fig, axes = subplots(nrows = 5, ncols = 1, sharex = True, sharey = True, figsize = (fig_width, row_height * 5))
 
-# # Plot the spectrogram
-# cmap, norm = get_power_colormap(min_db = min_db, max_db = max_db)
+ax = axes[0]
+timeax = trace_spec.times
+freqax = trace_spec.freqs
+data = trace_spec.data
+ax.pcolormesh(timeax, freqax, data, cmap = "inferno", vmin = -10, vmax = 10)
 
-# ax = axes[0]
-# timeax = trace_spec.times
-# freqax = trace_spec.freqs
-# data = trace_spec.data
-# ax.pcolormesh(timeax, freqax, data, cmap = cmap, norm = norm)
+ax.set_ylim(min_freq_plot, max_freq_plot)
+format_freq_ylabels(ax,
+                    major_tick_spacing = major_freq_tick_spacing,
+                    num_minor_ticks = num_minor_freq_ticks)
 
-# ax.set_ylim(min_freq_plot, max_freq_plot)
-# format_freq_ylabels(ax,
-#                     major_tick_spacing = major_freq_tick_spacing,
-#                     num_minor_ticks = num_minor_freq_ticks)
+# Plot the spectral peaks
+ax = axes[1]
+times = peak_df["time"]
+freqs = peak_df["frequency"]
+powers = peak_df["power"]
+ax.scatter(times, freqs, c = powers, cmap = cmap, s = marker_size, norm = norm)
 
-# # Plot the spectral peaks
-# ax = axes[1]
-# times = peak_df["time"]
-# freqs = peak_df["frequency"]
-# powers = peak_df["power"]
-# ax.scatter(times, freqs, c = powers, cmap = cmap, s = marker_size, norm = norm)
+ax.set_facecolor("darkgray")
 
-# ax.set_facecolor("darkgray")
+format_freq_ylabels(ax,
+                    major_tick_spacing = major_freq_tick_spacing,
+                    num_minor_ticks = num_minor_freq_ticks)
 
-# format_freq_ylabels(ax,
-#                     major_tick_spacing = major_freq_tick_spacing,
-#                     num_minor_ticks = num_minor_freq_ticks)
+# Plot the boolean array representing the peaks
+ax = axes[2]
+ax.pcolormesh(timeax, freqax, peak_array, cmap = "gray")
+ax.set_facecolor("blue")
 
-# # Plot the boolean array representing the peaks
-# ax = axes[2]
-# ax.pcolormesh(timeax, freqax, peak_array, cmap = "gray")
-# ax.set_facecolor("blue")
+format_freq_ylabels(ax,
+                    major_tick_spacing = major_freq_tick_spacing,
+                    num_minor_ticks = num_minor_freq_ticks)
 
-# format_freq_ylabels(ax,
-#                     major_tick_spacing = major_freq_tick_spacing,
-#                     num_minor_ticks = num_minor_freq_ticks)
+# Plot the boolean array with isolated peaks removed
+ax = axes[3]
+ax.pcolormesh(timeax, freqax, peak_array_clean, cmap = "gray")
+ax.set_facecolor("blue")
 
-# # Plot the boolean array with isolated peaks removed
-# ax = axes[3]
-# ax.pcolormesh(timeax, freqax, peak_array_clean, cmap = "gray")
-# ax.set_facecolor("blue")
+format_freq_ylabels(ax,
+                    major_tick_spacing = major_freq_tick_spacing,
+                    num_minor_ticks = num_minor_freq_ticks)
 
-# format_freq_ylabels(ax,
-#                     major_tick_spacing = major_freq_tick_spacing,
-#                     num_minor_ticks = num_minor_freq_ticks)
+# Plot the extracted stationary resonance peaks
+ax = axes[4]
+times = resonance_df.index
+freqs = resonance_df["frequency"]
+powers = resonance_df["power"]
+ax.scatter(times, freqs, c = powers, cmap = cmap, s = marker_size, norm = norm)
+ax.set_facecolor("darkgray")
 
-# # Plot the extracted stationary resonance peaks
-# ax = axes[4]
-# times = resonance_df.index
-# freqs = resonance_df["frequency"]
-# powers = resonance_df["power"]
-# ax.scatter(times, freqs, c = powers, cmap = cmap, s = marker_size, norm = norm)
-# ax.set_facecolor("darkgray")
+format_freq_ylabels(ax,
+                    major_tick_spacing = major_freq_tick_spacing,
+                    num_minor_ticks = num_minor_freq_ticks)
 
-# format_freq_ylabels(ax,
-#                     major_tick_spacing = major_freq_tick_spacing,
-#                     num_minor_ticks = num_minor_freq_ticks)
+# Format the x-axis
+ax.set_xlim(starttime_plot, endtime_plot)
 
-# # Format the x-axis
-# ax.set_xlim(starttime_plot, endtime_plot)
+format_datetime_xlabels(ax,
+                        date_format = "%Y-%m-%d",
+                        va = "top", ha = "right",
+                        major_tick_spacing = major_time_tick_spacing,
+                        num_minor_ticks = num_minor_time_ticks,
+                        rotation = 15)
 
-# format_datetime_xlabels(ax,
-#                         date_format = "%Y-%m-%d",
-#                         va = "top", ha = "right",
-#                         major_tick_spacing = major_time_tick_spacing,
-#                         num_minor_ticks = num_minor_time_ticks,
-#                         rotation = 15)
-
-# # Savet the figure
-# print("Saving the figure...")
-# figname = f"test_extract_stationary_resonance_peaks_connectivity.png"
-# save_figure(fig, figname)
+# Savet the figure
+print("Saving the figure...")
+figname = f"test_extract_stationary_resonance_peaks_connectivity.png"
+save_figure(fig, figname)

@@ -25,7 +25,7 @@ downsample_factor = 60
 
 major_noise_freqs = linspace(40.0, 200.0, 17)
 minor_noise_freqs = linspace(60.0, 200.0, 141)
-peak_freqs = [38.25, 76.5]
+peak_freqs = [12.75, 25.5, 38.25]
 
 # Plotting
 hydro_base = -80.0
@@ -46,7 +46,7 @@ ymin_hydro = 0.0
 ymax_hydro = 425.0   
 
 min_freq = 0.0
-max_freq = 200.0
+max_freq = 50.0
 
 axis_label_size = 12.0
 tick_label_size = 10.0
@@ -73,7 +73,6 @@ num_minor_freq_ticks = 5
 
 major_depth_spacing = 100.0
 num_minor_depth_ticks = 5
-
 
 
 # Read the spectra at the specific time
