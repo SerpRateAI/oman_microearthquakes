@@ -1,6 +1,7 @@
 # Functions and classes for plotting
 from os.path import join
 from pandas import Timestamp, Timedelta
+from pandas import date_range
 from numpy import arctan, array, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
 from numpy.linalg import norm
 from scipy.stats import gmean
@@ -12,7 +13,7 @@ from matplotlib.dates import num2date, date2num
 from matplotlib.colors import LogNorm, Normalize, LinearSegmentedColormap
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
-from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
+from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
 from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
 from utils_wavelet import mask_cross_phase
@@ -771,7 +772,7 @@ def plot_array_spec_peak_counts(count_df,
                             size_scale = 5,
                             example_counts = array([5, 20, 35]),
                             xdim = 15, ydim = 5, 
-                            starttime = STARTTIME_GEO, endtime = ENDTIME_GEO, freq_lim = (0, 490),
+                            starttime = STARTTIME_GEO, endtime = ENDTIME_GEO, min_freq = 0.0, max_freq = 500.0,
                             date_format = "%Y-%m-%d",
                             major_time_spacing="24h", num_minor_time_ticks = 6,
                             major_freq_spacing=100, num_minor_freq_ticks=5,
@@ -809,6 +810,12 @@ def plot_array_spec_peak_counts(count_df,
     # Add the legend
     ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
 
+    # Set the x-axis limits
+    ax.set_xlim([count_df["time"].min(), count_df["time"].max()])
+    
+    # Set the y-axis limits
+    ax.set_ylim([min_freq, max_freq])
+
     # Format the frequency axis
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
@@ -817,16 +824,52 @@ def plot_array_spec_peak_counts(count_df,
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format, 
                             rotation = time_tick_rotation, va=time_tick_va, ha=time_tick_ha)
 
-    # Set the x-axis limits
-    ax.set_xlim([count_df["time"].min(), count_df["time"].max()])
-    
-    # Set the y-axis limits
-    ax.set_ylim(freq_lim)
 
     # Add the title
     ax.set_title("Array detection counts", fontsize = title_size, fontweight = "bold")
 
     return fig, ax
+
+# Plot the array spectral peak times and frequencies with a detection number above the threshold
+def plot_array_spec_peak_times_and_freqs_in_multi_rows(count_df,
+                                                       marker_size = 5,
+                                                       starttime = STARTTIME_HYDRO, endtime = ENDTIME_HYDRO,
+                                                       min_freq = None, max_freq = None,
+                                                       num_rows = 4, column_width = 10.0, row_height = 2.0,
+                                                       major_time_spacing = "15d", num_minor_time_ticks = 3,
+                                                       major_freq_spacing = 0.5, num_minor_freq_ticks = 5):
+
+    # Plotting
+    print("Plotting the spectrograms...")
+    fig, axes = subplots(num_rows, 1, figsize=(column_width, row_height * num_rows), sharey = True)
+
+    # Plot each time window
+    windows = date_range(starttime, endtime, periods = num_rows + 1)
+
+    for i in range(num_rows):
+        starttime = windows[i]
+        endtime = windows[i + 1]
+        count_df_window = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime)]
+
+        ax = axes[i]
+        ax.scatter(count_df_window["time"], count_df_window["frequency"], s = marker_size, facecolors = "lightgray", edgecolors = "black", alpha = 0.5, linewidth = 0.1)
+
+        format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks, date_format = "%Y-%m-%d")
+        
+
+        # if i < num_rows - 1:       
+        #     add_horizontal_scalebar(ax, scalebar_coord, "1d", 1.0, color = color_ref, plot_label = False)
+        # else:
+        #     add_horizontal_scalebar(ax, scalebar_coord, "1d", 1.0, color = color_ref, plot_label = True,
+        #                             label = "1d", label_offsets = scalebar_label_offsets, fontsize = 10, fontweight = "bold")
+
+
+        if min_freq is not None and max_freq is not None:
+            ax.set_ylim([min_freq, max_freq])
+    
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks)   
+
+    return fig, axes
 
 # Plot the total PSD of a geophone station, the power and reverse bandwidth of the spectral peaks detected from it, and the array detection counts
 def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
@@ -2395,16 +2438,16 @@ def add_colorbar(fig, color, label, position, orientation="horizontal", axis_lab
 
     return cbar
 
-# Add a power colorbar to the plot
-def add_quadmeshbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Power (dB)", fontsize=axis_label_size, labelpad=labelpad)
-    cbar.ax.tick_params(labelsize=tick_label_size, length=tick_length, width=tick_width)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
+# # Add a power colorbar to the plot
+# def add_quadmeshbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
+#     cax = fig.add_axes(position)
+#     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+#     cbar.set_label("Power (dB)", fontsize=axis_label_size, labelpad=labelpad)
+#     cbar.ax.tick_params(labelsize=tick_label_size, length=tick_length, width=tick_width)
+#     cbar.locator = MultipleLocator(tick_spacing)
+#     cbar.update_ticks() 
 
-    return cbar
+#     return cbar
 
 # Add a frequency colorbar to the plot
 def add_freq_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10, major_tick_spacing = 0.1):
@@ -2459,7 +2502,7 @@ def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spac
 
 # Add a vertical scale bar
 # Coordinates are in fractions of the axis
-def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = GROUND_VELOCITY_UNIT, linewidth = 1.0, fontsize = 12):
+def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = GROUND_VELOCITY_UNIT, color = "black", linewidth = 1.0, fontsize = 12, fontweight = "bold"):
     xlim = ax.get_xlim()
     xmin = xlim[0]
     xmax = xlim[1]
@@ -2477,17 +2520,23 @@ def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_u
     label_y = scale_y + label_offsets[1] * ydim
 
 
-    ax.errorbar(scale_x, scale_y, yerr=length * scale/2, xerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
-    ax.text(label_x, label_y, f"{length} {label_unit}", fontsize=fontsize, color='black', ha='left', va='center')
+    ax.errorbar(scale_x, scale_y, yerr=length * scale/2, xerr=None, capsize=2.5, color=color, fmt='-', linewidth=linewidth)
+    ax.text(label_x, label_y, f"{length} {label_unit}", fontsize=fontsize, color='color', ha='left', va='center')
     
     return ax
 
 # Add a horizontal scale bar
 # Coordinates are in fractions of the axis
-def add_horizontal_scalebar(ax, coordinates, length, scale, label_offsets, label_unit = "ms", linewidth = 1.0, fontsize = 12):
+def add_horizontal_scalebar(ax, coordinates, length, scale, color = "black", linewidth = 1.0, plot_label = True, **kwargs):
     xlim = ax.get_xlim()
     xmin = xlim[0]
     xmax = xlim[1]
+
+    if isinstance(length, str):
+        length = Timedelta(length)
+        xmin = Timestamp(num2date(xmin))
+        xmax = Timestamp(num2date(xmax))
+    
     xdim = xmax - xmin
 
     ylim = ax.get_ylim()
@@ -2498,14 +2547,18 @@ def add_horizontal_scalebar(ax, coordinates, length, scale, label_offsets, label
     scale_x = coordinates[0] * xdim + xmin
     scale_y = coordinates[1] * ydim + ymin
 
-    label_x = scale_x + label_offsets[0] * xdim
-    label_y = scale_y + label_offsets[1] * ydim
+    # Handle the case where the x-axis is in datetime                  
+    ax.errorbar(scale_x, scale_y, xerr=length * scale/2, yerr=None, capsize=2.5, color=color, fmt='-', linewidth=linewidth)
 
-    if isinstance(length, str):
-        length = Timedelta(length)
+    if plot_label:
+        label = kwargs.get("label", "")
+        label_offsets = kwargs.get("label_offsets", (0.1, 0.1))
+        fontsize = kwargs.get("fontsize", 12)
+        fontweight = kwargs.get("fontweight", "normal")
 
-    ax.errorbar(scale_x, scale_y, xerr=length * scale/2, yerr=None, capsize=2.5, color='black', fmt='-', linewidth=linewidth)
-    ax.text(label_x, label_y, f"{length.microseconds / 1000:.0f} {label_unit}", fontsize=fontsize, color='black', ha='center', va='bottom')
+        label_x = scale_x + label_offsets[0] * xdim
+        label_y = scale_y + label_offsets[1] * ydim
+        ax.text(label_x, label_y, f"{label}", fontsize=fontsize, color=color, ha='left', va='center', fontweight=fontweight)
     
     return ax
 

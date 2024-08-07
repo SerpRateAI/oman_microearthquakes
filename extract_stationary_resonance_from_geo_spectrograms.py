@@ -28,8 +28,11 @@ count_threshold = 9
 count_fille_ext = "h5"
 
 # Resonance extracting
+# Parameter-file name
+filename_param = "stationary_resonance_params_harmo_SR12a.csv"
+
 # Name
-name = "SR140a"
+name = "SR100a"
 
 # Frequency buffer zone width for constructing the boolean array
 freq_buffer = 0.1
@@ -42,10 +45,10 @@ to_csv = True
 to_hdf = True
 
 # Read the stationary-resonance extraction parameters
-inpath = join(indir, "stationary_resonance_extraction_params.csv")
+inpath = join(indir, filename_param)
 params_df = read_csv(inpath, index_col = "name")
-min_freq_res = params_df.loc[name, "min_freq"]
-max_freq_res = params_df.loc[name, "max_freq"]
+min_freq_res = params_df.loc[name, "extract_min_freq"]
+max_freq_res = params_df.loc[name, "extract_max_freq"]
 
 # Process each station
 print(f"Extracting the properties of {name}... in the frequency range of [{min_freq_res}, {max_freq_res}] Hz.")

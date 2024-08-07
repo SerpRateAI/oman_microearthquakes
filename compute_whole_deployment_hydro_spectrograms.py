@@ -14,12 +14,12 @@ from utils_torch import get_daily_hydro_spectrograms
 
 # Inputs
 stations_to_compute = ["A00", "B00"]
-window_length = 1.0 # IN SECONDS
+window_length = 300.0
 overlap = 0.0
 downsample = False # Downsample along the frequency axis
 downsample_factor = 60 # Downsample factor for the frequency axis
 resample_in_parallel = True # Resample along the time axis in parallel
-num_process_resample = 16 # Number of processes while resampling along the time axis in parallel
+num_process_resample = 32 # Number of processes while resampling along the time axis in parallel
 save_ds_only = False # Whether to save only the downsampled spectrograms
 
 if not downsample and save_ds_only:
@@ -34,6 +34,17 @@ days = get_hydrophone_days()
 # Compute the frequency intervals
 freq_interval = 1.0 / window_length
 freq_interval_ds = freq_interval * downsample_factor
+
+# Print the parameters
+print("### Parameters ###")
+print(f"Stations to compute: {stations_to_compute}")
+print(f"Window length: {window_length}")
+print(f"Overlap: {overlap}")
+print(f"Downsample: {downsample}")
+print(f"Downsample factor: {downsample_factor}")
+print(f"Resample in parallel: {resample_in_parallel}")
+print(f"Number of processes for resampling: {num_process_resample}")
+print(f"Save downsampled only: {save_ds_only}")
 
 # Process each station
 for station in stations_to_compute:

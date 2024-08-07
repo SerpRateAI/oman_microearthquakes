@@ -1,10 +1,5 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# # Compute the whole deployment geophone spectrograms for a list of stations
+# Compute the whole deployment geophone spectrograms for a list of stations
 # The results for each station is stored in a single HDF5 file, with the spectrograms for each day saved in a separate block for easy reading and writing
-
-# In[1]:
 
 
 # Imports
@@ -19,51 +14,45 @@ from utils_spec import create_geo_spectrogram_file, write_geo_spectrogram_block,
 from utils_torch import get_daily_geo_spectrograms
 
 
-# In[2]:
-
-
 # Inputs
 block_type = "daily"
-window_length = 60.0 # IN SECONDS
+window_length = 1.0 # IN SECONDS
 overlap = 0.0
 downsample = False # Downsample along the frequency axis
 downsample_factor = 60 # Downsample factor for the frequency axis
 resample_in_parallel = True # Resample along the time axis in parallel
-num_process_resample = 16 # Number of processes while resampling along the time axis in parallel
+num_process_resample = 32 # Number of processes while resampling along the time axis in parallel
 save_ds_only = False # Whether to save only the downsampled spectrograms
 
 if not downsample and save_ds_only:
     raise ValueError("Conflicting options for downsampling!")
 
 
-# In[3]:
-
-
 # Create the output directory
 makedirs(outdir, exist_ok=True)
-
-
-# In[4]:
 
 
 # Load the station metadata
 metadata = get_geo_metadata()
 
 
-# In[5]:
-
-
 # Get the geophone deployment days
 days = get_geophone_days()
-# days = ["2020-01-13"]
-
-
-# In[6]:
-
 
 # Compute the frequency intervals
 freq_interval = 1.0 / window_length
 freq_interval_ds = freq_interval * downsample_factor
+
+# Print the parameters
+print("### Parameters ###")
+print(f"Stations to compute: {stations}")
+print(f"Window length: {window_length}")
+print(f"Overlap: {overlap}")
+print(f"Downsample: {downsample}")
+print(f"Downsample factor: {downsample_factor}")
+print(f"Resample in parallel: {resample_in_parallel}")
+print(f"Number of processes for resampling: {num_process_resample}")
+print(f"Save downsampled only: {save_ds_only}")
 
 # Loop over stations
 for station in stations:
@@ -77,12 +66,14 @@ for station in stations:
         file = create_geo_spectrogram_file(station, 
                                            window_length = window_length, overlap = overlap, 
                                            freq_interval = freq_interval, downsample = False, outdir = outdir)
+        
 
     if downsample:
         file_ds = create_geo_spectrogram_file(station, 
                                               window_length = window_length, overlap = overlap,
                                               freq_interval = freq_interval_ds, downsample = True, downsample_factor = downsample_factor, outdir = outdir)
-
+    print("")
+    
     # Loop over days
     num_days = len(days)
     time_labels = []
@@ -125,10 +116,3 @@ for station in stations:
         finish_geo_spectrogram_file(file_ds, time_labels)
         
     print("")
-
-
-# In[ ]:
-
-
-
-

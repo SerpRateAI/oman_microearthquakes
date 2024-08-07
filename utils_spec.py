@@ -4,17 +4,18 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from scipy.interpolate import RegularGridInterpolator
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, linspace, amax, meshgrid, amin, nan, ones, pi, savez, zeros
+from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, log10, linspace, amax, median, amin, nan, ones, pi, savez, zeros
 from pandas import Series, DataFrame, DatetimeIndex, Timedelta, Timestamp
 from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
+from matplotlib.pyplot import subplots, get_cmap
 from h5py import File, special_dtype
 from multitaper import MTSpec
 from multiprocessing import Pool
 from skimage.morphology import remove_small_objects
 
 from utils_basic import ALL_COMPONENTS, GEO_COMPONENTS
-from utils_basic import SPECTROGRAM_DIR 
-from utils_basic import assemble_timeax_from_ints, convert_boolean, datetime2int, int2datetime, reltimes_to_timestamps, power2db
+from utils_basic import SPECTROGRAM_DIR, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO
+from utils_basic import assemble_timeax_from_ints, convert_boolean, datetime2int, int2datetime, power2db, reltimes_to_timestamps, str2timestamp
 from utils_preproc import read_and_process_day_long_geo_waveforms
 
 ######
@@ -69,52 +70,56 @@ class StreamSTFTPSD:
         self.traces.extend(stream_spec.traces)
 
     # Select traces based on station, location, component, and time label
-    def select(self, station = None, location = None, component = None, time_label = None):
+    def select(self, stations = None, locations = None, components = None, time_labels = None):
         traces = []
-        if station is not None:
-            if location is not None:
-                if component is not None:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.component == component and time_label == time_label]
+        if stations is not None:
+            if locations is not None:
+                if components is not None:
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.location in locations and trace.component in components and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.component == component]
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.location in locations and trace.component in components]
                 else:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location and trace.time_label == time_label]
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.location in locations and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.location == location]
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.location in locations]
             else:
-                if component is not None:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.component == component and trace.time_label == time_label]
+                if components is not None:
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.component in components and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.component == component]
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.component in components]
                 else:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.station == station and trace.time_label == time_label]
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.station in stations and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.station == station]
+                        traces = [trace for trace in self.traces if trace.station in stations]
         else:
-            if location is not None:
-                if component is not None:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.location == location and trace.component == component and trace.time_label == time_label]
+            if locations is not None:
+                if components is not None:
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.location in locations and trace.component in components and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.location == location and trace.component == component]
+                        traces = [trace for trace in self.traces if trace.location in locations and trace.component in components]
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.location in locations and trace.time_label in time_labels]
+                    else:
+                        traces = [trace for trace in self.traces if trace.location in locations]
                 else:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.location == location and trace.time_label == time_label]
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.location in locations and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.location == location]           
+                        traces = [trace for trace in self.traces if trace.location in locations]        
             else:
-                if component is not None:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.component == component and trace.time_label == time_label]
+                if components is not None:
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.component in components and trace.time_label in time_labels]
                     else:
-                        traces = [trace for trace in self.traces if trace.component == component]
+                        traces = [trace for trace in self.traces if trace.component in components]
                 else:
-                    if time_label is not None:
-                        traces = [trace for trace in self.traces if trace.time_label == time_label]
+                    if time_labels is not None:
+                        traces = [trace for trace in self.traces if trace.time_label in time_labels]
                     else:
                         traces = self.traces
                         
@@ -137,7 +142,7 @@ class StreamSTFTPSD:
         for station in stations:
             for location in locations:
                 for component in components:
-                    stream_to_stitch = self.select(station=station, location=location, component=component)
+                    stream_to_stitch = self.select(stations=station, locations=location, components=component)
                     if len(stream_to_stitch) > 1:
                         # Stitch the spectrograms
                         trace_spec = stitch_spectrograms(stream_to_stitch, fill_value)
@@ -184,12 +189,25 @@ class StreamSTFTPSD:
     # Trim the spectrograms to a given time range
     def trim_time(self, starttime = None, endtime = None):
         for trace in self.traces:
-            trace.trim(starttime = starttime, endtime = endtime)
+            trace.trim_time(starttime = starttime, endtime = endtime)
 
     # Trim the spectrograms to the begin and end of the day
     def trim_to_day(self):
         for trace in self.traces:
             trace.trim_to_day()
+
+    # Slice the spectrograms to a given time range without modifying the original traces
+    def slice_time(self, starttime = None, endtime = None):
+        traces_sliced = []
+        for trace in self.traces:
+            trace_sliced = trace.copy()
+            trace_sliced.trim_time(starttime = starttime, endtime = endtime)
+            traces_sliced.append(trace_sliced)
+        
+        stream_sliced = StreamSTFTPSD(traces_sliced)
+
+        return stream_sliced
+
 
     # Resample the spectrograms to a given time axis
     def resample_time(self, timeax_out):
@@ -396,13 +414,33 @@ class TraceSTFTPSD:
         ref_time = timeax[num_times // 2]
         if block_type == "daily":
             start_of_block = ref_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            time_label = start_of_block.strftime("day_%Y%m%d")
         elif block_type == "hourly":
             start_of_block = ref_time.replace(minute=0, second=0, microsecond=0)
+            time_label = start_of_block.strftime("hour_%Y%m%d%H")
         else:
             raise ValueError("Error: Invalid block type!")
 
-        time_label = start_of_block.strftime("%Y%m%d%H%M%S%f")
         self.time_label = time_label
+
+    # Plot the power spectrogram in a given axis
+    def plot(self, ax, min_db, max_db):
+        if self.db:
+            data = self.data
+        else:
+            data = power2db(self.data)
+
+        timeax = self.times
+        freqax = self.freqs
+        
+        cmap = get_cmap("inferno")
+        cmap.set_bad(color='darkgray')
+
+        quadmesh = ax.pcolormesh(timeax, freqax, data, shading = "auto", cmap = cmap, vmin = min_db, vmax = max_db)
+        ax.set_xlim(timeax[0], timeax[-1])
+        ax.set_ylim(freqax[0], freqax[-1])
+        
+        return quadmesh
 
 ######
 # Functions
@@ -471,6 +509,7 @@ def find_trace_spectral_peaks(trace_spec, num_process, prom_threshold = 5, rbw_t
         results = pool.starmap(find_spectral_peaks, args)
 
     # Concatenate the results
+    print("Concatenating the results...")
     results = [df for df in results if not df.empty]
     peak_df = concat(results, ignore_index=True)
     
@@ -781,6 +820,9 @@ def create_geo_spectrogram_file(station, window_length = 60.0, overlap = 0.0, fr
     suffix = get_spectrogram_file_suffix(window_length, overlap, downsample, **kwargs)
     filename = f"whole_deployment_daily_geo_spectrograms_{station}_{suffix}.h5"
 
+    if downsample and "downsample_factor" not in kwargs:
+        raise ValueError("Error: Downsample factor is not given!")
+
     # Create the output file
     outpath = join(outdir, filename)
     file = File(outpath, 'w')
@@ -788,14 +830,17 @@ def create_geo_spectrogram_file(station, window_length = 60.0, overlap = 0.0, fr
     # Create the group for storing the headers
     header_group = file.create_group('headers')
 
-    # Save the header information with encoding
-    header_group.create_dataset('station', data=station.encode("utf-8"))
-    header_group.create_dataset('window_length', data=window_length)
-    header_group.create_dataset('overlap', data=overlap)
-    header_group.create_dataset('block_type', data="daily")
-    header_group.create_dataset('frequency_interval', data=freq_interval)
+    # Save the header information
+    header_group.attrs['station'] = station
+    header_group.attrs['window_length'] = window_length
+    header_group.attrs['overlap'] = overlap
+    header_group.attrs['block_type'] = "daily"
+    header_group.attrs['frequency_interval'] = freq_interval
+    header_group.attrs['downsample'] = downsample
 
-    # Create the group for storing the spectrogram data (blocks)
+    if downsample:
+        header_group.attrs['downsample_factor'] = kwargs["downsample_factor"]
+
     file.create_group('data')
 
     print(f"Created spectrogram file {outpath}")
@@ -804,18 +849,16 @@ def create_geo_spectrogram_file(station, window_length = 60.0, overlap = 0.0, fr
 
 # Save one geophone spectrogram data block to an opened HDF5 file
 def write_geo_spectrogram_block(file, stream_spec, close_file = True):
-    components = GEO_COMPONENTS
-
     # Verify the StreamSTFTPSD object
     stream_spec.verify_geo_block()
     
     # Extract the data from the StreamSTFTPSD object
-    trace_spec_z = stream_spec.select(component="Z")[0]
-    trace_spec_1 = stream_spec.select(component="1")[0]
-    trace_spec_2 = stream_spec.select(component="2")[0]
+    trace_spec_z = stream_spec.select(components="Z")[0]
+    trace_spec_1 = stream_spec.select(components="1")[0]
+    trace_spec_2 = stream_spec.select(components="2")[0]
 
     # Verify the station name
-    if trace_spec_z.station != file["headers"]["station"][()].decode("utf-8"):
+    if trace_spec_z.station != file["headers"].attrs["station"]:
         raise ValueError("Error: Inconsistent station name!")
 
     time_label = trace_spec_z.time_label
@@ -827,24 +870,16 @@ def write_geo_spectrogram_block(file, stream_spec, close_file = True):
     # Convert the time axis to integer
     timeax = datetime2int(timeax)
 
-    # Create a new block
+    # Create a new block and write the data
     data_group = file["data"]
     block_group = data_group.create_group(time_label)
-    block_group.create_dataset("start_time", data=timeax[0])
-    block_group.create_dataset("num_times", data=len(timeax))
-    block_group.create_dataset("num_freqs", data=len(trace_spec_z.freqs))
-
-    # Create the group for storing each component's spectrogram data
-    comp_group = block_group.create_group("components")
-    for component in components:
-        if component == "Z":
-            data = data_z
-        elif component == "1":
-            data = data_1
-        elif component == "2":
-            data = data_2
-        
-        comp_group.create_dataset(component, data=data)
+    block_group.attrs["start_time"] = timeax[0]
+    block_group.attrs["num_times"] = len(timeax)
+    block_group.attrs["num_freqs"] = len(trace_spec_z.freqs)
+    
+    block_group.create_dataset("data_z", data=data_z)
+    block_group.create_dataset("data_1", data=data_1)
+    block_group.create_dataset("data_2", data=data_2)
 
     print(f"Spectrogram block {time_label} is saved")
 
@@ -854,15 +889,20 @@ def write_geo_spectrogram_block(file, stream_spec, close_file = True):
 
 # Finish writing a geophone spectrogram file by writing the list of time labels and close the file
 def finish_geo_spectrogram_file(file, time_labels):
-    file["headers"].create_dataset('time_labels', data=[time_label.encode("utf-8") for time_label in time_labels])
+    file["data"].create_dataset('time_labels', data=[time_label.encode("utf-8") for time_label in time_labels])
     print("Time labels are saved.")
     
     file.close()
     print("The spectrogram file is closed.")
     
 # Read specific segments of geophone-spectrogram data from an HDF5 file 
-def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0):
-    components = GEO_COMPONENTS
+def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0, components = GEO_COMPONENTS):
+
+    if min_freq is None:
+        min_freq = 0.0
+    
+    if max_freq is None:
+        max_freq = 500.0
 
     # Determine if both start and end times are provided
     if (starttime is not None and endtime is None) or (starttime is None and endtime is not None):
@@ -880,21 +920,20 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
+        data_group = file["data"]
         
-        station = header_group["station"][()]
-        station = station.decode("utf-8")
+        station = header_group.attrs["station"]
 
-        time_labels_in = header_group["time_labels"][:]
+        time_labels_in = data_group["time_labels"][:]
         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
         
-        freq_interval = header_group["frequency_interval"][()]
+        freq_interval = header_group.attrs["frequency_interval"]
         # print(f"Frequency interval is {freq_interval}")
 
         min_freq_index = int(min_freq / freq_interval)
         max_freq_index = int(max_freq / freq_interval)
         
         time_interval = get_spec_time_interval(header_group)
-        data_group = file["data"]
         
         if starttime is None and endtime is None:
             # Option 1: Read the spectrograms of specific time labels
@@ -911,9 +950,13 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
 
                 timeax = get_spec_block_timeax(block_group, time_interval)
 
-                comp_group = block_group["components"]
                 for component in components:
-                    data = comp_group[component][min_freq_index:max_freq_index, :]
+                    if component == "Z":
+                        data = block_group["data_z"][min_freq_index:max_freq_index, :]
+                    elif component == "1":
+                        data = block_group["data_1"][min_freq_index:max_freq_index, :]
+                    elif component == "2":
+                        data = block_group["data_2"][min_freq_index:max_freq_index, :]
         
                     freqax = linspace(min_freq, max_freq, data.shape[0])
                 
@@ -923,10 +966,14 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
             # Option 2: Read the spectrograms of a specific time range
             # Convert the start and end times to Timestamp objects
             if isinstance(starttime, str):
-                starttime_to_read = Timestamp(starttime)
+                starttime_to_read = Timestamp(starttime, tz = "UTC")
+            else:
+                starttime_to_read = starttime
             
             if isinstance(endtime, str):
-                endtime_to_read = Timestamp(endtime)
+                endtime_to_read = Timestamp(endtime, tz = "UTC")
+            else:
+                endtime_to_read = endtime
             
             # Check the start time is greater than the end time
             if starttime_to_read > endtime_to_read:
@@ -947,13 +994,17 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
                 starttime_block = row["start_time"]
                 num_times = row["num_times"]
 
-                comp_group = block_group["components"]
-                for component in components:
-                    # Find the start and end indices of the time axis
-                    start_index, end_index = get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read)
+                # Find the start and end indices of the time axis
+                start_index, end_index = get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read)
 
+                for component in components:
                     # Slice the data matrix
-                    data = comp_group[component][min_freq_index:max_freq_index, start_index:end_index]
+                    if component == "Z":
+                        data = block_group["data_z"][min_freq_index:max_freq_index, start_index:end_index]
+                    elif component == "1":
+                        data = block_group["data_1"][min_freq_index:max_freq_index, start_index:end_index]
+                    elif component == "2":
+                        data = block_group["data_2"][min_freq_index:max_freq_index, start_index:end_index]
 
                     # Create the frequency axis
                     freqax = linspace(min_freq, max_freq, data.shape[0])
@@ -976,11 +1027,12 @@ def read_geo_spec_axes(inpath, starttime = None, endtime = None, min_freq = 0.0,
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
+        data_group = file["data"]
 
-        time_labels = header_group["time_labels"][:]
+        time_labels = data_group["time_labels"][:]
         time_labels = [time_label.decode("utf-8") for time_label in time_labels]
         
-        freq_interval = header_group["frequency_interval"][()]
+        freq_interval = header_group.attrs["frequency_interval"]
         min_freq_index = int(min_freq / freq_interval)
         max_freq_index = int(max_freq / freq_interval)
         freqax = linspace(min_freq, max_freq, max_freq_index - min_freq_index + 1)  
@@ -1039,6 +1091,9 @@ def create_hydro_spectrogram_file(station, locations, window_length = 60.0,  ove
     suffix = get_spectrogram_file_suffix(window_length, overlap, downsample, **kwargs)
     filename = f"whole_deployment_daily_hydro_spectrograms_{station}_{suffix}.h5"
 
+    if downsample and "downsample_factor" not in kwargs:
+        raise ValueError("Error: Downsample factor is not given!")
+
     # Create the output file
     outpath = join(outdir, filename)
     file = File(outpath, 'w')
@@ -1047,12 +1102,15 @@ def create_hydro_spectrogram_file(station, locations, window_length = 60.0,  ove
     header_group = file.create_group('headers')
 
     # Save the header information with encoding
-    header_group.create_dataset('station', data=station.encode("utf-8"))
+    header_group.attrs['station'] = station
     header_group.create_dataset('locations', data=[location.encode("utf-8") for location in locations])
-    header_group.create_dataset('window_length', data=window_length)
-    header_group.create_dataset('overlap', data=overlap)
-    header_group.create_dataset('block_type', data="daily")
-    header_group.create_dataset('frequency_interval', data=freq_interval)
+    header_group.attrs['window_length'] = window_length
+    header_group.attrs['overlap'] = overlap
+    header_group.attrs['block_type'] = "daily"
+    header_group.attrs['frequency_interval'] = freq_interval
+    header_group.attrs['downsample'] = downsample
+    if downsample:
+        header_group.attrs['downsample_factor'] = kwargs["downsample_factor"]
 
     # Create the group for storing the spectrogram data (blocks)
     file.create_group('data')
@@ -1067,7 +1125,7 @@ def write_hydro_spectrogram_block(file, stream_spec, locations, close_file = Tru
     stream_spec.verify_hydro_block(locations)
 
     # Verify the station name
-    station = file["headers"]["station"][()].decode("utf-8")
+    station = file["headers"].attrs["station"]
     if stream_spec[0].station != station:
         raise ValueError("Error: Inconsistent station name!")
     
@@ -1081,16 +1139,14 @@ def write_hydro_spectrogram_block(file, stream_spec, locations, close_file = Tru
     # Create a new block
     data_group = file["data"]
     block_group = data_group.create_group(time_label)
-    block_group.create_dataset("start_time", data=timeax[0])
-    block_group.create_dataset("num_times", data=len(timeax))
-    block_group.create_dataset("num_freqs", data=len(stream_spec[0].freqs))
+    block_group.attrs["start_time"] = timeax[0]
+    block_group.attrs["num_times"] = len(timeax)
+    block_group.attrs["num_freqs"] = len(stream_spec[0].freqs)
 
-    # Create the group for storing each location's spectrogram data
-    loc_group = block_group.create_group("locations")
-    for i, location in enumerate(locations):
-        trace_spec = stream_spec[i]
+    for location in locations:
+        trace_spec = stream_spec.select(locations=location)[0]
         data = trace_spec.data
-        loc_group.create_dataset(location, data=data)
+        block_group.create_dataset(f"data_{location}", data=data)
 
     print(f"Spectrogram block {time_label} is saved")
 
@@ -1100,7 +1156,7 @@ def write_hydro_spectrogram_block(file, stream_spec, locations, close_file = Tru
 
 # Finish writing a hydrophone spectrogram file by writing the list of time labels and close the file
 def finish_hydro_spectrogram_file(file, time_labels):
-    file["headers"].create_dataset('time_labels', data=[time_label.encode("utf-8") for time_label in time_labels])
+    file["data"].create_dataset('time_labels', data=[time_label.encode("utf-8") for time_label in time_labels])
     print("Time labels are saved.")
     
     file.close()
@@ -1108,6 +1164,12 @@ def finish_hydro_spectrogram_file(file, time_labels):
 
 # Read specific segments of hydrophone-spectrogram data from an HDF5 file
 def read_hydro_spectrograms(inpath, time_labels = None, locations = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 500.0):
+    if min_freq is None:
+        min_freq = 0.0
+    
+    if max_freq is None:
+        max_freq = 500.0
+
     # Convert the locations to a list
     if locations is not None:
         if not isinstance(locations, list):
@@ -1127,24 +1189,23 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
+        data_group = file["data"]
         
-        station = header_group["station"][()]
-        station = station.decode("utf-8")
+        station = header_group.attrs["station"]
 
-        time_labels_in = header_group["time_labels"][:]
+        time_labels_in = data_group["time_labels"][:]
         time_labels_in = [time_label.decode("utf-8") for time_label in time_labels_in]
 
         if locations is None:
             locations = header_group["locations"][:]
             locations = [location.decode("utf-8") for location in locations]
 
-        freq_interval = header_group["frequency_interval"][()]
+        freq_interval = header_group.attrs["frequency_interval"]
 
         min_freq_index = int(min_freq / freq_interval)
         max_freq_index = int(max_freq / freq_interval)
         
         time_interval = get_spec_time_interval(header_group)
-        data_group = file["data"]
         
         if starttime is None and endtime is None:
             # Option 1: Read the spectrograms of specific time labels
@@ -1168,10 +1229,9 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
 
                 timeax = get_spec_block_timeax(block_group, time_interval)
 
-                loc_group = block_group["locations"]
                 for location in locations:
                     try:
-                        data = loc_group[location][min_freq_index:max_freq_index, :]
+                        data = block_group[f"data_{location}"][min_freq_index:max_freq_index, :]
                     except KeyError:
                         print(f"Warning: Location {location} does not exist for time label {time_label}!")
                         continue
@@ -1185,16 +1245,16 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
             # Option 2: Read the spectrograms of a specific time range
             # Convert the start and end times to Timestamp objects
             if isinstance(starttime, str):
-                starttime_to_read = Timestamp(starttime)
+                starttime_to_read = Timestamp(starttime, tz = "UTC")
             else:
                 starttime_to_read = starttime
             
             if isinstance(endtime, str):
-                endtime_to_read = Timestamp(endtime)
+                endtime_to_read = Timestamp(endtime, tz = "UTC")
             else:
                 endtime_to_read = endtime
             
-            # Check the start time is greater than the end time
+            # Verify the start time is greater than the end time
             if starttime_to_read > endtime_to_read:
                 raise ValueError("Error: Start time must be less than the end time!")
 
@@ -1213,14 +1273,12 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
                 starttime_block = row["start_time"]
                 num_times = row["num_times"]
 
-                loc_group = block_group["locations"]
+                # Find the start and end indices of the time axis
+                start_index, end_index = get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read)
                 for location in locations:
-                    # Find the start and end indices of the time axis
-                    start_index, end_index = get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read)
-
                     # Slice the data matrix
                     try:
-                        data = loc_group[location][min_freq_index:max_freq_index, start_index:end_index]
+                        data = block_group[f"data_{location}"][min_freq_index:max_freq_index, start_index:end_index]
                     except KeyError:
                         print(f"Warning: Location {location} does not exist for time label {time_label}!")
                         continue
@@ -1390,27 +1448,61 @@ def read_geo_spec_headers(inpath):
     with File(inpath, 'r') as file:
         header_group = file["headers"]
         
-        station = header_group["station"][()]
-        station = station.decode("utf-8")
+        station = header_group.attrs["station"]
+        window_length = header_group.attrs["window_length"]
+        overlap = header_group.attrs["overlap"]
+        block_type = header_group.attrs["block_type"]
+        freq_interval = header_group.attrs["frequency_interval"]
+        downsample = header_group.attrs["downsample"]
 
-        block_type = header_group["block_type"][()]
-        block_type.decode("utf-8")
+        header_dict["station"] = station
+        header_dict["block_type"] = block_type
+        header_dict["window_length"] = window_length
+        header_dict["overlap"] = overlap
+        header_dict["frequency_interval"] = freq_interval
 
-        window_length = header_group["window_length"][()]
-        overlap = header_group["overlap"][()]
-        freq_interval = header_group["frequency_interval"][()]
-
-        time_labels = header_group["time_labels"][:]
-        time_labels = [time_label.decode("utf-8") for time_label in time_labels]
-
-    header_dict["station"] = station
-    header_dict["block_type"] = block_type
-    header_dict["window_length"] = window_length
-    header_dict["overlap"] = overlap
-    header_dict["frequency_interval"] = freq_interval
-    header_dict["time_labels"] = time_labels
+        if downsample:
+            downsample_factor = header_group.attrs["downsample_factor"]
+            header_dict["downsample_factor"] = downsample_factor
 
     return header_dict
+
+# Read the headers of a hydrophone spectrogram file and return them in a dictionary
+def read_hydro_spec_headers(inpath):
+    header_dict = {}
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+        
+        station = header_group.attrs["station"]
+        window_length = header_group.attrs["window_length"]
+        overlap = header_group.attrs["overlap"]
+        block_type = header_group.attrs["block_type"]
+        freq_interval = header_group.attrs["frequency_interval"]
+        downsample = header_group.attrs["downsample"]
+
+        locations = header_group["locations"][:]
+        locations = [location.decode("utf-8") for location in locations]
+
+        header_dict["station"] = station
+        header_dict["block_type"] = block_type
+        header_dict["window_length"] = window_length
+        header_dict["overlap"] = overlap
+        header_dict["frequency_interval"] = freq_interval
+        header_dict["locations"] = locations
+
+        if downsample:
+            downsample_factor = header_group.attrs["downsample_factor"]
+            header_dict["downsample_factor"] = downsample_factor
+
+    return header_dict
+
+# Read the time labels of a hydrophone spectrogram file
+def read_spec_time_labels(inpath):
+    with File(inpath, 'r') as file:
+        time_labels = file["data"]["time_labels"][:]
+        time_labels = [time_label.decode("utf-8") for time_label in time_labels]
+
+    return time_labels
 
 # Append a new header variable to an opened spectrogram file
 def append_header_variable(file, var_name, var_value):
@@ -1427,8 +1519,8 @@ def get_spec_time_labels(header_group):
 
 # Get the time interval of a geophone spectrogram file
 def get_spec_time_interval(header_group):
-        window_length = header_group["window_length"][()]
-        overlap = header_group["overlap"][()]
+        window_length = header_group.attrs["window_length"]
+        overlap = header_group.attrs["overlap"]
         time_interval = Timedelta(seconds = window_length * (1 - overlap))
 
         return time_interval
@@ -1442,9 +1534,9 @@ def get_spec_block_freqax(block_group, freq_interval):
 
 # Get the time axis of a geophone spectrogram block
 def get_spec_block_timeax(block_group, time_interval):
-    starttime = block_group["start_time"][()]
+    starttime = block_group.attrs["start_time"]
     starttime = Timestamp(starttime, unit='ns', tz = "UTC")
-    num_times = block_group["num_times"][()]
+    num_times = block_group.attrs["num_times"]
     endtime = starttime + (num_times - 1) * time_interval
     timeax = date_range(start = starttime, end = endtime, periods = num_times)
 
@@ -1457,8 +1549,8 @@ def get_block_timings(data_group, time_labels, time_interval):
     block_numtimes = []
     for time_label in time_labels:
         block_group = data_group[time_label]
-        starttime = block_group["start_time"][()]
-        num_times = block_group["num_times"][()]
+        starttime = block_group.attrs["start_time"]
+        num_times = block_group.attrs["num_times"]
         starttime = Timestamp(starttime, unit='ns', tz = "UTC")
         endtime = starttime + (num_times - 1) * time_interval
         block_starttimes.append(starttime)
@@ -1582,6 +1674,31 @@ def extract_stationary_resonance(peak_df, array_count_df, timeax, freqax, min_pa
 
     return resonance_df
 
+# Get the lower and upper bounds of a fraction peak
+# Find the first local minima on the left and right of a peak that is more than height_factor * prominence lower than the peak in log scale
+def get_stationary_resonance_freq_intervals(stationary_resonance_df, peak_dict, count_df, height_factor = 0.8):
+    # Convert the fractions log scale
+    freqax = count_df["frequency"].values
+    fracs = count_df["fraction"].values
+    log_fracs = log10(fracs)
+
+    # Find the upper and lower bounds for each peak
+    freqs_lower = []
+    freqs_upper = []
+    for i, i_freq_peak in enumerate(stationary_resonance_df["freq_index"]):
+        prominence = peak_dict["prominences"][i]
+        i_left_base = peak_dict["left_bases"][i]
+        i_right_base = peak_dict["right_bases"][i]
+
+        freq_lower, freq_upper = get_fraction_peak_bounds(freqax, log_fracs, prominence, i_freq_peak, i_left_base, i_right_base, height_factor)
+        freqs_lower.append(freq_lower)
+        freqs_upper.append(freq_upper)
+
+    stationary_resonance_df["lower_freq_bound"] = freqs_lower
+    stationary_resonance_df["upper_freq_bound"] = freqs_upper
+
+    return stationary_resonance_df
+
 # Get the spectral peak with the maximum number of array detection at a specific time
 def get_peak_freq_w_max_detection(count_df, time):
     time_slice_df = count_df.loc[count_df["time"] == time]
@@ -1593,6 +1710,68 @@ def get_peak_freq_w_max_detection(count_df, time):
         freq = peak["frequency"]
 
         return freq
+
+# Read the geophone spectral peaks from an HDF file
+def read_geo_spec_peaks(inpath, time_labels = None):
+    if time_labels is None:
+        time_label_sr = read_hdf(inpath, key = "time_label")
+        time_labels_to_read = time_label_sr.values
+    else:
+        if isinstance(time_labels, str):
+            time_labels_to_read = [time_labels]
+        else:
+            time_labels_to_read = time_labels
+
+    peak_dfs = []
+    for time_label in time_labels_to_read:
+        try:
+            peak_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+        except KeyError:
+            print(f"Warning: Time label {time_label} does not exist!")
+            continue
+
+        peak_dfs.append(peak_df)
+    
+    if len(peak_dfs) == 0:
+        return None
+    else:
+        peak_df = concat(peak_dfs)
+        
+        return peak_df
+
+# Read the hydrophone spectral peaks from an HDF file
+def read_hydro_spec_peaks(inpath, time_labels = None, locations = None):
+    if time_labels is None:
+        time_label_sr = read_hdf(inpath, key = "time_label")
+        time_labels_to_read = [time_label_sr.values[0]]
+    else:
+        if isinstance(time_labels, str):
+            time_labels_to_read = [time_labels]
+        else:
+            time_labels_to_read = time_labels
+
+    if locations is None:
+        locations_sr = read_hdf(inpath, key = "location")
+        locations_to_read = locations_sr.values[0]
+    else:
+        if isinstance(locations, str):
+            locations_to_read = [locations]
+        else:
+            locations_to_read = locations
+
+    peak_dfs = []
+    for time_label in time_labels_to_read:
+        peak_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+        print(len(peak_df.loc[peak_df["location"] == "03"]))
+        print(len(peak_df.loc[peak_df["location"] == "04"]))
+        print(len(peak_df.loc[peak_df["location"] == "05"]))
+        print(len(peak_df.loc[peak_df["location"] == "06"]))
+        peak_df = peak_df.loc[peak_df["location"].isin(locations_to_read)]
+        peak_dfs.append(peak_df)
+    
+    peak_df = concat(peak_dfs)
+
+    return peak_df
 
 # Save the detected spectral peaks to a CSV or HDF file
 def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
@@ -1607,27 +1786,49 @@ def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DI
 
     print(f"Results saved to {outpath}")
 
-# Read spectral peak bin counts from a CSV or HDF file
-def read_spectral_peak_counts(inpath, **kwargs):
-    # If the file format is not given, infer it from the file extension
-    if "file_format" in kwargs:
-        file_format = kwargs["file_format"]
+
+# Read spectral peak counts from an HDF5 file
+# The counts are organized by time labels
+def read_spec_peak_counts(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 200.0):
+    if starttime is None:
+        starttime = STARTTIME_GEO
+
+    if endtime is None:
+        endtime = ENDTIME_GEO
+
+    # Read the time labels
+    time_label_sr = read_hdf(inpath, key = "time_label")
+
+    if time_labels is None:
+        time_labels_to_read = time_label_sr.values
     else:
-        _, file_format = splitext(inpath)
-        file_format = file_format.replace(".", "")
+        if isinstance(time_labels, str):
+            time_labels_to_read = [time_labels]
+        else:
+            time_labels_to_read = time_labels
 
-    # print(file_format)
+    count_dfs = []
+    for time_label in time_labels_to_read:
+        try:
+            count_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+        except KeyError:
+            print(f"Warning: Time label {time_label} does not exist!")
+            continue
 
-    if file_format == "csv":
-        count_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
-    elif file_format == "h5" or file_format == "hdf":
-        count_df = read_hdf(inpath, key = "counts")
+        count_df = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime) & (count_df["frequency"] >= min_freq) & (count_df["frequency"] <= max_freq)]
+
+        if len(count_df) == 0:
+            print(f"Warning: No data is read for time label {time_label}!")
+            continue
+
+        count_dfs.append(count_df)
+
+    if len(count_dfs) == 0:
+        return None
     else:
-        raise ValueError("Error: Invalid file format!")
-
-    count_df["time"] = count_df["time"].dt.tz_localize("UTC")
-
-    return count_df
+        count_df = concat(count_dfs)
+    
+        return count_df
 
 # Save spectral-peak bin counts to a CSV or HDF file
 def save_spectral_peak_counts(count_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
@@ -1694,7 +1895,7 @@ def save_binary_spectrogram(timeax, freqax, data, outpath):
 
 ###### Handling harmonic data tables
 def read_harmonic_data_table(inpath):
-    harmo_df = read_csv(inpath, index_col = "name", converters = {"exist": convert_boolean})
+    harmo_df = read_csv(inpath, index_col = "name", converters = {"detected": convert_boolean})
 
     return harmo_df
 
@@ -1723,6 +1924,32 @@ def vel2disp(vel, sampling_rate=1000.0):
     return disp
 
 ###### Basic functions ######
+# Get the upper and lower bounds of a fraction peak
+def get_fraction_peak_bounds(freqax, log_fracs, prominence, i_peak, i_left_base, i_right_base, height_factor):
+        log_peak_frac = log_fracs[i_peak]
+
+        # Get the lower and upper bounds of the peak
+        # print(f"Peak index: {i_peak}")
+        # print(f"Looking for the left bound...")
+        i = i_peak - 1
+        while i >= i_left_base:
+            # print(f"i: {i}, log_fracs[i]: {log_fracs[i]}")
+            if log_fracs[i] >= log_fracs[i + 1] and log_fracs[i] < log_peak_frac - height_factor * prominence:
+                break
+            i -= 1
+
+        freq_lower = freqax[i]
+
+        i = i_peak + 1
+        while i <= i_right_base:
+            # print(f"i: {i}, log_fracs[i]: {log_fracs[i]}")
+            if log_fracs[i] >= log_fracs[i - 1] and log_fracs[i] < log_peak_frac - height_factor * prominence:
+                break
+            i += 1
+
+        freq_upper = freqax[i]
+
+        return freq_lower, freq_upper
 
 # Get the quality factor and resonance width of a peak in a power spectrum
 # The input power must be in dB!
@@ -1755,3 +1982,8 @@ def string_to_time_label(time_str):
     time_label = Timestamp(time_str).strftime("%Y%m%d%H%M%S%f")
 
     return time_label
+
+# Determine if the input time information is redundant
+def check_time_input_redundancy(time_labels, starttime, endtime):
+    if starttime is not None and endtime is not None and time_labels is not None:
+        raise ValueError("Error: Time labels and start/end times cannot be given at the same time!")

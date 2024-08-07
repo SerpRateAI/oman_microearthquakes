@@ -96,9 +96,16 @@ for sta_ind, station in enumerate(stations):
     ax.set_aspect('equal')
     ax.set_title(f"{station}", fontsize=title_size, fontweight='bold', pad=5)
 
-    # # Add colorbar
-    # cbar = fig.colorbar(mappable, ax=ax, fraction=cbar_width, pad=cbar_offset)
-    # cbar.set_label('Power Correlation')
+# Add colorbar
+ax = axes.flatten()[-1]
+bbox = ax.get_position()
+cbar_x = bbox.x1 + cbar_offset
+cbar_y = bbox.y0
+cbar_width = cbar_width
+cbar_height = bbox.y1 - bbox.y0
+position = (cbar_x, cbar_y, cbar_width, cbar_height)
+
+cbar = add_colorbar(fig, mappable, "CC coefficient", position, orientation='vertical', major_tick_spacing = 0.2)
 
 print("Saving the figure...")
 filename = f"harmonic_resonance_power_corr_mat_{base_name}.png"

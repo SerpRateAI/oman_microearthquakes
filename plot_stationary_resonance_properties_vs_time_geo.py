@@ -17,7 +17,7 @@ from utils_plot import add_day_night_shading, add_colorbar, add_station_map, for
 
 # Inputs
 # Name of the stationary resonance
-name = "SR152a"
+name = "SR100a"
 
 # Spectrogram
 window_length = 60.0
@@ -39,14 +39,14 @@ count_threshold = 9
 # Curves
 factor = 5 # Multiplicative factor for the curves
 
-min_freq_plot = 152.5
-max_freq_plot = 153.3
+min_freq_plot = 99.90
+max_freq_plot = 100.10
 
 min_db = -15.0
 max_db = 15.0
 
-min_qf = 1700.0
-max_qf = 2100.0
+min_qf = 100
+max_qf = 500
 
 curve_plot_width = 7.0
 curve_plot_hw_ratio = 0.8
@@ -174,6 +174,9 @@ position = [bbox.x1 + cbar_offset, bbox.y0, cbar_offset / 2, bbox.height]
 cbar = add_colorbar(fig, freq_color, "Frequency (Hz)", position,
                         orientation = "vertical", axis_label_size = 8, tick_label_size = 6,
                         major_tick_spacing = freq_tick_spacing)
+
+mean_freq_plot = (min_freq_plot + max_freq_plot) / 2
+cbar.set_ticks([min_freq_plot, mean_freq_plot, max_freq_plot])
 
 # Add the title
 title = f"{name}, frequency"

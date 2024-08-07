@@ -65,8 +65,10 @@ print("Done.")
 # Compute the time-cumulative counts
 print("Computing the spectral-peak counts...")
 cum_count_df = count_df.groupby('frequency').size().reset_index(name = 'count')
-cum_count_df_sorted = cum_count_df.sort_values('count', ascending = False)
-cum_count_df_sorted.reset_index(drop = True, inplace = True)
+cum_count_df_count_sorted = cum_count_df.sort_values('count', ascending = False)
+cum_count_df_freq_sorted = cum_count_df.sort_values('frequency', ascending = True)
+cum_count_df_count_sorted.reset_index(drop = True, inplace = True)
+cum_count_df_freq_sorted.reset_index(drop = True, inplace = True)
 print("Done.")
 
 # Normalize the cumulative counts by the total number of time windows
@@ -74,13 +76,22 @@ print("Normalizing the cumulative spectral-peak counts...")
 total_time = endtime - starttime
 total_windows = int(total_time / Timedelta(seconds = window_length))
 cum_count_df['fraction'] = cum_count_df['count'] / total_windows
-cum_count_df_sorted['fraction'] = cum_count_df_sorted['count'] / total_windows
+cum_count_df_count_sorted['fraction'] = cum_count_df_count_sorted['count'] / total_windows
+cum_count_df_freq_sorted['fraction'] = cum_count_df_freq_sorted['count'] / total_windows
 
 # Save the results to file
 print("Saving the cumulative spectral-peak counts and fractions...")
-filename_out = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.csv"
+print("Saving the count-sorted dataframe...")
+filename_out = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_count_sorted.csv"
 outdir = indir
 outpath = join(outdir, filename_out)
-cum_count_df_sorted.to_csv(outpath)
+cum_count_df_count_sorted.to_csv(outpath)
+print(f"Saved to {outpath}.")
+
+print("Saving the frequency-sorted dataframe...")
+filename_out = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_freq_sorted.csv"
+outdir = indir
+outpath = join(outdir, filename_out)
+cum_count_df_freq_sorted.to_csv(outpath)
 print(f"Saved to {outpath}.")
 

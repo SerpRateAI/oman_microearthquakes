@@ -233,6 +233,19 @@ def get_baro_temp_data():
 # Functions for handling times
 ######
 
+# Convert a string to a Pandas Timestamp object
+def str2timestamp(string):
+    if isinstance(string, str):
+        timestamp = Timestamp(string, tz="UTC")
+
+        return timestamp
+    elif isinstance(string, Timestamp):
+
+        timestamp = string
+        return timestamp
+    else:
+        raise TypeError("Invalid input type!") 
+
 # Convert seconds to days
 def sec2day(seconds):
     days = seconds / 86400
@@ -368,6 +381,8 @@ def day2suffix(day):
 
     return suffix
 
-    
+### Functions for handling data frames
+def is_subset_df(df1, df2):
+    return df1.merge(df2).shape[0] == df1.shape[0]
 
 
