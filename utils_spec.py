@@ -574,6 +574,12 @@ def get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = None, ma
 
     return suffix
 
+# Get the file-name suffix for stationary-resonance detections
+def get_stationary_resonance_file_suffix(frac_threshold, prom_frac_threshold):
+    suffix = f"frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}"
+
+    return suffix
+
 # # Group the spectral-peak detections into regular time and frequency bins
 # def group_spectral_peaks_regular_bins(peak_df, time_bin_edges, freq_bin_edges):
 
@@ -1789,7 +1795,7 @@ def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DI
 
 # Read spectral peak counts from an HDF5 file
 # The counts are organized by time labels
-def read_spec_peak_counts(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 200.0):
+def read_spec_peak_array_counts(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 200.0):
     if starttime is None:
         starttime = STARTTIME_GEO
 
