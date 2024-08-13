@@ -301,7 +301,11 @@ class TraceSTFTPSD:
         self.num_times = len(self.times)
         self.num_freqs = len(self.freqs)
 
-        self.time_interval = self.times[1] - self.times[0]
+        if self.num_times > 1:
+            self.time_interval = self.times[1] - self.times[0]
+        else:
+            self.time_interval = None
+
         self.freq_interval = self.freqs[1] - self.freqs[0]
 
         self.start_time = self.times[0]
@@ -806,7 +810,7 @@ def get_spec_peak_time_freq_inds(counts_df, timeax, freqax):
     num_time = len(timeax)
     time_inds = []
     freq_inds = []
-    for i, row in counts_df.iterrows():
+    for _, row in counts_df.iterrows():
         time = row["time"]
         freq = row["frequency"]
         time_ind = timeax.searchsorted(time)
@@ -1006,11 +1010,11 @@ def read_geo_spectrograms(inpath, time_labels = None, starttime = None, endtime 
                 for component in components:
                     # Slice the data matrix
                     if component == "Z":
-                        data = block_group["data_z"][min_freq_index:max_freq_index, start_index:end_index]
+                        data = block_group["data_z"][min_freq_index:max_freq_index, start_index:end_index + 1]
                     elif component == "1":
-                        data = block_group["data_1"][min_freq_index:max_freq_index, start_index:end_index]
+                        data = block_group["data_1"][min_freq_index:max_freq_index, start_index:end_index + 1]
                     elif component == "2":
-                        data = block_group["data_2"][min_freq_index:max_freq_index, start_index:end_index]
+                        data = block_group["data_2"][min_freq_index:max_freq_index, start_index:end_index + 1]
 
                     # Create the frequency axis
                     freqax = linspace(min_freq, max_freq, data.shape[0])
@@ -1284,7 +1288,7 @@ def read_hydro_spectrograms(inpath, time_labels = None, locations = None, startt
                 for location in locations:
                     # Slice the data matrix
                     try:
-                        data = block_group[f"data_{location}"][min_freq_index:max_freq_index, start_index:end_index]
+                        data = block_group[f"data_{location}"][min_freq_index:max_freq_index, start_index:end_index + 1]
                     except KeyError:
                         print(f"Warning: Location {location} does not exist for time label {time_label}!")
                         continue
@@ -1502,6 +1506,19 @@ def read_hydro_spec_headers(inpath):
 
     return header_dict
 
+# Read the time labels, begin times, and end times of all blocks in a spectrogram file
+def read_spec_block_timings(inpath):
+    with File(inpath, 'r') as file:
+        header_group = file["headers"]
+        data_group = file["data"]
+
+        time_labels = get_spec_time_labels(data_group)
+        time_interval = get_spec_time_interval(header_group)
+
+        block_timing_df = get_block_timings(data_group, time_labels, time_interval)
+
+    return block_timing_df
+
 # Read the time labels of a hydrophone spectrogram file
 def read_spec_time_labels(inpath):
     with File(inpath, 'r') as file:
@@ -1517,8 +1534,8 @@ def append_header_variable(file, var_name, var_value):
     print(f"Appended variable {var_name} to the header.")
 
 # Get the time labels of a geophone spectrogram file from the headers
-def get_spec_time_labels(header_group):
-    time_labels = header_group["time_labels"][:]
+def get_spec_time_labels(data_group):
+    time_labels = data_group["time_labels"][:]
     time_labels = [time_label.decode("utf-8") for time_label in time_labels]
 
     return time_labels
@@ -1577,8 +1594,8 @@ def get_overlapping_blocks(block_timing_df, starttime, endtime):
 
 # Get the data time indices for slicing a spectrogram data block
 def get_data_block_time_indices(starttime_block, num_times, time_interval, starttime_to_read, endtime_to_read):
-    start_index = amax([0, int((starttime_to_read - starttime_block) / time_interval)])
-    end_index = amin([num_times, int((endtime_to_read - starttime_block) / time_interval)])
+    start_index = amax([0, int(round((starttime_to_read - starttime_block) / time_interval))])
+    end_index = amin([num_times, int(round((endtime_to_read - starttime_block) / time_interval)) + 1])
 
     return start_index, end_index
 
@@ -1718,31 +1735,60 @@ def get_peak_freq_w_max_detection(count_df, time):
         return freq
 
 # Read the geophone spectral peaks from an HDF file
-def read_geo_spec_peaks(inpath, time_labels = None):
-    if time_labels is None:
-        time_label_sr = read_hdf(inpath, key = "time_label")
-        time_labels_to_read = time_label_sr.values
-    else:
-        if isinstance(time_labels, str):
-            time_labels_to_read = [time_labels]
-        else:
-            time_labels_to_read = time_labels
+def read_geo_spec_peaks(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 200.0):
+    # Read the time labels, start times, and end times of all blocks
+    block_timing_df = read_hdf(inpath, key = "block_timings")
 
-    peak_dfs = []
-    for time_label in time_labels_to_read:
-        try:
-            peak_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
-        except KeyError:
-            print(f"Warning: Time label {time_label} does not exist!")
-            continue
-
-        peak_dfs.append(peak_df)
+    # Convert the start and end times to Timestamp objects
+    if starttime is not None:
+        starttime = str2timestamp(starttime)
     
-    if len(peak_dfs) == 0:
+    if endtime is not None:
+        endtime = str2timestamp(endtime)
+
+    # Read the spectral peaks
+    pead_dfs = []
+    if time_labels is None and starttime is None and endtime is None:
+        print("Reading all spectral peaks...")
+        for time_label in block_timing_df["time_label"]:
+            peak_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+            peak_df = peak_df.loc[(peak_df["frequency"] >= min_freq) & (peak_df["frequency"] <= max_freq)]
+            print(f"Time label {time_label}: {len(peak_df)} peaks")
+            pead_dfs.append(peak_df)
+
+    elif time_labels is not None and starttime is None and endtime is None:
+        print("Reading spectral peaks for the given time labels...")
+        for time_label in time_labels:
+            try:
+                peak_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+                print(f"Time label {time_label}: {len(peak_df)} peaks")
+                peak_df = peak_df.loc[(peak_df["frequency"] >= min_freq) & (peak_df["frequency"] <= max_freq)]
+                pead_dfs.append(peak_df)
+            except KeyError:
+                print(f"Warning: Time label {time_label} does not exist!")
+        
+    elif time_labels is None and starttime is not None and endtime is not None:
+        print(f"Reading spectral peaks between {starttime} and {endtime}...")
+        for _, row in block_timing_df.iterrows():
+            time_label = row["time_label"]
+            starttime_block = row["start_time"]
+            endtime_block = row["end_time"]
+
+            if starttime_block <= endtime and endtime_block >= starttime:
+                peak_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+                peak_df = peak_df.loc[(peak_df["time"] >= starttime) & (peak_df["time"] <= endtime) & (peak_df["frequency"] >= min_freq) & (peak_df["frequency"] <= max_freq)]
+                print(f"Time label {time_label}: {len(peak_df)} peaks")
+                pead_dfs.append(peak_df)
+
+    else:
+        raise ValueError("Error: Redundant input time information!")
+
+    if len(pead_dfs) == 0:
+        print("Warning: No spectral peaks are read!")
         return None
     else:
-        peak_df = concat(peak_dfs)
-        
+        peak_df = concat(pead_dfs, ignore_index = True)
+
         return peak_df
 
 # Read the hydrophone spectral peaks from an HDF file
@@ -1796,45 +1842,57 @@ def save_spectral_peaks(peak_df, file_stem, file_format, outdir = SPECTROGRAM_DI
 # Read spectral peak counts from an HDF5 file
 # The counts are organized by time labels
 def read_spec_peak_array_counts(inpath, time_labels = None, starttime = None, endtime = None, min_freq = 0.0, max_freq = 200.0):
-    if starttime is None:
-        starttime = STARTTIME_GEO
+    # Read the block timings
+    block_timing_df = read_hdf(inpath, key = "block_timings")
 
-    if endtime is None:
-        endtime = ENDTIME_GEO
+    # Convert the start and end times to Timestamp objects
+    if starttime is not None:
+        starttime = str2timestamp(starttime)
 
-    # Read the time labels
-    time_label_sr = read_hdf(inpath, key = "time_label")
+    if endtime is not None:
+        endtime = str2timestamp(endtime)
 
-    if time_labels is None:
-        time_labels_to_read = time_label_sr.values
-    else:
-        if isinstance(time_labels, str):
-            time_labels_to_read = [time_labels]
-        else:
-            time_labels_to_read = time_labels
-
+    
     count_dfs = []
-    for time_label in time_labels_to_read:
-        try:
+    if time_labels is None and starttime is None and endtime is None:
+        print("Reading all spectral peak counts...")
+        for time_label in block_timing_df["time_label"]:
             count_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
-        except KeyError:
-            print(f"Warning: Time label {time_label} does not exist!")
-            continue
+            count_df = count_df.loc[(count_df["frequency"] >= min_freq) & (count_df["frequency"] <= max_freq)]
+            print(f"Time label {time_label}: {len(count_df)} counts")
+            count_dfs.append(count_df)
 
-        count_df = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime) & (count_df["frequency"] >= min_freq) & (count_df["frequency"] <= max_freq)]
+    elif time_labels is not None and starttime is None and endtime is None:
+        print("Reading spectral peak counts for the given time labels...")
+        for time_label in time_labels:
+            try:
+                count_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+                count_df = count_df.loc[(count_df["frequency"] >= min_freq) & (count_df["frequency"] <= max_freq)]
+                print(f"Time label {time_label}: {len(count_df)} counts")
+                count_dfs.append(count_df)
+            except KeyError:
+                print(f"Warning: Time label {time_label} does not exist!")
 
-        if len(count_df) == 0:
-            print(f"Warning: No data is read for time label {time_label}!")
-            continue
+    elif time_labels is None and starttime is not None and endtime is not None:
+        print(f"Reading spectral peak counts between {starttime} and {endtime}...")
+        for _, row in block_timing_df.iterrows():
+            time_label = row["time_label"]
+            starttime_block = row["start_time"]
+            endtime_block = row["end_time"]
 
-        count_dfs.append(count_df)
+            if starttime_block <= endtime and endtime_block >= starttime:
+                count_df = read_hdf(inpath, key = time_label, index_col = 0, parse_dates = ["time"])
+                count_df = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime) & (count_df["frequency"] >= min_freq) & (count_df["frequency"] <= max_freq)]
+                print(f"Time label {time_label}: {len(count_df)} counts")
+                count_dfs.append(count_df)
 
     if len(count_dfs) == 0:
+        print("Warning: No spectral peak counts are read!")
         return None
     else:
         count_df = concat(count_dfs)
     
-        return count_df
+    return count_df
 
 # Save spectral-peak bin counts to a CSV or HDF file
 def save_spectral_peak_counts(count_df, file_stem, file_format, outdir = SPECTROGRAM_DIR):
@@ -1850,16 +1908,16 @@ def save_spectral_peak_counts(count_df, file_stem, file_format, outdir = SPECTRO
     print(f"Results saved to {outpath}")
 
 # Read a binary spectrogram file
-def read_binary_spectrogram(inpath, starttime, endtime, min_freq, max_freq):
+def read_binary_spectrogram(inpath, starttime = STARTTIME_GEO, endtime = ENDTIME_GEO, min_freq = 0.0, max_freq = 500.0):
     with File(inpath, 'r') as file:
         # Read the header information
         header_group = file["headers"]
-        start_time = header_group["start_time"][()]
-        min_freq = header_group["min_freq"][()]
-        num_times = header_group["num_times"][()]
-        num_freqs = header_group["num_freqs"][()]
-        time_interval = header_group["time_interval"][()]
-        freq_interval = header_group["freq_interval"][()]
+        start_time = header_group.attrs["start_time"]
+        min_freq = header_group.attrs["min_freq"]
+        num_times = header_group.attrs["num_times"]
+        num_freqs = header_group.attrs["num_freqs"]
+        time_interval = header_group.attrs["time_interval"]
+        freq_interval = header_group.attrs["freq_interval"]
 
         # Create the time axis
         timeax = assemble_timeax_from_ints(start_time, num_times, time_interval)
@@ -1887,17 +1945,17 @@ def save_binary_spectrogram(timeax, freqax, data, outpath):
     timeax = datetime2int(timeax)
     with File(outpath, 'w') as file:
         header_group = file.create_group('headers')
-        header_group.create_dataset('start_time', data=timeax[0])
-        header_group.create_dataset('min_freq', data=freqax[0])
-        header_group.create_dataset('num_times', data=len(timeax))
-        header_group.create_dataset('num_freqs', data=len(freqax))
-        header_group.create_dataset('time_interval', data=timeax[1] - timeax[0])
-        header_group.create_dataset('freq_interval', data=freqax[1] - freqax[0])
+        header_group.attrs["start_time"] = timeax[0]
+        header_group.attrs["min_freq"] = freqax[0]
+        header_group.attrs["num_times"] = len(timeax)
+        header_group.attrs["num_freqs"] = len(freqax)
+        header_group.attrs["time_interval"] = timeax[1] - timeax[0]
+        header_group.attrs["freq_interval"] = freqax[1] - freqax[0]
 
         data_group = file.create_group('data')
         data_group.create_dataset('detections', data=data)
 
-    print(f"Binary spectrogram saved to {outpath}")
+    print(f"Binary array spectrogram saved to {outpath}")
 
 ###### Handling harmonic data tables
 def read_harmonic_data_table(inpath):

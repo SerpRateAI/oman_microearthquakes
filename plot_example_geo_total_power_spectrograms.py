@@ -53,7 +53,7 @@ num_sta = len(stations_to_plot)
 fig, axes = subplots(num_sta, 1, figsize = (width, row_height * num_sta), sharex = True, sharey = True)
 
 for i, station in enumerate(stations_to_plot):
-    trace = stream_spec_total_power.select(station = station)[0]
+    trace = stream_spec_total_power.select(stations = station)[0]
     ax = axes[i]
     quadmesh = trace.plot(ax, min_db, max_db)
 

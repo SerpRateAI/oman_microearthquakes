@@ -11,7 +11,7 @@ from h5py import File
 
 from utils_basic import SPECTROGRAM_DIR as indir, GEO_STATIONS as stations
 from utils_spec import find_trace_spectral_peaks, get_spectrogram_file_suffix, get_spec_peak_file_suffix 
-from utils_spec import read_geo_spectrograms, read_spec_time_labels, save_spectral_peaks
+from utils_spec import read_geo_spectrograms, read_spec_block_timings
 from utils_plot import plot_geo_total_psd_and_peaks, save_figure
 
 # Inputs
@@ -24,10 +24,9 @@ downsample_factor = 60
 # Finding peaks
 num_process = 32
 rbw_threshold = 3.0
-prom_threshold = 15
+prom_threshold = 10.0
 min_freq = None
 max_freq = 200.0
-
 
 # Loop over days and stations
 print(f"### Detecting spectral peaks in the hydrophone spectrograms in {num_process} processes ###")
@@ -53,7 +52,7 @@ for station in stations:
     print(f"Proessing the file: {filename_in}")
 
     inpath = join(indir, filename_in)
-    time_labels = read_spec_time_labels(inpath)
+    block_timing_df = read_spec_block_timings(inpath)
 
     suffix_peak = get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = min_freq, max_freq = max_freq)
     filename_out = f"geo_spectral_peaks_{station}_{suffix_spec}_{suffix_peak}.h5"
@@ -61,8 +60,8 @@ for station in stations:
     # Save the time labels
     print("Saving the time labels...")
     outpath = join(outdir, filename_out)
-    time_label_sr = Series(time_labels, name = "time_label")
-    time_label_sr.to_hdf(outpath, key = "time_label", mode = "w")
+    block_timing_df.to_hdf(outpath, key = "block_timings", mode = "w")
+    time_labels = block_timing_df["time_label"]
     
     # Process each time label
     for time_label in time_labels:

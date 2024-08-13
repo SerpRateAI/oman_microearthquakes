@@ -15,7 +15,7 @@ from matplotlib.ticker import MultipleLocator, AutoMinorLocator
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
-from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, utcdatetime_to_timestamp, sec2day
+from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, str2timestamp, sec2day
 from utils_wavelet import mask_cross_phase
 
 GROUND_VELOCITY_UNIT = "nm s$^{-1}$"
@@ -304,7 +304,7 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
                                 station_to_plot = "A00", locations_to_plot = None, 
                                 scale = 1e-3, xdim_per_win = 7, ydim_per_loc = 2, 
                                 linewidth_wf = 1, linewidth_sb = 0.5,
-                                major_time_spacing = 5.0, minor_time_spacing = 1.0, major_depth_spacing=50.0, minor_depth_spacing=10.0,
+                                major_time_spacing = 5.0, num_minor_time_ticks= 5, major_depth_spacing=50.0, num_minor_depth_ticks = 10,
                                 station_label_size = 12, axis_label_size = 12, tick_label_size = 12,
                                 depth_lim = (0.0, 420.0), location_label_offset = (2, -15),
                                 box_y_offset = 10.0, linewidth_box = 1.5,
@@ -405,7 +405,7 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
             else:
                 scalebar_coord = (timeax[0] + scalebar_offset[0], max_depth + scalebar_offset[1])
 
-            add_scalebar(ax, scalebar_coord, scalebar_length, scale, linewidth=linewidth_sb)
+            #add_scalebar(ax, scalebar_coord, scalebar_length, scale, linewidth=linewidth_sb)
             ax.annotate(f"{scalebar_length} {unit}", scalebar_coord, xytext=(0.5, 0), textcoords="offset fontsize", fontsize=scalebar_label_size, ha="left", va="center")
 
         ### Format the x-axis labels
@@ -416,7 +416,7 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
 
         ### Format the y-axis labels
         if i == 0:
-            ax = format_depth_ylabels(ax, major_tick_spacing=major_depth_spacing, minor_tick_spacing=minor_depth_spacing, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+            ax = format_depth_ylabels(ax, major_tick_spacing=major_depth_spacing, num_minor_ticks = num_minor_depth_ticks, axis_label_size=axis_label_size, tick_label_size=tick_label_size)
 
         ### Plot the box
         if i > 0:
@@ -439,9 +439,9 @@ def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
                             dbmin=-30, dbmax=0,
                             component_label_x = 0.02, component_label_y = 0.96,
                             date_format = "%Y-%m-%d %H:%M:%S",
-                            major_time_spacing="1min", minor_time_spacing="15s",
+                            major_time_spacing="1min", num_minor_time_ticks=5,
                             major_vel_spacing=100, minor_vel_spacing=50,
-                            major_freq_spacing=50, minor_freq_spacing=10,
+                            major_freq_spacing=50, num_minor_freq_ticks = 5,
                             component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=5, time_tick_va="top", time_tick_ha="right"):
     
@@ -501,11 +501,11 @@ def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
                 ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
 
             if j == 2:
-                format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+                format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks,
                                         axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format,
                                         rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
             if i == 0:
-                format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, 
+                format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, 
                                     axis_label_size = axis_label_size, tick_label_size=tick_label_size)
             else:
                 format_freq_ylabels(ax, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing,
@@ -539,8 +539,8 @@ def plot_geo_stft_spectrograms(stream_spec,
                                 freq_lim=(0, 490), dbmin=-30, dbmax=0,
                                 component_label_x = 0.01, component_label_y = 0.96,
                                 date_format = "%Y-%m-%d",
-                                major_time_spacing="24h", minor_time_spacing="1h", 
-                                major_freq_spacing=100, minor_freq_spacing=20,
+                                major_time_spacing="1d", num_minor_time_ticks=4,
+                                major_freq_spacing=100, num_minor_freq_ticks=5,
                                 component_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                                 time_tick_rotation=15, time_tick_va="top", time_tick_ha="right",
                                 plot_total_psd = False, **kwargs):
@@ -572,19 +572,19 @@ def plot_geo_stft_spectrograms(stream_spec,
     quadmesh = ax.pcolormesh(timeax, freqax, data_z, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("Z")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)  
 
     ax = axes[1]
     quadmesh = ax.pcolormesh(timeax, freqax, data_1, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("1")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, tick_label_size = tick_label_size)
 
     ax = axes[2]
     quadmesh = ax.pcolormesh(timeax, freqax, data_2, cmap = cmap, vmin = dbmin, vmax = dbmax)
     label = component_to_label("2")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, tick_label_size = tick_label_size)
 
     if plot_total_psd:
         ax = axes[3]
@@ -594,11 +594,11 @@ def plot_geo_stft_spectrograms(stream_spec,
         quadmesh = ax.pcolormesh(timeax, freqax, data_total, cmap = cmap, vmin = dbmin, vmax = dbmax)
         label = "Total"
         ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, tick_label_size = tick_label_size)
+        format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, tick_label_size = tick_label_size)
     
     ax.set_ylim(freq_lim)
 
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, tick_label_size = tick_label_size, date_format = date_format
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks, tick_label_size = tick_label_size, date_format = date_format
 , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
     # Add the colorbar
@@ -694,10 +694,9 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
                             freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             marker_size = 5,
                             panel_label_x = 0.01, panel_label_y = 0.96,
-                            date_format
- = "%Y-%m-%d",
-                            major_time_spacing=24, minor_time_spacing=6, 
-                            major_freq_spacing=100, minor_freq_spacing=20,
+                            date_format = "%Y-%m-%d",
+                            major_time_spacing=24, num_minor_time_ticks=6,
+                            major_freq_spacing=100, num_minor_freq_ticks=5,
                             panel_label_size=15, axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
 
@@ -719,7 +718,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
 
     label = "Total PSD"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the spectral peak power
     ax = axes[1]
@@ -730,12 +729,12 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
 
     ax.set_facecolor("lightgray")
     ax.scatter(peak_times, peak_freqs, c = peak_powers, s = marker_size, cmap = "inferno", norm = color_norm, edgecolors = None)
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the power colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    #power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the spectral peak reversed bandwidths
     ax = axes[2]
@@ -743,7 +742,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     peak_rbw = peak_df["reverse_bandwidth"]
     ax.set_facecolor("lightgray")
     rbw_color = ax.scatter(peak_times, peak_freqs, c = peak_rbw, s = marker_size, cmap = "viridis", norm=LogNorm(vmin = rbwmin, vmax = rbwmax))
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the reverse-bandwidth colorbar
     bbox = ax.get_position()
@@ -753,7 +752,7 @@ def plot_geo_total_psd_and_peaks(trace_total, peak_df,
     # Format the x-axis labels
     major_time_spacing = hour2sec(major_time_spacing) # Convert hours to seconds
     minor_time_spacing = hour2sec(minor_time_spacing) # Convert hours to seconds
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks,
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format
  = date_format
 , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
@@ -780,11 +779,8 @@ def plot_array_spec_peak_counts(count_df,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
 
     # Trim the counts to the specified time range
-    if not isinstance(starttime, Timestamp):
-        starttime = Timestamp(starttime)
-    
-    if not isinstance(endtime, Timestamp):
-        endtime = Timestamp(endtime)
+    starttime = str2timestamp(starttime)
+    endtime = str2timestamp(endtime)
 
     count_df = count_df.loc[(count_df["time"] >= starttime) & (count_df["time"] <= endtime)]
 
@@ -878,8 +874,8 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
                             xdim = 15, ydim_per_row = 5,
                             freq_lim=(0, 490), dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             date_format = "%Y-%m-%d",
-                            major_time_spacing="24h", minor_time_spacing="6h", 
-                            major_freq_spacing=100, minor_freq_spacing=20,
+                            major_time_spacing="1d", num_minor_time_ticks=4,
+                            major_freq_spacing=100, num_minor_freq_ticks=5,
                             panel_label_x = 0.01, panel_label_y = 0.96, panel_label_size=12, 
                             axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
@@ -908,7 +904,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     station = trace_total.station
     ax.set_title(station, fontsize = title_size, fontweight = "bold")
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the spectral peak power
     ax = axes[1]
@@ -923,7 +919,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     label = "Peak power"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the power colorbar
     bbox = ax.get_position()
@@ -943,7 +939,7 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     label = "Peak width"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the reverse-bandwidth colorbar
     bbox = ax.get_position()
@@ -969,10 +965,10 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
     ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
 
     # Format the frequency axis
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Format the time axis
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks,
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
                             , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
     
@@ -990,14 +986,14 @@ def plot_geo_total_psd_peaks_and_array_counts(trace_total, peak_df, count_df,
 # Plot the geophone total psd, the spectral-peak powers, array detection counts, and the binarized array spectrogram
 def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, bin_array_dict,
                                             size_scale = 5, marker_size = 1,
-                                            example_counts = array([5, 20, 35]),
+                                            example_counts = array([10, 20, 30]),
                                             xdim = 15, ydim_per_row = 5,
                                             min_freq = 0.0, max_freq = 500.0,
                                             starttime = None, endtime = None,
                                             dbmin=-30, dbmax=0,
                                             date_format = "%Y-%m-%d %H:%M:%S",
-                                            major_time_spacing="15min", minor_time_spacing="5min",
-                                            major_freq_spacing=50.0, minor_freq_spacing=10.0,
+                                            major_time_spacing="15min", num_minor_time_ticks=3,
+                                            major_freq_spacing=50.0, num_minor_freq_ticks=5,
                                             panel_label_x = 0.01, panel_label_y = 0.96, panel_label_size=12,
                                             axis_label_size=12, tick_label_size=10, title_size=15,
                                             time_tick_rotation=5, time_tick_va="top", time_tick_ha="right"):
@@ -1024,12 +1020,12 @@ def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, 
     label = f"{station}, total PSD"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Add the colorbar
     bbox = ax.get_position()
-    position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    position = [bbox.x1 + 0.02, bbox.y0 , 0.01, bbox.height]
+    power_cbar = add_colorbar(fig, quadmesh, "Power (dB)", position, orientation = "vertical")
 
     # Plot the spectral peak power
     ax = axes[1]
@@ -1044,7 +1040,7 @@ def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, 
     label = f"{station}, peak power"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the array spectral-peak counts
     ax = axes[2]
@@ -1068,7 +1064,7 @@ def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, 
     # Add the legend
     ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the binarized array spectrogram
     ax = axes[3]
@@ -1083,12 +1079,12 @@ def plot_geo_total_psd_to_bin_array_spectrogram(trace_total, peak_df, count_df, 
     label = "Binarized array spectrogram"
     ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)  
 
     # Format the time axis
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing,
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks,
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format,
-                            rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
+                            rotation = time_tick_rotation, va = time_tick_va, ha = time_tick_ha)
 
     # Set the x-axis limits
     if starttime is None:
@@ -1118,8 +1114,8 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
                             min_freq = 0.0, max_freq = 500.0,
                             dbmin=-30, dbmax=0, rbwmin=0.1, rbwmax=0.5,
                             date_format = "%Y-%m-%d",
-                            major_time_spacing="24h", minor_time_spacing="6h", 
-                            major_freq_spacing=100, minor_freq_spacing=20,
+                            major_time_spacing="1d", num_minor_time_ticks=4,
+                            major_freq_spacing=100,num_minor_freq_ticks=5,
                             panel_label_x = 0.01, panel_label_y = 0.96, panel_label_size=12, 
                             axis_label_size=12, tick_label_size=10, title_size=15,
                             time_tick_rotation=15, time_tick_va="top", time_tick_ha="right"):
@@ -1146,7 +1142,7 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     ax.legend(title = "Counts", fontsize = tick_label_size, title_fontsize = axis_label_size, loc = "upper right", framealpha = 1.0, edgecolor = "black")
 
     # Format the frequency axis
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the stacked spectrogram peaks color-coded by power
     ax = axes[1]
@@ -1161,12 +1157,12 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     # label = "Peak power"
     # ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the power colorbar
     bbox = ax.get_position()
     position = [bbox.x0 + bbox.width + 0.02, bbox.y0 , 0.01, bbox.height]
-    power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
+    #power_cbar = add_quadmeshbar(fig, quadmesh, position, tick_spacing=10, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Plot the stacked spectrogram peaks color-coded by reverse bandwidth
     ax = axes[2]
@@ -1181,7 +1177,7 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     # label = "Peak width"
     # ax.text(panel_label_x, panel_label_y, label, transform=ax.transAxes, fontsize = panel_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
 
-    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, minor_tick_spacing = minor_freq_spacing, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_freq_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
     # Plot the reverse-bandwidth colorbar
     bbox = ax.get_position()
@@ -1189,7 +1185,7 @@ def plot_array_peak_counts_vs_stacked_peaks(count_df, peak_df,
     rbw_cbar = add_rbw_colorbar(fig, rbw_color, position, tick_label_size=tick_label_size, orientation = "vertical")
 
     # Format the time axis
-    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, minor_tick_spacing = minor_time_spacing, 
+    format_datetime_xlabels(ax, major_tick_spacing = major_time_spacing, num_minor_ticks = num_minor_time_ticks,
                             axis_label_size = axis_label_size, tick_label_size = tick_label_size, date_format = date_format
                             , rotation = time_tick_rotation, vertical_align=time_tick_va, horizontal_align=time_tick_ha)
 
@@ -1266,7 +1262,7 @@ def plot_cum_freq_fractions(count_df,
 ## Function to plot the 3C seismograms and spectrograms computed using CWT of a list of stations
 def plot_3c_waveforms_and_cwts(stream, specs, 
                                  xdim_per_comp=10, ydim_per_sta=3, ylim_wf=(-50, 50), ylim_freq=(0.0, 500.0), dbmin=0.0, dbmax=30.0, 
-                                 linewidth_wf=0.2, major_time_spacing=5.0, minor_time_spacing=1.0, major_freq_spacing=20, minor_freq_spacing=5, 
+                                 linewidth_wf=0.2, major_time_spacing=5.0, num_minor_time_ticks = 5, major_freq_spacing=20, minor_freq_spacing=5, 
                                  station_label_x=0.02, station_label_y=0.92, station_label_size=15, axis_label_size=12, tick_label_size=12, title_size=15):
     components = GEO_COMPONENTS
     vel_label = GROUND_VELOCITY_LABEL_SHORT
@@ -1330,7 +1326,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
                 ax.yaxis.set_tick_params(labelsize=tick_label_size)
                 
     ### Format the x-axis labels
-    format_datetime_xlabels(axes, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
+    format_datetime_xlabels(axes, major_tick_spacing=major_time_spacing, num_minor_ticks=num_minor_time_ticks, tick_label_size=tick_label_size)
 
     ### Plot the colorbar at the bottom
     cax = fig.add_axes([0.35, 0.0, 0.3, 0.02])
@@ -1344,7 +1340,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
 ## Function to plot the amplitude of the CWTs of a stream
 def plot_cwt_powers(specs,
                     xdim_per_comp=10, ydim_per_sta=3, freqlim=(0.0, 200), dbmin=0.0, dbmax=30, 
-                    major_time_spacing="5S", minor_time_spacing="1S", major_freq_spacing=20, minor_freq_spacing=5,
+                    major_time_spacing="5s", num_minor_tick_ticks=5, major_freq_spacing=20, num_minor_freq_ticks = 5,
                     station_label_size=15, axis_label_size=12, tick_label_size=12, title_size=15):
     stations = specs.get_stations()
     numsta = len(stations)
@@ -1377,8 +1373,8 @@ def plot_cwt_powers(specs,
     ax = axes[0, 0]
     ax.set_ylim(freqlim)
     
-    format_datetime_xlabels(axes, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
-    format_freq_ylabels(axes, major_tick_spacing=major_freq_spacing, minor_tick_spacing=minor_freq_spacing, tick_label_size=tick_label_size)
+    format_datetime_xlabels(axes, major_tick_spacing=major_time_spacing, num_minor_ticks = num_minor_tick_ticks, tick_label_size=tick_label_size)
+    format_freq_ylabels(axes, major_tick_spacing=major_freq_spacing, num_minor_ticks=num_minor_freq_ticks, tick_label_size=tick_label_size, axis_label_size=axis_label_size)
 
     ### Add the colorbar
     caxis = fig.add_axes([0.35, -0.03, 0.3, 0.03])
@@ -2724,6 +2720,27 @@ def format_freq_ylabels(ax, label=True,
             ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
         else:
             ax.set_ylabel("Frequency (Hz)", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    for label in ax.get_yticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('center')
+        label.set_horizontalalignment('right')
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
+# Format the y labels in decibels
+def format_db_ylabels(ax, label=True,
+                      major_tick_spacing=10, num_minor_ticks=5,
+                      axis_label_size=12, tick_label_size=10,
+                      major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if label:
+        ax.set_ylabel("Power (dB)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))

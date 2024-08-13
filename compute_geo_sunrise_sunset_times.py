@@ -10,7 +10,7 @@ from utils_basic import CENTER_LONGITUDE as longitude, CENTER_LATITUDE as latitu
 from utils_basic import get_geophone_days
 
 # Get the days of the geophone deployment
-days = get_geophone_days(format = "timestamp")
+days = get_geophone_days()
 
 # Get the location information
 location = LocationInfo(longitude = longitude, latitude = latitude)
@@ -21,13 +21,16 @@ sunset_times = []
 
 for day in days:
     s = sun(location.observer, date = day)
-    sunrise_times.append(s["sunrise"])
-    sunset_times.append(s["sunset"])
+    sunrise_time = Timestamp(s["sunrise"])
+    sunset_time = Timestamp(s["sunset"])
+    sunrise_times.append(sunrise_time)
+    sunset_times.append(sunset_time)
 
 # Construct the output DataFrame
 out_df = DataFrame({"day": days, "sunrise": sunrise_times, "sunset": sunset_times})
+out_df.set_index("day", inplace = True)
 
 # Save the output
 outpath = join(outdir, "sunrise_sunset_times.csv")
-out_df.to_csv(outpath, index = True, date_format = "%Y-%m-%d %H:%M:%S")
+out_df.to_csv(outpath, index = True)
 print(f"Saved sunrise and sunset times to {outpath}")

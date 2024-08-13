@@ -21,16 +21,14 @@ overlap = 0.0
 downsample = False
 downsample_factor = 60
 
-# Spectral-peak finding
+# Spectral-peak detection
 prom_spec_threshold = 10.0
 rbw_threshold = 3.0
 
 min_freq_peak = None
 max_freq_peak = 200
 
-file_ext_in = "h5"
-
-# Array grouping
+# Spectral-peak counting
 count_threshold = 9
 
 # Peak detection
@@ -53,7 +51,7 @@ print("Reading the spectral peak counts...")
 suffix_spec = get_spectrogram_file_suffix(window_length, overlap, downsample, downsample_factor = downsample_factor)
 suffix_peak = get_spec_peak_file_suffix(prom_spec_threshold, rbw_threshold, min_freq = min_freq_peak, max_freq = max_freq_peak)
 
-filename_in = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_freq_sorted.csv"
+filename_in = f"geo_spectral_peak_time_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_freq_sorted.csv"
 inpath = join(indir, filename_in)
 cum_count_df = read_csv(inpath, index_col = 0)
 cum_count_df.sort_values('frequency', inplace = True)
@@ -77,7 +75,6 @@ stationary_resonance_df.reset_index(drop = True, inplace = True)
 print("Finding the frequency bounds of the detected resonances...")
 stationary_resonance_df = get_stationary_resonance_freq_intervals(stationary_resonance_df, peak_dict, cum_count_df, height_factor = height_factor)
 
-
 # Save the detected resonances
 print("Saving the detected resonances...")
 filename_out = f"stationary_resonances_detected_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}.csv"
@@ -100,5 +97,5 @@ for _, row in stationary_resonance_df.iterrows():
     ax.scatter(freq, frac * marker_offset, s = marker_size, marker = 'v', facecolors = 'none', edgecolors = 'crimson', linewidth = linewidth_marker, zorder = 10)
 
 # Save the figure
-figname = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_resonance_detected_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}.png"
+figname = f"geo_spectral_peak_time_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_resonance_detected_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}.png"
 save_figure(fig, figname)

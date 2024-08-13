@@ -8,8 +8,8 @@ from multiprocessing import Pool
 
 from utils_basic import SPECTROGRAM_DIR as indir
 from utils_basic import get_geophone_days
-from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_binary_spectrogram, read_geo_spectrograms, read_spectral_peaks, read_spectral_peak_counts
-from utils_plot import plot_geo_total_psd_to_array_spectrogram, save_figure
+from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_binary_spectrogram, read_geo_spectrograms, read_geo_spec_peaks, read_spec_peak_array_counts
+from utils_plot import plot_geo_total_psd_to_bin_array_spectrogram, save_figure
 
 # Inputs
 # Spectrograms
@@ -26,18 +26,18 @@ min_freq = None
 max_freq = 200.0
 
 # Peak-counting
-count_threshold = 4
+count_threshold = 9
 
 # Plotting
-starttime_plot = "2020-01-13T20:00:00"
-endtime_plot = "2020-01-13T21:00:00"
+starttime_plot = "2020-01-13 20:00:00"
+endtime_plot = "2020-01-13 21:00:00"
 
 dbmin = -30
 dbmax = 10
 
 date_format = "%Y-%m-%d %H:%M:%S"
 major_time_spacing = "15min"
-minor_time_spacing = "5min"
+num_minor_time_ticks = 3
 
 size_scale = 30
 marker_size = 2
@@ -58,38 +58,37 @@ filename_in = f"geo_spectral_peaks_{station_plot}_{suffix_spec}_{suffix_peak}.h5
 inpath = join(indir, filename_in)
 
 print(f"Reading spectral peaks from {inpath}...")
-peak_df = read_spectral_peaks(inpath)
-peak_df = peak_df.loc[(peak_df["time"] >= starttime_plot) & (peak_df["time"] < endtime_plot)]
+peak_df = read_geo_spec_peaks(inpath, starttime = starttime_plot, endtime = endtime_plot)
 print("Done.")
 
 # Read the spectral-peak count file
-filename_in = f"geo_spectral_peak_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.h5"
+filename_in = f"geo_spectral_peak_array_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.h5"
 inpath = join(indir, filename_in)
 
-print(f"Reading spectral-peak counts from {inpath}...")
-count_df = read_spectral_peak_counts(inpath)
-count_df = count_df.loc[(count_df["time"] >= starttime_plot) & (count_df["time"] < endtime_plot)]
+print(f"Reading spectral-peak array counts from {inpath}...")
+count_df = read_spec_peak_array_counts(inpath, starttime = starttime_plot, endtime = endtime_plot)
 print("Done.")
 
 # Read the binarized array spectrogram
-print("Reading the binarized array spectrogram from {inpath}...")
-filename_in = f"geo_binary_spectrogram_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.h5"
+print(f"Reading the binarized array spectrogram from {inpath}...")
+filename_in = f"geo_binary_array_spectrogram_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.h5"
 inpath = join(indir, filename_in)
 
-bin_spec_dict = read_binary_spectrogram(inpath, starttime_plot, endtime_plot, min_freq, max_freq)
+bin_spec_dict = read_binary_spectrogram(inpath, starttime = starttime_plot, endtime = endtime_plot, min_freq = min_freq, max_freq = max_freq)
 print("Done.")
 
 # Plotting
 print("Plotting...")
-fig, axes, poewr_cbar = plot_geo_total_psd_to_array_spectrogram(trace_spec_total, peak_df, count_df, bin_spec_dict,
-                                                                min_freq = min_freq, max_freq = max_freq,
-                                                                dbmin = dbmin, dbmax = dbmax,
-                                                                size_scale = size_scale, marker_size = marker_size,
-                                                                major_time_spacing = major_time_spacing, minor_time_spacing = minor_time_spacing, date_format = date_format)
+fig, axes, power_cbar = plot_geo_total_psd_to_bin_array_spectrogram(trace_spec_total, peak_df, count_df, bin_spec_dict,
+                                                                    min_freq = min_freq, max_freq = max_freq,
+                                                                    dbmin = dbmin, dbmax = dbmax,
+                                                                    size_scale = size_scale, marker_size = marker_size,
+                                                                    major_time_spacing = major_time_spacing, num_minor_time_ticks = num_minor_time_ticks,
+                                                                    date_format = date_format)
 print("Done.")
 
 # Save the plot
 print("Saving the plot...")
-figname = f"geo_binary_spec_extraction_example_{station_plot}.png"
+figname = f"geo_binary_array_spec_extraction_example_{station_plot}.png"
 save_figure(fig, figname)
 print("Done.")

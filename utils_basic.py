@@ -101,13 +101,13 @@ def get_unique_locations(stream):
 
 ### Function to convert from ObsPy UTCDateTime objects to Pandas Timestamp objects
 def utcdatetime_to_timestamp(utcdatetime):
-    timestamp = to_datetime(utcdatetime.datetime)
+    timestamp = to_datetime(utcdatetime.datetime, utc=True)
 
     return timestamp
 
 ### Function to convert from Pandas Timestamp objects to ObsPy UTCDateTime objects
 def timestamp_to_utcdatetime(timestamp):
-    utcdatetime = UTCDateTime(to_datetime(timestamp).to_pydatetime())
+    utcdatetime = UTCDateTime(to_datetime(timestamp, utc = True).to_pydatetime())
 
     return utcdatetime
 
@@ -182,33 +182,47 @@ def get_borehole_coords():
     return bh_df
 
 # Get the days of the geophone deployment
-def get_geophone_days(format = "string"):
+def get_geophone_days():
     inpath = join(ROOTDIR_GEO, "days.csv")
     days_df = read_csv(inpath)
     days = days_df["day"].values
-
-    if format == "timestamp":
-        days = to_datetime(days)
+    days = to_datetime(days, utc=True)
 
     return days
 
 # Get the days of the hydrophone deployment
-def get_hydrophone_days(format = "string"):
+def get_hydrophone_days():
     inpath = join(ROOTDIR_HYDRO, "hydrophone_days.csv")
     days_df = read_csv(inpath)
     days = days_df["day"].values
-
-    if format == "timestamp":
-        days = to_datetime(days)
+    days = to_datetime(days, utc=True)
 
     return days
 
 # Function to get the sunrise and sunset times for the geophone deployment
 def get_geo_sunrise_sunset_times():
     inpath = SUNRISE_SUNSET_PATH
-    times_df = read_csv(inpath, index_col=0, date_format = "%Y-%m-%d %H:%M:%S")
+    times_df = read_csv(inpath, index_col=0)
+
+    # Convert the time columns to Pandas Timestamp objects
+    times_df.index = to_datetime(times_df.index, utc=True)
+    times_df["sunrise"] = to_datetime(times_df["sunrise"], utc=True)
+    times_df["sunset"] = to_datetime(times_df["sunset"], utc=True)
 
     return times_df
+
+# Determine if a time is during the day or night
+def is_daytime(time, times_df):
+    begin_of_day = time.replace(hour=0, minute=0, second=0, microsecond=0)
+    # print(begin_of_day)
+    # print(type(times_df.loc[begin_of_day, "sunrise"]))
+    sunrise = times_df.loc[begin_of_day, "sunrise"]
+    sunset = times_df.loc[begin_of_day, "sunset"]
+
+    if time >= sunrise and time <= sunset:
+        return True
+    else:
+        return False
 
 # Get the temperature and barometric data
 def get_baro_temp_data():
@@ -324,7 +338,7 @@ def reltimes_to_timestamps(reltimes, starttime):
 
 # Assemble a time axis of DateTimeIndex type from integers representing nanoseconds since the Unix epoch
 def assemble_timeax_from_ints(starttime, num_time, time_step):
-    starttime = to_datetime(starttime, unit='ns') 
+    starttime = to_datetime(starttime, unit='ns', utc=True)
     timeax = date_range(start=starttime, periods=num_time, freq=f'{time_step}ns')
 
     return timeax

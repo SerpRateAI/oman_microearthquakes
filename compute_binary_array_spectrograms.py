@@ -1,4 +1,4 @@
-# Compute binary array spectrograms from spectral peaks
+# Compute binary array spectrograms from spectral peak counts
 from os.path import join
 from time import time
 from numpy import bool_, linspace, zeros
@@ -8,54 +8,67 @@ from multiprocessing import Pool
 
 from utils_basic import SPECTROGRAM_DIR as indir
 from utils_basic import get_geophone_days
-from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, get_spec_peak_time_freq_inds, read_spectral_peak_counts, save_binary_spectrogram
+from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, get_spec_peak_time_freq_inds, read_spec_peak_array_counts, save_binary_spectrogram
 
 # Inputs
 # Data
-window_length = 1.0
+# Spectrogram computation
+window_length = 60.0
 overlap = 0.0
 downsample = False
 downsample_factor = 60
+
+# Spectral peak detection
 prom_threshold = 10
-rbw_threshold = 0.2
+rbw_threshold = 3.0
 
-min_freq = None
-max_freq = 200.0
+min_freq_peak = None
+max_freq_peak = 200.0
 
-count_threshold = 4
-
-file_ext_in = "h5"
+count_threshold = 9
 
 # Binary spectrogram
 num_process = 32
 
-min_freq = 0.0
-max_freq = 200.0
+min_freq_bin = 0.0
+max_freq_bin = 200.0
 
 time_interval = "1s"
 freq_interval = 1.0
 
 outdir = indir
 
-# Plotting
-starttime_plot = "2020-01-13T20:00:00"
-endtime_plot = "2020-01-13T21:00:00"
+# Print the inputs
+print(f"### Computing binary array spectrograms from spectral peak counts in {num_process} processes ###")
+print(f"Window length: {window_length} s")
+print(f"Overlap: {overlap}")
+print(f"Downsample: {downsample}")
 
-date_format = "%Y-%m-%d %H:%M:%S"
-major_time_spacing = "15min"
-minor_time_spacing = "5min"
+if downsample:
+    print(f"Downsample factor: {downsample_factor}")
 
-size_scale = 30
+print(f"Reverse-bandwidth threshold: {rbw_threshold} 1/Hz")
+print(f"Prominence threshold: {prom_threshold} dB")
+print(f"Frequency range: {min_freq_peak} - {max_freq_peak} Hz")
+print("")
+
+print(f"Count threshold: {count_threshold}")
+print("")
+
+print(f"Frequency range for binary spectrogram: {min_freq_bin} - {max_freq_bin} Hz")
+print(f"Time interval: {time_interval}")
+print(f"Frequency interval: {freq_interval} Hz")
+
 
 # Read the spectral-peak count file
 print("Reading spectral-peak count file...")
 suffix_spec = get_spectrogram_file_suffix(window_length, overlap, downsample, downsample_factor = downsample_factor)
-suffix_peak = get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = min_freq, max_freq = max_freq)
+suffix_peak = get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = min_freq_peak, max_freq = max_freq_peak)
 
-filename_in = f"geo_spectral_peak_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.{file_ext_in}"
+filename_in = f"geo_spectral_peak_array_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.h5"
 inpath = join(indir, filename_in)
 
-count_df = read_spectral_peak_counts(inpath)
+count_df = read_spec_peak_array_counts(inpath)
 num_count = len(count_df)
 print(f"Read {num_count} spectral-peak counts.")
 print("Done.")
@@ -63,13 +76,13 @@ print("Done.")
 # Construct the time and frequency axes
 print("Constructing time and frequency axes...")
 days = get_geophone_days()
-starttime = Timestamp(days[0]).replace(hour = 0, minute = 0, second = 0, microsecond = 0)
-endtime  = Timestamp(days[-1]).replace(hour = 23, minute = 59, second = 59, microsecond = 999999)
+starttime = days[0].replace(hour = 0, minute = 0, second = 0, microsecond = 0)
+endtime  = days[-1].replace(hour = 23, minute = 59, second = 59, microsecond = 999999)
 timeax = date_range(starttime, endtime, freq = time_interval)
 num_time = len(timeax)
 
-num_freq = int((max_freq - min_freq) / freq_interval) + 1
-freqax = linspace(min_freq, max_freq, num_freq)
+num_freq = int((max_freq_bin - min_freq_bin) / freq_interval) + 1
+freqax = linspace(min_freq_bin, max_freq_bin, num_freq)
 print("Done.")
 
 # Divide the spectral-peak counts into chunks for parallel processing
@@ -103,7 +116,7 @@ print("Done.")
 
 # Save the binary spectrograms
 print("Saving the binary spectrograms...")
-filename_out = f"geo_binary_spectrogram_{suffix_spec}_{suffix_peak}_count{count_threshold}.h5"
+filename_out = f"geo_binary_array_spectrogram_{suffix_spec}_{suffix_peak}_count{count_threshold}.h5"
 outpath = join(outdir, filename_out)
 
 save_binary_spectrogram(timeax, freqax, data, outpath)

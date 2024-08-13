@@ -6,7 +6,7 @@ from pandas import Timedelta
 from matplotlib.pyplot import subplots
 
 from utils_basic import SPECTROGRAM_DIR as indir, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime
-from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_spectral_peak_counts
+from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_spec_peak_array_counts
 from utils_plot import plot_cum_freq_fractions, save_figure
 from multiprocessing import Pool
 
@@ -17,48 +17,24 @@ overlap = 0.0
 downsample = False
 downsample_factor = 60
 
-# Spectral peaks
+# Spectral-peak detection
 prom_threshold = 10.0
 rbw_threshold = 3.0
 
 min_freq_peak = None
 max_freq_peak = 200
 
-file_ext_in = "h5"
-
-# Grouping
+# Spectral-peak counting
 count_threshold = 9
-
-# Plotting
-min_freq_main_plot = 0.0
-max_freq_main_plot = 200.0
-
-linewidth_main = 0.1
-marker_size_main = 1.0
-
-major_freq_spacing_main = 20.0
-num_minor_freq_ticks_main = 10
-
-min_freq_inset1_plot = 22.0
-max_freq_inset1_plot = 27.0
-
-min_freq_inset2_plot = 35.0
-max_freq_inset2_plot = 40.0
-
-linewidth_inset = 1.0
-marker_size_inset = 10.0
-
-major_freq_spacing_inset = 1.0
-num_minor_freq_ticks_inset = 10
 
 # Read the spectral peak counts
 print("Reading the spectral peak counts...")
 suffix_spec = get_spectrogram_file_suffix(window_length, overlap, downsample, downsample_factor = downsample_factor)
 suffix_peak = get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = min_freq_peak, max_freq = max_freq_peak)
 
-filename_in = f"geo_spectral_peak_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.{file_ext_in}"
+filename_in = f"geo_spectral_peak_array_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}.h5"
 inpath = join(indir, filename_in)
-count_df = read_spectral_peak_counts(inpath)
+count_df = read_spec_peak_array_counts(inpath)
 print(f"Read {count_df.shape[0]:d} spectral peaks.")
 print("Done.")
 
@@ -82,14 +58,14 @@ cum_count_df_freq_sorted['fraction'] = cum_count_df_freq_sorted['count'] / total
 # Save the results to file
 print("Saving the cumulative spectral-peak counts and fractions...")
 print("Saving the count-sorted dataframe...")
-filename_out = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_count_sorted.csv"
+filename_out = f"geo_spectral_peak_time_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_count_sorted.csv"
 outdir = indir
 outpath = join(outdir, filename_out)
 cum_count_df_count_sorted.to_csv(outpath)
 print(f"Saved to {outpath}.")
 
 print("Saving the frequency-sorted dataframe...")
-filename_out = f"geo_spec_peak_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_freq_sorted.csv"
+filename_out = f"geo_spectral_peak_time_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_freq_sorted.csv"
 outdir = indir
 outpath = join(outdir, filename_out)
 cum_count_df_freq_sorted.to_csv(outpath)
