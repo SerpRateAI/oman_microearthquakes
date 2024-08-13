@@ -5,6 +5,7 @@ from numpy import bool_, linspace, zeros
 from pandas import Timestamp
 from pandas import date_range
 from multiprocessing import Pool
+import h5py
 
 from utils_basic import SPECTROGRAM_DIR as indir
 from utils_basic import get_geophone_days
@@ -14,14 +15,14 @@ from utils_plot import plot_geo_total_psd_to_bin_array_spectrogram, save_figure
 # Inputs
 # Spectrograms
 station_plot = "A01"
-window_length = 1.0
+window_length = 60.0 #1.0
 overlap = 0.0
 downsample = False
 downsample_factor = 60
 
 # Peak-finding
 prom_threshold = 10
-rbw_threshold = 0.2
+rbw_threshold = 3.0 #0.2
 min_freq = None
 max_freq = 200.0
 
