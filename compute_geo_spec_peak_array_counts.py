@@ -18,8 +18,8 @@ overlap = 0.0
 downsample = False
 downsample_factor = 60
 
-# Peak-finding
-prom_threshold = 10
+# Spectral peak detection
+prom_threshold = 15.0
 rbw_threshold = 3.0
 
 min_freq_peak = None

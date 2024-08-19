@@ -19,7 +19,7 @@ downsample = False
 downsample_factor = 60
 
 # Spectral peak detection
-prom_threshold = 10
+prom_threshold = 15.0
 rbw_threshold = 3.0
 
 min_freq_peak = None

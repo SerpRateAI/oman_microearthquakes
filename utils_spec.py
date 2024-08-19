@@ -4,9 +4,9 @@ from scipy.fft import fft, fftfreq
 from scipy.signal import find_peaks, iirfilter, sosfilt, freqz
 from scipy.signal.windows import hann
 from scipy.interpolate import RegularGridInterpolator
-from numpy import abs, amax, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, log10, linspace, amax, median, amin, nan, ones, pi, savez, zeros
-from pandas import Series, DataFrame, DatetimeIndex, Timedelta, Timestamp
-from pandas import concat, cut, date_range, read_csv, read_hdf, to_datetime
+from numpy import abs, amax, arange, array, column_stack, concatenate, convolve, cumsum, delete, interp, load, log10, linspace, amax, median, amin, nan, ones, pi, savez, zeros
+from pandas import Series, DataFrame, DatetimeIndex, IntervalIndex, Timedelta, Timestamp
+from pandas import concat, crosstab, cut, date_range, read_csv, read_hdf, to_datetime
 from matplotlib.pyplot import subplots, get_cmap
 from h5py import File, special_dtype
 from multitaper import MTSpec
@@ -15,6 +15,7 @@ from skimage.morphology import remove_small_objects
 
 from utils_basic import ALL_COMPONENTS, GEO_COMPONENTS
 from utils_basic import SPECTROGRAM_DIR, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO
+from utils_basic import WATER_HEIGHT
 from utils_basic import assemble_timeax_from_ints, convert_boolean, datetime2int, int2datetime, power2db, reltimes_to_timestamps, str2timestamp
 from utils_preproc import read_and_process_day_long_geo_waveforms
 
@@ -1606,27 +1607,27 @@ def get_hydro_spec_locations(header_group):
 
     return locations
 
-# Read detected spectral peaks from a CSV or HDF file
-def read_spectral_peaks(inpath, **kwargs):
-    # If the file format is not given, infer it from the file extension
-    if "file_format" in kwargs:
-        file_format = kwargs["file_format"]
-    else:
-        _, file_format = splitext(inpath)
-        file_format = file_format.replace(".", "")
+# # Read detected spectral peaks from a CSV or HDF file
+# def read_spectral_peaks(inpath, **kwargs):
+#     # If the file format is not given, infer it from the file extension
+#     if "file_format" in kwargs:
+#         file_format = kwargs["file_format"]
+#     else:
+#         _, file_format = splitext(inpath)
+#         file_format = file_format.replace(".", "")
 
-    # print(file_format)
+#     # print(file_format)
         
-    if file_format == "csv":
-        peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
-    elif file_format == "h5" or file_format == "hdf":
-        peak_df = read_hdf(inpath, key = "peaks")
-    else:
-        raise ValueError("Error: Invalid file format!")
+#     if file_format == "csv":
+#         peak_df = read_csv(inpath, index_col = 0, parse_dates = ["time"])
+#     elif file_format == "h5" or file_format == "hdf":
+#         peak_df = read_hdf(inpath, key = "peaks")
+#     else:
+#         raise ValueError("Error: Invalid file format!")
 
-    peak_df["time"] = peak_df["time"].dt.tz_localize("UTC")
+#     peak_df["time"] = peak_df["time"].dt.tz_localize("UTC")
  
-    return peak_df
+#     return peak_df
 
 # Extract a stationary resonance from the spectral-peak data of a geophone station
 def extract_stationary_resonance(peak_df, array_count_df, timeax, freqax, min_patch_size = 3):
@@ -1957,7 +1958,52 @@ def save_binary_spectrogram(timeax, freqax, data, outpath):
 
     print(f"Binary array spectrogram saved to {outpath}")
 
-###### Handling harmonic data tables
+# Compute the probablistic power spectral density of the frequency-power data in a DataFrame
+def get_prob_psd(psd_df, min_freq = None, max_freq = None, freq_bin_width = 0.1, min_db = None, max_db = None, db_bin_width = 1.0):
+    # If the frequency and power ranges are not given, use the minimum and maximum values in the DataFrame
+    if min_freq is None:
+        min_freq = psd_df["frequency"].min()
+    
+    if max_freq is None:
+        max_freq = psd_df["frequency"].max()
+
+    if min_db is None:
+        min_db = psd_df["power"].min()
+
+    if max_db is None:
+        max_db = psd_df["power"].max()
+
+    # Define the bins
+    bin_edges_db = arange(min_db, max_db + db_bin_width, db_bin_width)
+    bin_edges_freq = arange(min_freq, max_freq + freq_bin_width, freq_bin_width)
+
+    # print(f"Number of bins for power: {len(bin_edges_db) - 1}")
+    # print(f"Number of bins for frequency: {len(bin_edges_freq) - 1}")
+
+    # Ensure consistent use of `cut` parameters
+    psd_df["power_bin"] = cut(psd_df["power"], bin_edges_db, right=False, include_lowest=True)
+    psd_df["frequency_bin"] = cut(psd_df["frequency"], bin_edges_freq, right=False, include_lowest=True)
+
+    # Create contingency tables
+    count_table_df = crosstab(psd_df["frequency_bin"], psd_df["power_bin"])
+
+    # Reindex the contingency tables
+    interval_index_db = IntervalIndex(psd_df["power_bin"].cat.categories)
+    interval_index_freq = IntervalIndex(psd_df["frequency_bin"].cat.categories)
+    count_table_df = count_table_df.reindex(index=interval_index_freq, columns=interval_index_db, fill_value=0)
+
+    # Convert to percentage
+    percent_table_df = count_table_df / count_table_df.sum().sum() * 100
+
+    # Convert to probability density
+    percent_table_df = percent_table_df / (freq_bin_width * db_bin_width)
+
+    # Transpose to make the frequency bins the columns
+    percent_table_df = percent_table_df.T
+
+    return bin_edges_freq, bin_edges_db, percent_table_df
+
+###### Handling harmonic data tables ######
 def read_harmonic_data_table(inpath):
     harmo_df = read_csv(inpath, index_col = "name", converters = {"detected": convert_boolean})
 
@@ -1986,6 +2032,20 @@ def vel2disp(vel, sampling_rate=1000.0):
     disp = cumsum(vel) / sampling_rate
 
     return disp
+
+###### Borehole organpipe modes ######
+# Calculate the predicted frequencies of the organpipe modes
+def get_organpipe_freqs(orders, sound_speed = 1500.0):
+    water_height = WATER_HEIGHT
+
+    freqs = []
+    for order in orders:
+        wavelength = water_height / order * 4
+        freq = sound_speed / wavelength
+        freqs.append(freq)
+
+    return freqs
+
 
 ###### Basic functions ######
 # Get the upper and lower bounds of a fraction peak

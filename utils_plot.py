@@ -2424,7 +2424,7 @@ def add_station_map(ax,
     return ax
 
 # Add a colorbar to the plot 
-def add_colorbar(fig, color, label, position, orientation="horizontal", axis_label_size=12, tick_label_size=10, major_tick_spacing=10):
+def add_colorbar(fig, color, label, position, orientation="vertical", axis_label_size=12, tick_label_size=10, major_tick_spacing=10):
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
     cbar.set_label(label, fontsize=axis_label_size)

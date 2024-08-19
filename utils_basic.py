@@ -83,6 +83,10 @@ HAMMER_DATE = "2020-01-25"
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
 DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to microPascals
 
+BOREHOLE_DEPTH = 382.0 # Depth of the borehole in meters
+WATER_TABLE = 15.0 # Depth to the wavter table in meters
+WATER_HEIGHT = BOREHOLE_DEPTH - WATER_TABLE # Height of the water column in meters
+
 ## Classes
 
 ### Functions to get unique stations from a stream

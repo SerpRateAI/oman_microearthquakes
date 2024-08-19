@@ -23,8 +23,9 @@ downsample_factor = 60
 
 # Finding peaks
 num_process = 32
+prom_threshold = 15.0
 rbw_threshold = 3.0
-prom_threshold = 10.0
+
 min_freq = None
 max_freq = 200.0
 
