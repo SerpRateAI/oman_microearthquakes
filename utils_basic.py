@@ -18,6 +18,7 @@ ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
 ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
 SPECTROGRAM_DIR = "/fp/projects01/ec332/data/spectrograms"
+SPECTROGRAM_FIGURES_DIR = "/fp/projects01/ec332/data/figures/totalgeospecs"
 FIGURE_DIR = "/fp/projects01/ec332/data/figures"
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
