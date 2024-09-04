@@ -40,7 +40,7 @@ else:
     threshold = 500
 
 # Initialize Constant Parameters
-time_delta = timedelta(seconds=64)
+time_delta = timedelta(seconds=window)
 window_length = 1.0 
 overlap = 0.0
 downsample = False

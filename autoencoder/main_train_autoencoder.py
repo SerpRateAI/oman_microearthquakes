@@ -40,7 +40,7 @@ window = int(sys.argv[1])
 threshold = int(sys.argv[2])
 
 # Set hyperparameters
-if len(sys.argv) == 7:
+if len(sys.argv) >= 7:
     num_epochs = int(sys.argv[3])
     weight = int(sys.argv[4])
     learning_rate = float(sys.argv[5])
@@ -50,6 +50,11 @@ else:
     weight = 100
     learning_rate = .0015
     batch_size = 128
+
+if len(sys.argv) >= 8:
+    bottle_filters = int(sys.argv[7])
+else: 
+    bottle_filters = 2
 
 # Setting seed for reproducibility
 seed = 42 
@@ -86,12 +91,12 @@ class ConvAutoencoder(nn.Module):
             nn.Conv2d(16, 8, kernel_size=5, stride=2, padding=2), 
             nn.Conv2d(8, 8, kernel_size=5, padding=2), 
             nn.ReLU(True),
-            nn.Conv2d(8, 2, kernel_size=5, stride=2, padding=2),
+            nn.Conv2d(8, bottle_filters, kernel_size=5, stride=2, padding=2),
         )
         
         # Decoder
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(2, 8, kernel_size=5, stride=2, padding=2, output_padding=1),
+            nn.ConvTranspose2d(bottle_filters, 8, kernel_size=5, stride=2, padding=2, output_padding=1),
             nn.Conv2d(8, 8, kernel_size=5, padding=2), 
             nn.ReLU(True),
             nn.ConvTranspose2d(8, 16, kernel_size=5, stride=2, padding=2, output_padding=1),
@@ -164,7 +169,7 @@ for epoch in range(num_epochs):
 print("Training complete.")
 
 # Save Model
-model_save_path = f'models/file_{window}_{threshold}_model_{num_epochs}_{pos_weight}_{learning_rate}_{batch_size}.pth'
+model_save_path = f'models/file_{window}_{threshold}_model_{num_epochs}_{pos_weight}_{learning_rate}_{batch_size}_{bottle_filters}.pth'
 torch.save(model.state_dict(), model_save_path)
 
 # Find loss for validation data
@@ -181,4 +186,4 @@ for epoch in range(num_epochs):
     val_loss_list.append(avg_loss)
 print("Validation Complete")
 
-np.savez(f"model_loss/file_{window}_{threshold}_model_{num_epochs}_{pos_weight}_{learning_rate}_{batch_size}.npz", train_loss=np.array(train_loss_list), val_loss= np.array(val_loss_list))
+np.savez(f"model_loss/file_{window}_{threshold}_model_{num_epochs}_{pos_weight}_{learning_rate}_{batch_size}_{bottle_filters}.npz", train_loss=np.array(train_loss_list), val_loss= np.array(val_loss_list))

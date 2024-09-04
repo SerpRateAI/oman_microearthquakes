@@ -5,10 +5,10 @@ import numpy as np
 from sklearn.manifold import TSNE
 from bokeh.plotting import figure, output_file, save, show
 from bokeh.models import ColumnDataSource, HoverTool
-from PIL import Image
 import base64
 from io import BytesIO
 import matplotlib.pyplot as plt
+from PIL import Image, ImageOps
 
 # Import from parent directory
 sys.path.append(os.path.abspath('..'))
@@ -24,6 +24,10 @@ learning_rate = float(sys.argv[5])
 batch_size = int(sys.argv[6])
 perplexity = int(sys.argv[7])
 station = str(sys.argv[8])
+if len(sys.argv) == 10:
+    bottle = str(sys.argv[9])
+else:
+    bottle = 2
 init = 'random'
 
 # Load latent spaces 
@@ -53,6 +57,7 @@ full_power_images = []
 for binary_spec, full_power_spec in zip(bin_specs, full_power_spectrograms):
     # Encode binary spectrogram
     img = Image.fromarray((binary_spec * 255).astype(np.uint8))
+    img = ImageOps.flip(img)
     buffered = BytesIO()
     img.save(buffered, format="PNG")
     img_base64 = base64.b64encode(buffered.getvalue()).decode()
@@ -60,6 +65,7 @@ for binary_spec, full_power_spec in zip(bin_specs, full_power_spectrograms):
 
     # Plot the full_power_spec object and convert it to an image
     fig, ax = plt.subplots()
+    ax.set_title(str(full_power_spec.times[0])[0:10])
     full_power_spec.plot(ax=ax, min_db=-10, max_db=10)
 
     # Convert the plot to a PNG image and encode it as base64
@@ -111,7 +117,7 @@ hover = HoverTool(tooltips="""
 p.add_tools(hover)
 
 # Save the plot as an HTML file
-output_file(f"interactive_tsne_plots/file_{station}_{window}_{threshold}_model_{num_epochs}_{weight}_{learning_rate}_{batch_size}_cluster_{perplexity}_{init}.html")
+output_file(f"interactive_tsne_plots/file_{station}_{window}_{threshold}_model_{num_epochs}_{weight}_{learning_rate}_{batch_size}_{bottle}_cluster_{perplexity}_{init}.html")
 save(p)
 
 # Show the plot in a browser (if running locally)

@@ -36,6 +36,11 @@ weight = int(sys.argv[4])
 learning_rate = float(sys.argv[5])
 batch_size = int(sys.argv[6])
 
+if len(sys.argv):
+    bottle = sys.argv[7]
+else:
+    bottle = 2
+
 # Load binary spectrograms and convert to torch object
 bin_specs_arr = np.load(f'spectrograms/bin_spec_{window}_{threshold}.npz')['spectrograms']
 data = torch.tensor(bin_specs_arr, dtype=torch.float32)
@@ -53,10 +58,10 @@ class ConvAutoencoder(nn.Module):
             nn.Conv2d(16, 8, kernel_size=5, stride=2, padding=2),
             nn.Conv2d(8, 8, kernel_size=5, padding=2),
             nn.ReLU(True),
-            nn.Conv2d(8, 2, kernel_size=5, stride=2, padding=2),
+            nn.Conv2d(8, bottle, kernel_size=5, stride=2, padding=2),
         )
         self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(2, 8, kernel_size=5, stride=2, padding=2, output_padding=1),
+            nn.ConvTranspose2d(bottle, 8, kernel_size=5, stride=2, padding=2, output_padding=1),
             nn.Conv2d(8, 8, kernel_size=5, padding=2),
             nn.ReLU(True),
             nn.ConvTranspose2d(8, 16, kernel_size=5, stride=2, padding=2, output_padding=1),
@@ -97,5 +102,5 @@ all_latent_spaces = np.array(all_latent_spaces)
 print(f'Shape of all_latent_spaces: {all_latent_spaces.shape}')
 
 # Save the latent spaces to a .npz file
-np.savez(f"encoded_latent_spaces/file_{window}_{threshold}_model_{num_epochs}_{weight}_{learning_rate}_{batch_size}.npz", all_latent_spaces=all_latent_spaces)
+np.savez(f"encoded_latent_spaces/file_{window}_{threshold}_model_{num_epochs}_{weight}_{learning_rate}_{batch_size}_{bottle}.npz", all_latent_spaces=all_latent_spaces)
 print("Latent spaces saved to .npz file.")
