@@ -5,62 +5,92 @@ from scipy.signal import convolve, convolve2d
 from pywt import wavelist, scale2frequency, cwt
 
 from utils_basic import SAMPLING_RATE_GEO, GEO_COMPONENTS, get_datetime_axis_from_trace, get_unique_stations, power2db
-from utils_basic import WAVELET_COMPONENT_PAIRS as component_pairs
+from utils_basic import COMPONENT_PAIRS as component_pairs
 
 ## Class for storing the wavelet specgtra of multiple traces
-class WaveletSpectra:
+class StreamCWT:
     def __init__(self):
-        self.spectra = []
+        self.traces = []
 
     def __len__(self):
-        return len(self.spectra)
+        return len(self.traces)
 
     def __getitem__(self, index):
-        return self.spectra[index]
+        return self.traces[index]
 
     def __setitem__(self, index, value):
-        self.spectra[index] = value
+        self.traces[index] = value
 
     def __delitem__(self, index):
-        del self.spectra[index]
+        del self.traces[index]
 
-    def append(self, spectrum):
-        if not isinstance(spectrum, WaveletSpectrum):
+    def append(self, trace_cwt):
+        if not isinstance(trace_cwt, TraceCWT):
             raise TypeError("Invalid spectrum format!")
         
-        self.spectra.append(spectrum)
+        self.traces.append(trace_cwt)
 
-    def extend(self, spectra):
-        if not isinstance(spectra, WaveletSpectra):
+    def extend(self, stream_cwt):
+        if not isinstance(stream_cwt, StreamCWT):
             raise TypeError("Invalid spectra format!")
         
-        self.spectra.extend(spectra)
+        self.traces.extend(stream_cwt)
 
-    def remove(self, spectrum):
-        self.spectra.remove(spectrum)
+    def remove(self, trace_cwt):
+        self.traces.remove(trace_cwt)
 
     def clear(self):
-        self.spectra.clear()
+        self.traces.clear()
 
-    def get_stations(self):
-        stations = list(set([spectrum.station for spectrum in self.spectra]))
+    def get_unique_stations(self):
+        stations = list(set([trace.station for trace in self.traces]))
         stations.sort()
 
         return stations
-    
-    def get_spectra(self, station, component=None, location=None):
-        if component is None:
-            if location is None:
-                spectra = [spectrum for spectrum in self.spectra if spectrum.station == station]
-            else:
-                spectra = [spectrum for spectrum in self.spectra if spectrum.station == station and spectrum.location == location]
-        else:
-            if location is None:
-                spectra = [spectrum for spectrum in self.spectra if spectrum.station == station and spectrum.component == component]
-            else:
-                spectra = [spectrum for spectrum in self.spectra if spectrum.station == station and spectrum.component == component and spectrum.location == location]
 
-        return spectra
+    # Get the total power of the 3 components of each stagtion
+    def get_total_power(self, db=False):
+        stations = self.get_unique_stations()
+        power_dict = {}
+        for station in stations:
+            stream_station = self.select(stations = [station])
+
+            if len(stream_station) < 3:
+                print(f"Skipping station {station} due to insufficient number of components!")
+                continue
+
+            total_power = stream_station[0].get_power() + stream_station[1].get_power() + stream_station[2].get_power()
+
+            if db:
+                total_power = power2db(total_power)
+
+            times = stream_station[0].times
+            freqs = stream_station[0].freqs
+            power_dict[station] = {"times": times, "freqs": freqs, "power": total_power}
+
+        return power_dict
+    
+    def select(self, stations = None, components=None, locations=None):
+        if stations is None and components is None and locations is None:
+            return self
+        
+        stream_cwt = StreamCWT()
+        for trace in self.traces:
+            if stations is not None:
+                if trace.station not in stations:
+                    continue
+            
+            if components is not None:
+                if trace.component not in components:
+                    continue
+            
+            if locations is not None:
+                if trace.location not in locations:
+                    continue
+            
+            stream_cwt.append(trace)
+
+        return stream_cwt
 
 ## Class for storing the station cross-spectra
 class StationCrossSpectra:
@@ -150,7 +180,7 @@ class ComponentCrossSpectra:
         return spectra
 
 ## Class for storing the wavelet spectrum and associated parameters of a trace
-class WaveletSpectrum:
+class TraceCWT:
     def __init__(self, station, location, component, times, freqs, scales, data, wavelet):
         self.station = station
         self.location = location
@@ -161,10 +191,10 @@ class WaveletSpectrum:
         self.data = data
         self.wavelet = wavelet
 
-    def get_power(self, db=True, reference_type="mean"):
+    def get_power(self, db=False):
         power = abs(self.data) ** 2
         if db:
-            power = power2db(power, reference_type=reference_type)
+            power = power2db(power)
         
         return power
     
@@ -294,7 +324,7 @@ def get_stream_cross_component_spectra(stream, wavelet="cmorl", bandwidth=10.0, 
 ## Function for getting the continous wavelet transform of a stream
 ## Wrapper for get_trace_cwt()
 def get_stream_cwt(stream, wavelet="cmorl", bandwidth=10.0, center_freq=1.0, scales=range(1, 128)):
-    cwt_specs = WaveletSpectra()
+    cwt_specs = StreamCWT()
     for trace in stream:
         cwt_spec = get_trace_cwt(trace, wavelet, bandwidth, center_freq, scales)
         cwt_specs.append(cwt_spec)
@@ -307,16 +337,16 @@ def get_trace_cwt(trace, wavelet="cmor", bandwidth=10.0, center_freq=1.0, scales
     component = trace.stats.component
     location = trace.stats.location
     signal = trace.data
-    timeax = get_timeax_from_trace(trace)
+    timeax = get_datetime_axis_from_trace(trace)
     sampling_rate = trace.stats.sampling_rate
 
     wavelet = f"{wavelet}{bandwidth}-{center_freq}"
     cwt_mat, freqs = cwt(signal, scales, wavelet, sampling_period=1 / sampling_rate)
 
     cwt_dict = {"station": station, "location":location, "component": component, "times": timeax, "freqs": freqs, "scales": scales, "data": cwt_mat, "wavelet": wavelet}
-    cwt_spec = WaveletSpectrum(**cwt_dict)
+    spec_cwt = TraceCWT(**cwt_dict)
 
-    return cwt_spec
+    return spec_cwt
 
 ## Function for computing the cross spectrum and coherence of a pair of CWT spectra
 ## Smoothing function is a Gaussian along the time axis that scales with scale and a boxcar along the frequency (scale) axis according to Mao et al. (2020)

@@ -12,7 +12,7 @@ from multiprocessing import Pool
 
 # Inputs
 # Spectrogram
-window_length = 60.0
+window_length = 300.0
 overlap = 0.0
 downsample = False
 downsample_factor = 60

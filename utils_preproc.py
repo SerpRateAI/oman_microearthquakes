@@ -1,24 +1,52 @@
 # Function and classes for reading and preprocessing waveforms
 
 from os.path import join
-from numpy import abs, array, mean, amax, amin, argmax
+from numpy import abs, nan
 from numpy.linalg import norm
 from scipy.stats import linregress
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, hilbert, iirpeak, filtfilt, lfilter
 from obspy import read, read_inventory, UTCDateTime, Stream
 from obspy.signal.cross_correlation import correlate_template
 from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 
 from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
-from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
-
-from utils_basic import get_geo_metadata, timestamp_to_utcdatetime, to_day_of_year
+from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_BROADBAND, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, BROADBAND_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
+from utils_basic import NUM_SEONCDS_IN_DAY
+from utils_basic import get_broadband_metadata, get_geo_metadata, timestamp_to_utcdatetime, str2list, str2timestamp
 
 # Read and preprocess day-long geophone waveforms
-def read_and_process_day_long_geo_waveforms(day, metadat = None, freqmin=None, freqmax=None, stations=None, components=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=None, all_components=True):
-    # Check if metadat is specified
-    if metadat is None:
-        metadat = get_geo_metadata()
+def read_and_process_day_long_geo_waveforms(day, 
+                                            metadata = None, stations = None, components = None, 
+                                            filter = False, zerophase=False, normalize=False,
+                                            decimate = False,
+                                            **kwargs):
+    # Check if the decimation factor is specified
+    if decimate:
+        if "decimate_factor" not in kwargs:
+            raise ValueError("Error: decimate_factor must be specified if decimate is True!")
+
+    # Check if the filter parameters are specified
+    if filter:
+        if "filter_type" not in kwargs:
+            raise ValueError("Error: filter_type must be specified if filter is True!")
+        else:
+            filter_type = kwargs["filter_type"]
+            if filter_type == "butter":
+                if "min_freq" not in kwargs:
+                    raise ValueError("Error: min_freq must be specified if filter_type is 'butter'!")
+
+                if "max_freq" not in kwargs:
+                    raise ValueError("Error: max_freq must be specified if filter_type is 'butter'!")
+            elif filter_type == "peak":
+                if "freq" not in kwargs:
+                    raise ValueError("Error: freq must be specified if filter_type is 'peak'!")
+
+                if "qf" not in kwargs:
+                    raise ValueError("Error: qf must be specified if filter_type is 'peak'!")
+
+    # Get the metadata
+    if metadata is None:
+        metadata = get_geo_metadata()
 
     # Read the waveforms
     print(f"Reading the waveforms for {day}")
@@ -34,10 +62,6 @@ def read_and_process_day_long_geo_waveforms(day, metadat = None, freqmin=None, f
             
             if stream is None:
                 print(f"Warning: No data found for {station}.{channel}!")
-                if all_components:
-                    break
-                else:
-                    continue
             else:
                 stream_station += stream
         
@@ -49,38 +73,100 @@ def read_and_process_day_long_geo_waveforms(day, metadat = None, freqmin=None, f
 
     # Process the waveforms
     print("Preprocessing the waveforms...")
-    if len(stream_in) < 3 and all_components:
+    if len(stream_in) < 3:
         return None
     else:
-        stream_proc = preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
-        return stream_proc
+        stream_proc = preprocess_geo_stream(stream_in, metadata, 
+                                            filter = filter, zerophase = zerophase, normalize = normalize,
+                                            decimate = decimate, **kwargs)
+
+    # Trim the waveforms to the begin and end of the day
+    sampling_rate = stream_proc[0].stats.sampling_rate
+    starttime = UTCDateTime(day)
+    endtime = starttime + NUM_SEONCDS_IN_DAY - 1 / sampling_rate
+    stream_proc.trim(starttime, endtime, pad = True, fill_value = nan)
+
+    for trace in stream_proc:
+        if trace.stats.starttime != starttime:
+            trace.stats.starttime = starttime
+        
+    return stream_proc
 
 # Read and preprocess day-long hydrophone waveforms
-def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, stations=None, locations=None, zerophase=False, corners=4, normalize=False, decimate=False, decimate_factor=None):
+def read_and_process_day_long_hydro_waveforms(day, 
+                                              loc_dict = None, stations = None,
+                                              filter = False, zerophase=False, normalize=False,
+                                              decimate=False,
+                                              **kwargs):
+
+    # Check if both the location dictionary and stations are specified
+    if loc_dict is not None and stations is not None:
+        raise ValueError("Error: Only one of loc_dict and stations can be specified!")
+
+    # Check if the decimation factor is specified
+    if decimate:
+        if "decimate_factor" not in kwargs:
+            raise ValueError("Error: decimate_factor must be specified if decimate is True!")
+
+    # Check if the filter parameters are specified
+    if filter:
+        if "filter_type" not in kwargs:
+            raise ValueError("Error: filter_type must be specified if filter is True!")
+        else:
+            filter_type = kwargs["filter_type"]
+            if filter_type == "butter":
+                if "min_freq" not in kwargs:
+                    raise ValueError("Error: min_freq must be specified if filter_type is 'butter'!")
+
+                if "max_freq" not in kwargs:
+                    raise ValueError("Error: max_freq must be specified if filter_type is 'butter'!")
+            elif filter_type == "peak":
+                if "freq" not in kwargs:
+                    raise ValueError("Error: freq must be specified if filter_type is 'peak'!")
+
+                if "qf" not in kwargs:
+                    raise ValueError("Error: qf must be specified if filter_type is 'peak'!")
 
     # Read the waveforms
-    print(f"Reading the waveforms for {day}")
-    stations_to_read = get_hydro_stations_to_read(stations)
-
     stream_in = Stream()
-    for station in stations_to_read:
-        stream_station = Stream()
-        locations_to_read = get_hydro_locations_to_read(station, locations)
+    if loc_dict is not None:
+        # Option One, read all station-location combinations in loc_dict
+        for station in loc_dict.keys():
+            locations = loc_dict[station]
+            for location in locations:
+                stream = read_day_long_hydro_waveforms(day, station, location)
+                
+                if stream is not None:
+                    stream_in += stream
+    else:
+        # Option Two, read all locations of the specified stations
+        stations = str2list(stations)
+        
+        for station in stations:
+            locations = get_hydro_locations_to_read(station)
+        
+            for location in locations:
+                stream = read_day_long_hydro_waveforms(day, station, location)
 
-        for location in locations_to_read:
-            stream = read_day_long_hydro_waveforms(day, station, location)
-            
-            if stream is None:
-                print(f"Warning: No data is read for {station}.{location}!")
-                continue
-            else:
-                stream_station += stream
-
-        stream_in += stream_station
+                if stream is not None:
+                    stream_in += stream
 
     # Process the waveforms
     print("Preprocessing the waveforms...")
-    stream_proc = preprocess_hydro_stream(stream_in, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+    stream_proc = preprocess_hydro_stream(stream_in, 
+                                          zerophase=zerophase, normalize=normalize,
+                                          filter = filter, decimate = decimate,
+                                          **kwargs)
+
+    # Trim the waveforms to the begin and end of the day
+    sampling_rate = stream_proc[0].stats.sampling_rate
+    starttime = UTCDateTime(day)
+    endtime = starttime + NUM_SEONCDS_IN_DAY - 1 / sampling_rate
+    stream_proc.trim(starttime, endtime, pad = True, fill_value = nan)
+
+    for trace in stream_proc:
+        if trace.stats.starttime != starttime:
+            trace.stats.starttime = starttime
 
     return stream_proc
 
@@ -88,10 +174,9 @@ def read_and_process_day_long_hydro_waveforms(day, freqmin=None, freqmax=None, s
 ## Window length is in second
 def read_and_process_windowed_geo_waveforms(starttime, 
                                             dur = None, endtime = None, 
-                                            metdat=None, 
-                                            min_freq = None, max_freq = None, 
+                                            metadata=None, 
                                             stations = None, components = None, 
-                                            zerophase = False, corners=4, normalize=False, 
+                                            filter = False, zerophase = False, normalize=False, 
                                             decimate=False, 
                                             all_components=True, **kwargs):
 
@@ -100,31 +185,40 @@ def read_and_process_windowed_geo_waveforms(starttime,
         raise ValueError("Error: Only one of endtime and dur can be specified!")
     
     # Check if meta data is specified
-    if metdat is None:
-        metdat = get_geo_metadata()
+    if metadata is None:
+        metadata = get_geo_metadata()
     
-    if not isinstance(starttime, Timestamp):
-        if type(starttime) is str:
-            starttime = Timestamp(starttime, tz="UTC")
-        else:
-            raise TypeError("Error: starttime must be a string or Pandas Timestamp object!")
+    starttime = str2timestamp(starttime)
 
     # Define the time window
     if endtime is not None:
-        if not isinstance(endtime, Timestamp):
-            if type(endtime) is str:
-                endtime = Timestamp(endtime, tz="UTC")
-            else:
-                raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
+        endtime = str2timestamp(endtime)
     elif dur is not None:
         endtime = starttime + Timedelta(seconds=dur)
 
     # Check if the decimation factor is specified
     if decimate:
-        if "decimate_factor" in kwargs:
-            decimate_factor = kwargs["decimate_factor"]
-        else:
+        if "decimate_factor" not in kwargs:
             raise ValueError("Error: decimate_factor must be specified if decimate is True!")
+
+    # Check if the filter parameters are specified
+    if filter:
+        if "filter_type" not in kwargs:
+            raise ValueError("Error: filter_type must be specified if filter is True!")
+        else:
+            filter_type = kwargs["filter_type"]
+            if filter_type == "butter":
+                if "min_freq" not in kwargs:
+                    raise ValueError("Error: min_freq must be specified if filter_type is 'butter'!")
+
+                if "max_freq" not in kwargs:
+                    raise ValueError("Error: max_freq must be specified if filter_type is 'butter'!")
+            elif filter_type == "peak":
+                if "freq" not in kwargs:
+                    raise ValueError("Error: freq must be specified if filter_type is 'peak'!")
+
+                if "qf" not in kwargs:
+                    raise ValueError("Error: qf must be specified if filter_type is 'peak'!")
 
 
     ### Read the waveforms
@@ -152,24 +246,87 @@ def read_and_process_windowed_geo_waveforms(starttime,
         else:
             print(f"Warning: Not all components read for {station}! The station is skipped.")
             continue
-
-    ### Process the waveforms
+    
     if len(stream_in) < 3 and all_components:
         return None
-    else:
-        stream_proc = preprocess_geo_stream(stream_in, metdat, min_freq, max_freq, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+    
+    # Preprocess the waveforms
+    stream_proc = preprocess_geo_stream(stream_in, metadata,
+                                        zerophase=zerophase, normalize=normalize,
+                                        filter = filter, decimate = decimate, 
+                                        **kwargs)
+
+    return stream_proc
+
+# Read and preprocess broadband waveform data in a time window
+def read_and_process_windowed_broadband_waveforms(stations, starttime,
+                                                    dur = None, endtime = None,
+                                                    metadata = None,
+                                                    freqmin = None, freqmax = None, 
+                                                    components = None, 
+                                                    zerophase = False, corners = 4, normalize = False, decimate = False, decimate_factor = 10):
+    
+        # Check if both endtime and dur are specified
+        if endtime is not None and dur is not None:
+            raise ValueError("Error: Only one of endtime and dur can be specified!")
+        
+        # Check if meta data is specified
+        if metadata is None:
+            metadata = get_broadband_metadata()
+        
+        if not isinstance(starttime, Timestamp):
+            if type(starttime) is str:
+                starttime = Timestamp(starttime, tz="UTC")
+            else:
+                raise TypeError("Error: starttime must be a Pandas Timestamp object!")
+    
+        # Define the time window
+        if endtime is not None:
+            if not isinstance(endtime, Timestamp):
+                if type(endtime) is str:
+                    endtime = Timestamp(endtime, tz="UTC")
+                else:
+                    raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
+        elif dur is not None:
+            endtime = starttime + Timedelta(seconds=dur)
+    
+        # Read the waveforms
+        channels_to_read = get_broadband_channels_to_read(components)
+
+        stream_in = Stream()
+        for station in stations:
+            stream_station = Stream()
+    
+            for channel in channels_to_read:
+                stream = read_broadband_waveforms_in_timewindow(starttime, endtime, station, channel)
+                
+                if stream is None:
+                    print(f"Warning: No data found for {station}.{channel}!")
+                    break
+                else:
+                    stream_station += stream
+            
+            if len(stream_station) == len(channels_to_read):
+                stream_in += stream_station
+            else:
+                print(f"Warning: Not all components read for {station}! The station is skipped.")
+                continue
+    
+        # Process the waveforms
+        stream_proc = preprocess_broadband_stream(stream_in, metadata, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+    
         return stream_proc
 
 # Read and preprocess hydrophone waveforms in a time window
 # Window length is in second
 def read_and_process_windowed_hydro_waveforms(starttime,
                                               dur = None, endtime = None, 
-                                              min_freq=None, max_freq=None, 
-                                              loc_dict = None, station = None,
-                                              zerophase=False, corners=4, normalize=False, 
-                                              decimate=False, decimate_factor=10):
+                                              loc_dict = None, stations = None,
+                                              filter = False, zerophase=False, normalize=False, 
+                                              decimate=False,
+                                              **kwargs):
     # Check if both the location dictionary and stations are specified
-    if loc_dict is None and station is None:
+    if loc_dict is not None and stations is not None:
         raise ValueError("Error: Only one of loc_dict and stations can be specified!")
     
     # Check if both endtime and dur are specified
@@ -191,11 +348,35 @@ def read_and_process_windowed_hydro_waveforms(starttime,
                 raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
     elif dur is not None:
         endtime = starttime + Timedelta(seconds=dur)
-    
-    # Read the waveforms
+
+    # Check if the decimation factor is specified
+    if decimate:
+        if "decimate_factor" not in kwargs:
+            raise ValueError("Error: decimate_factor must be specified if decimate is True!")
+
+    # Check if the filter parameters are specified
+    if filter:
+        if "filter_type" not in kwargs:
+            raise ValueError("Error: filter_type must be specified if filter is True!")
+        else:
+            filter_type = kwargs["filter_type"]
+            if filter_type == "butter":
+                if "min_freq" not in kwargs:
+                    raise ValueError("Error: min_freq must be specified if filter_type is 'butter'!")
+
+                if "max_freq" not in kwargs:
+                    raise ValueError("Error: max_freq must be specified if filter_type is 'butter'!")
+            elif filter_type == "peak":
+                if "freq" not in kwargs:
+                    raise ValueError("Error: freq must be specified if filter_type is 'peak'!")
+
+                if "qf" not in kwargs:
+                    raise ValueError("Error: qf must be specified if filter_type is 'peak'!")
+                
+    ### Read the waveforms
+    stream_in = Stream()
     if loc_dict is not None:
         # Option One, read all station-location combinations in loc_dict
-        stream_in = Stream()
         for station in loc_dict.keys():
             locations = loc_dict[station]
             for location in locations:
@@ -204,20 +385,23 @@ def read_and_process_windowed_hydro_waveforms(starttime,
                 if stream is not None:
                     stream_in += stream
     else:
+        stations = str2list(stations)
+
         # Option Two, read all locations of the specified station
-        if loc_dict is None:
-            loc_dict = HYDRO_LOCATIONS
-        locations = loc_dict[station]
+        for station in stations:
+            locations = get_hydro_locations_to_read(station)
+        
+            for location in locations:
+                stream = read_hydro_waveforms_in_timewindow(starttime, endtime, station, location)
 
-        stream_in = Stream()
-        for location in locations:
-            stream = read_hydro_waveforms_in_timewindow(starttime, endtime, station, location)
-
-            if stream is not None:
-                stream_in += stream
+                if stream is not None:
+                    stream_in += stream
 
     ### Process the waveforms
-    stream_proc = preprocess_hydro_stream(stream_in, min_freq, max_freq, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+    stream_proc = preprocess_hydro_stream(stream_in, 
+                                          zerophase=zerophase, normalize=normalize, 
+                                          filter = filter, decimate = decimate,
+                                          **kwargs)
 
     return stream_proc
     
@@ -463,6 +647,23 @@ def get_geo_channels_to_read(components):
 
     return channels_to_read
 
+# Get the list of broadband channels to read
+def get_broadband_channels_to_read(components):
+    if components is None:
+        components_to_read = BROADBAND_COMPONENTS
+    else:
+        if type(components) is not list:
+            if type(components) is str:
+                components_to_read = [components]
+            else:
+                raise TypeError("Error: component must be a list of strings!")
+        else:
+            components_to_read = components
+
+    channels_to_read = [f"HH{component}" for component in components_to_read]
+
+    return channels_to_read
+
 ## Get the list of hydrophone stations to read
 def get_hydro_stations_to_read(stations):
     if stations is None:
@@ -560,6 +761,24 @@ def read_geo_waveforms_in_timewindow(starttime, endtime, station, channel, rootd
     
         return stream
 
+# Read the broadband waveforms in a timewindow recorded on specific channels of a specific station
+def read_broadband_waveforms_in_timewindow(starttime, endtime, station, channel, rootdir=ROOTDIR_BROADBAND):
+    
+        ### Find the day of the starttime
+        day = starttime.strftime("%Y-%m-%d")
+    
+        ### Read the waveforms
+        pattern = join(rootdir, day, f"*{station}*{channel}.mseed")
+        starttime = timestamp_to_utcdatetime(starttime)
+        endtime = timestamp_to_utcdatetime(endtime)
+        try:    
+            stream = read(pattern, starttime=starttime, endtime=endtime)
+        except:
+            print(f"Warning: {pattern} not found!")
+            return None
+
+        return stream
+
 # ## Read the hydrophone waveforms in a timewindow recorded on specific locations of a specific station
 def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, rootdir=ROOTDIR_HYDRO):
 
@@ -581,11 +800,12 @@ def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, ro
 
 # Preprocess a stream object consisting of geophone data by removing the sensitivity, detrending, tapering, and filtering
 # The output data will be in nm/s
-def preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10, path_meta=PATH_GEO_METADATA):
-
+def preprocess_geo_stream(stream_in, metadata, 
+                          filter = False, zerophase=False, normalize=False, decimate=False, **kwargs):
+    
     # Remove the sensitivity
     stream_out = stream_in
-    stream_out.remove_sensitivity(inventory=metadat)
+    stream_out.remove_sensitivity(inventory=metadata)
 
     # Reverse the polarity of the vertical components
     stream_out = correct_geo_polarity(stream_out)
@@ -594,19 +814,33 @@ def preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, corners=4, zerop
     for trace in stream_out:
         trace.data *= 1e9
 
-    # Detrend, taper, and filter
+    # Detrend and taper
     stream_out.detrend("linear")
     stream_out.taper(0.001)
 
-    if freqmin is not None and freqmax is not None:
-        stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
-    elif freqmin is not None and freqmax is None:
-        stream_out.filter("highpass", freq=freqmin, zerophase=zerophase ,corners=corners)
-    elif freqmin is None and freqmax is not None:
-        stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
+    # Filter
+    if filter:
+        filter_type = kwargs["filter_type"]
+        if filter_type == "butter":
+            freqmin = kwargs["min_freq"]
+            freqmax = kwargs["max_freq"]
+            corners = kwargs["corners"]
+
+            if freqmin is not None and freqmax is not None:
+                stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
+            elif freqmin is not None and freqmax is None:
+                stream_out.filter("highpass", freq=freqmin, zerophase=zerophase ,corners=corners)
+            elif freqmin is None and freqmax is not None:
+                stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
+        elif filter_type == "peak":
+            freq = kwargs["freq"]
+            qf = kwargs["qf"]
+            for trace in stream_out:
+                trace.data = peak_filter(trace.data, freq, qf, trace.stats.sampling_rate, zero_phase=zerophase)
 
     # Decimate the waveforms
     if decimate:
+        decimate_factor = kwargs["decimate_factor"]
         stream_out.decimate(decimate_factor)
 
     # Normalize the waveforms
@@ -615,38 +849,85 @@ def preprocess_geo_stream(stream_in, metadat, freqmin, freqmax, corners=4, zerop
 
     return stream_out
 
+## Preprocess a stream object consisting of broadband data by removing the sensitivity, detrending, tapering, and filtering
+## The output data will be in nm/s
+def preprocess_broadband_stream(stream_in, metadata, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10):
+    
+        ### Remove the sensitivity
+        stream_out = stream_in
+        stream_out.remove_sensitivity(inventory=metadata)
+
+        ### Convert from m/s to nm/s
+        for trace in stream_out:
+            trace.data *= 1e9
+    
+        ### Detrend, taper, and filter
+        stream_out.detrend("linear")
+        stream_out.taper(0.001)
+    
+        if freqmin is not None and freqmax is not None:
+            stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
+        elif freqmin is not None and freqmax is None:
+            stream_out.filter("highpass", freq=freqmin, zerophase=zerophase ,corners=corners)
+        elif freqmin is None and freqmax is not None:
+            stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
+
+        ### Decimate the waveforms
+        if decimate:
+            stream_out.decimate(decimate_factor)
+
+        ### Normalize the waveforms
+        if normalize:
+            stream_out.normalize(global_max=True)
+
+        return stream_out
+
 ## Preprocess a stream object consisting of hydrophone data by removing the sensitivity, detrending, tapering, and filtering
 ## The output data will be in Pa
 ## Given that the instrument response of the hydrophone data from SAGE is wrong, we use a customized response-removal procedure
-def preprocess_hydro_stream(stream_in, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=None):
+def preprocess_hydro_stream(stream_in, 
+                            filter = False, zerophase=False, normalize=False, decimate=False, **kwargs):
 
-    ### Remove the sensitivity
+    # Remove the sensitivity
     stream_out = remove_hydro_response(stream_in)
 
-    ### Correct the polarity of the hydrophone at Locatin 04
+    # Correct the polarity of the hydrophone at Locatin 04
     stream_out = correct_hydro_polarity(stream_out)
 
-    ### Detrend, taper, and filter
+    # Detrend, taper, and filter
     stream_out.detrend("linear")
     stream_out.taper(0.001)
 
-    if freqmin is not None and freqmax is not None:
-        stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
-    elif freqmin is not None and freqmax is None:
-        stream_out.filter("highpass", freq=freqmin, zerophase=zerophase ,corners=corners)
-    elif freqmin is None and freqmax is not None:
-        stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
+    # Filter
+    if filter:
+        filter_type = kwargs["filter_type"]
+        if filter_type == "butter":
+            freqmin = kwargs["min_freq"]
+            freqmax = kwargs["max_freq"]
+            corners = kwargs["corners"]
 
-    ### Decimate the waveforms
+            if freqmin is not None and freqmax is not None:
+                stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
+            elif freqmin is not None and freqmax is None:
+                stream_out.filter("highpass", freq=freqmin, zerophase=zerophase ,corners=corners)
+            elif freqmin is None and freqmax is not None:
+                stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
+        elif filter_type == "peak":
+            freq = kwargs["freq"]
+            qf = kwargs["qf"]
+            for trace in stream_out:
+                trace.data = peak_filter(trace.data, freq, qf, trace.stats.sampling_rate, zero_phase=zerophase)
+
+    # Decimate the waveforms
     if decimate:
+        decimate_factor = kwargs["decimate_factor"]
         stream_out.decimate(decimate_factor)
 
-    ### Normalize the waveforms
+    # Normalize the waveforms
     if normalize:
         stream_out.normalize(global_max=True)
 
     return stream_out
-
 
 ## Correct the polarity of the vertical-component geophone data
 def correct_geo_polarity(stream_in):
@@ -665,7 +946,7 @@ def remove_hydro_response(stream_in):
     for trace in stream_out:
         trace.data = trace.data / COUNTS_TO_VOLT # converts from counts to volts
         trace.data = trace.data / (10 ** (DB_VOLT_TO_MPASCAL / 20.)) # converts from volts to micropascals
-        trace.data = trace.data / 1e6 # converts from micro pascals to pascals
+        trace.data = trace.data / 1e3 # converts from micro pascals to millipascals
 
     return stream_out
 
@@ -678,3 +959,25 @@ def correct_hydro_polarity(stream_in):
             trace.data = -1 * trace.data
 
     return stream_out
+
+######
+# Signal processing
+######
+
+# Compute the envelope of a waveform
+def get_envelope(waveform):
+    envelope = abs(hilbert(waveform))
+
+    return envelope
+
+# Perform peak-filtering on a waveform
+def peak_filter(waveform, center_freq, qf, sampling_rate, zero_phase=False):
+    b, a = iirpeak(center_freq, qf, sampling_rate)
+
+    if zero_phase:
+        waveform_filtered = filtfilt(b, a, waveform)
+    else:
+        waveform_filtered = lfilter(b, a, waveform)
+
+    return waveform_filtered
+    

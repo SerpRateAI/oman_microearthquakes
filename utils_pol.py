@@ -2,7 +2,7 @@
 
 ## Imports
 
-from numpy import zeros, complex128, exp, pi, real, amax, amin, argmax, abs, array, conj, mean, arctan2, sqrt, arctan, arccos, arctan2, sin, cos, arccos, arcsin, arctan2, row_stack, column_stack, radians
+from numpy import arange, zeros, complex128, deg2rad, exp, pi, real, amax, amin, argmax, abs, imag, array, conj, mean, arctan2, sqrt, arctan, arccos, arctan2, sin, cos, arccos, arcsin, arctan2, row_stack, column_stack, radians, rad2deg
 from numpy.linalg import eigh, norm
 from scipy.signal import hilbert
 from numpy import mean, cov, stack, column_stack
@@ -114,25 +114,40 @@ def get_eigs(cov_mats):
     return eigvals, eigvecs
 
 ### Rotate the eigenvectors to maximize the real components of the first element
-def rotate_to_maxreal(eigvecs_in):
+def rotate_to_maxreal(eigvecs_in, degree_step=0.1):
     
     eigvecs_out = zeros(eigvecs_in.shape, dtype=complex128)
 
-    #### Determine the rotation angle
-    numpts = eigvecs_in.shape[1]
-    for ipt in range(numpts):
-        eigvec = eigvecs_in[:, ipt]
-        iang_max = 0
-        maxreal = norm(real(eigvec))
-        for iang in range(180):
-            eigvec_rot = eigvec*exp(1j*iang*pi/180)
-            if norm(real(eigvec_rot)) > maxreal:
-                iang_max = iang
-                maxreal = norm(real(eigvec_rot))
-        
-        eigvecs_out[:, ipt] = eigvec*exp(1j*iang_max*pi/180)
+    # Determine if eigvecs_in is a vector or matrix
+    if len(eigvecs_in.shape) == 1:
+        eigvec_in = eigvecs_in
+        eigvec_out = eigvec_in.copy()
 
-    return eigvecs_out
+        angles = arange(0, 180, degree_step)
+        maxreal = norm(real(eigvec_out))
+        for angle in angles:
+            eigvec_rot = eigvec_in * exp(1j * deg2rad(angle))   
+            if norm(real(eigvec_rot)) > maxreal:
+                maxreal = norm(real(eigvec_rot))
+                eigvec_out = eigvec_rot
+
+        return eigvec_out
+    
+    else:
+        num_windows = eigvecs_in.shape[1]
+        eigvecs_out = eigvecs_in.copy()
+        for i_window in range(num_windows):
+            eigvec_in = eigvecs_in[:, i_window]
+
+            angles = arange(0, 180, degree_step)
+            maxreal = norm(real(eigvec_in))
+            for angle in angles:
+                eigvec_rot = eigvec_in * exp(1j * deg2rad(angle))   
+                if norm(real(eigvec_rot)) > maxreal:
+                    maxreal = norm(real(eigvec_rot))
+                    eigvecs_out[:, i_window] = eigvec_rot
+
+        return eigvecs_out
 
 ### Get the polarization parameters from the eigenvectors in the ENZ coordinate system
 ### Vertical component is positive UPWARD!
@@ -174,7 +189,7 @@ def get_pol_from_eigs(eigvals, eigvecs_max):
     return strikes, dips, ellis, strengths, planars
 
 ### Get the strike angles of the real part of the eigenvectors of all data points
-def get_strikes(eigvecs):
+def get_strikes(eigvecs, axis="major"):
             
         #### Determine if the eigenvector is a numpy array
         if type(eigvecs) != type(zeros(1)):
@@ -185,16 +200,31 @@ def get_strikes(eigvecs):
             raise ValueError("The matrix containing the eigenvectors must have shape (3, npts)!")
     
         #### Compute the strike angle
-        eigvecs = real(eigvecs)
-        strikes = arctan2(eigvecs[0, :], eigvecs[1, :])*180/pi
+        if axis == "major":
+            eigvecs = real(eigvecs)
+        else:
+            eigvecs = imag(eigvecs)
 
-        #### Convert the strike angles to the range [0, 180]
-        strikes[strikes < 0] += 180
+        if len(eigvecs.shape) == 1:
+            eigvec = eigvecs
+            strike = rad2deg(arctan2(eigvec[0], eigvec[1]))
+
+            #### Convert the strike angle to the range [0, 180]
+            if strike < 0:
+                strike += 180
+            
+            return strike
         
-        return strikes
+        else:
+            strikes = rad2deg(arctan2(eigvecs[0, :], eigvecs[1, :]))
+
+            #### Convert the strike angles to the range [0, 180]
+            strikes[strikes < 0] += 180
+
+            return strikes
 
 ### Get the dip angles of the real part of the eigenvectors of all data points
-def get_dips(eigvecs):
+def get_dips(eigvecs, axis="major"):
         
     #### Determine if the eigenvector is a numpy array
     if type(eigvecs) != type(zeros(1)):
@@ -203,17 +233,59 @@ def get_dips(eigvecs):
     #### Determine if the array containing the eigenvectors has the correct shape
     if eigvecs.shape[0] != 3:
         raise ValueError("The matrix containing the eigenvectors must have shape (3, npts)!")
+
+    # Major or minor axis
+    if axis == "major":
+        eigvecs = real(eigvecs)
+    else:
+        eigvecs = imag(eigvecs)
     
     #### Reverse the sign of the eigenvector if the first element is negative
-    eigvecs = real(eigvecs)
-    for i in range(eigvecs.shape[1]):
-        if eigvecs[0, i] < 0:
-            eigvecs[:, i] *= -1
+    if len(eigvecs.shape) == 1:
+        eigvec = eigvecs
+        if eigvec[0] < 0:
+            eigvec *= -1
 
-    #### Compute the dip angle
-    dips = arctan2(-eigvecs[2, :], sqrt(eigvecs[0, :]**2 + eigvecs[1, :]**2))*180/pi
+        dip = rad2deg(arctan2(-eigvec[2], sqrt(eigvec[0]**2 + eigvec[1]**2)))
+
+        return dip
     
-    return dips
+    else:
+        for i in range(eigvecs.shape[1]):
+            if eigvecs[0, i] < 0:
+                eigvecs[:, i] *= -1
+
+        dips = rad2deg(arctan2(-eigvecs[2, :], sqrt(eigvecs[0, :]**2 + eigvecs[1, :]**2)))
+
+        return dips
+
+# Get the ellipticity of the polarization ellipse
+def get_ellipticity(eigvecs):
+            
+        #### Determine if the eigenvector is a numpy array
+        if type(eigvecs) != type(zeros(1)):
+            raise TypeError("The matrix containing the eigenvectors must be a numpy array!")
+    
+        #### Determine if the array containing the eigenvectors has the correct shape
+        if eigvecs.shape[0] != 3:
+            raise ValueError("The matrix containing the eigenvectors must have shape (3, npts)!")
+    
+        #### Compute the ellipticity
+        eigvecs = real(eigvecs)
+
+        if len(eigvecs.shape) == 1:
+            eigvec = eigvecs
+            realnorm = amin([norm(real(eigvec)), 1.0])
+            ellip = sqrt(1-realnorm**2)/realnorm
+
+            return ellip
+
+        else:
+            realnorms = norm(real(eigvecs), axis=0)
+            realnorms[realnorms > 1] = 1
+            ellips = sqrt(1-realnorms**2)/realnorms
+
+            return ellips
 
 ### Plot the 3C waveforms and the polarization parameters as functions of time
 def plot_waveforms_and_pols(data1, data2, data3, pol_params, timeax, mode="ENZ", ampmax=1.05, window_length=3, station="A01"):
@@ -505,6 +577,38 @@ def plot_station_strike_and_dip(plotdf, source_coord, title, eastmin=-20.0, east
     colorbar.ax.yaxis.set_major_locator(ticker.MultipleLocator(30))
 
     return fig, ax
+
+# Get the polarization from the 3-C Fourier coefficients
+# The coeefficients are computed using the scipy.fft module and the vertical component is positive UPWARD!
+def get_pol_from_fourier_coeffs(coeff_z, coeff_1, coeff_2):
+    # Get the covariance matrix
+    cov_mat = array([[coeff_1*conj(coeff_1), coeff_1*conj(coeff_2), coeff_1*conj(coeff_z)], 
+                     [coeff_2*conj(coeff_1), coeff_2*conj(coeff_2), coeff_2*conj(coeff_z)], 
+                     [coeff_z*conj(coeff_1), coeff_z*conj(coeff_2), coeff_z*conj(coeff_z)]])
+
+    # Get the eigenvalues and eigenvectors
+    eigvals, eigvecs = eigh(cov_mat)
+
+    print("Eigenvalues:")
+    print(eigvals)
+
+    # Rotate the eigenvectors to maximize the real components of the first element
+    eigvec_max = eigvecs[:, 2] # Eigenvector associated with the largest eigenvalue
+    pol_vec = rotate_to_maxreal(eigvec_max)
+
+    # Get the strike and dip angles and the major and minor axes of the polarization ellipse
+    strike_major = get_strikes(pol_vec, axis = "major")
+    dip_major = get_dips(pol_vec, axis = "major")
+
+    strike_minor = get_strikes(pol_vec, axis = "minor")
+    dip_minor = get_dips(pol_vec, axis = "minor")
+
+    # Get the ellipticity
+    ellip = get_ellipticity(pol_vec)
+
+    return pol_vec, strike_major, dip_major, strike_minor, dip_minor, ellip
+
+
 
         
             

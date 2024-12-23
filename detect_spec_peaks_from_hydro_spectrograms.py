@@ -3,43 +3,51 @@
 
 # Imports
 from os.path import join
+from argparse import ArgumentParser
 from pandas import Series
 from pandas import concat
 from time import time
 from h5py import File
 
-
 from utils_basic import SPECTROGRAM_DIR as indir, HYDRO_LOCATIONS as location_dict
 from utils_spec import find_trace_spectral_peaks, get_spectrogram_file_suffix, get_spec_peak_file_suffix 
-from utils_spec import read_hydro_spectrograms, read_hydro_spec_time_labels, save_spectral_peaks
+from utils_spec import read_hydro_power_spectrograms, read_spec_block_timings
 from utils_plot import plot_geo_total_psd_and_peaks, save_figure
 
 # Inputs
-# Data
-window_length = 60.0
-overlap = 0.0
-downsample = False
-downsample_factor = 60
+# Command line arguments
+parser = ArgumentParser(description = "Detect spectral peaks in the hydrophone spectrograms")
+parser.add_argument("--min_prom", type = float, default = 15.0, help = "Minimum prominence in dB")
+parser.add_argument("--min_rbw", type = float, default = 15.0, help = "Minimum reverse bandwidth in 1/Hz")
+parser.add_argument("--min_freq", type = float, default = 0.0, help = "Minimum frequency in Hz")
+parser.add_argument("--max_freq", type = float, default = 200.0, help = "Maximum frequency in Hz")
+parser.add_argument("--max_mean_db", type = float, default = 0.0, help = "Maximum mean dB for excluding noisy windows")
 
-# Finding peaks
-num_process = 32
-rbw_threshold = 3.0
-prom_threshold = 10
-min_freq = None
-max_freq = 200.0
+parser.add_argument("--window_length", type = float, help = "Window length in seconds")
+parser.add_argument("--overlap", type = float, default = 0.0, help = "Overlap in seconds")
+parser.add_argument("--num_process", type = int, default = 32, help = "Number of processes for detecting the peaks")
 
 
-# Loop over days and stations
+# Parse the arguments
+args = parser.parse_args()
+min_prom = args.min_prom
+min_rbw = args.min_rbw
+min_freq = args.min_freq
+max_freq = args.max_freq
+max_mean_db = args.max_mean_db
+
+window_length = args.window_length
+overlap = args.overlap
+num_process = args.num_process
+
+
+# Print the parameters
 print(f"### Detecting spectral peaks in the hydrophone spectrograms in {num_process} processes ###")
 print(f"Window length: {window_length} s")
 print(f"Overlap: {overlap}")
-print(f"Downsample: {downsample}")
 
-if downsample:
-    print(f"Downsample factor: {downsample_factor}")
-
-print(f"Reverse-bandwidth threshold: {rbw_threshold} 1/Hz")
-print(f"Prominence threshold: {prom_threshold} dB")
+print(f"Reverse-bandwidth threshold: {min_rbw} 1/Hz")
+print(f"Prominence threshold: {min_prom} dB")
 print(f"Frequency range: {min_freq} - {max_freq} Hz")
 print("")
 
@@ -48,42 +56,37 @@ for station, locations in location_dict.items():
     print(f"### Working on {station}... ###")
 
     # Read the list of time labels
-    suffix_spec = get_spectrogram_file_suffix(window_length, overlap, downsample, downsample_factor = downsample_factor)
-    filename_in = f"whole_deployment_daily_hydro_spectrograms_{station}_{suffix_spec}.h5"
+    suffix_spec = get_spectrogram_file_suffix(window_length, overlap)
+    filename_in = f"whole_deployment_daily_hydro_power_spectrograms_{station}_{suffix_spec}.h5"
     print(f"Proessing the file: {filename_in}")
 
     inpath = join(indir, filename_in)
-    time_labels = read_hydro_spec_time_labels(inpath)
+    block_timing_df = read_spec_block_timings(inpath)
 
-    suffix_peak = get_spec_peak_file_suffix(prom_threshold, rbw_threshold, min_freq = min_freq, max_freq = max_freq)
+    suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db, min_freq = min_freq, max_freq = max_freq)
     filename_out = f"hydro_spectral_peaks_{station}_{suffix_spec}_{suffix_peak}.h5"
 
-    # Save the time labels
-    print("Saving the time labels...")
+    # Save the block timings
+    print("Saving the block timings...")
     outpath = join(outdir, filename_out)
-    time_label_sr = Series(time_labels, name = "time_label")
-    time_label_sr.to_hdf(outpath, key = "time_label", mode = "w")
-
-    # Save the locations
-    print("Saving the locations...")
-    location_sr = Series(locations, name = "location")
-    location_sr.to_hdf(outpath, key = "location", mode = "a")
+    block_timing_df.to_hdf(outpath, key = "block_timing", mode = "w")
+    time_labels = block_timing_df["time_label"] 
     
     # Process each time label
     for time_label in time_labels:
         clock1 = time()
         # Read the spectrograms
         print(f"Reading the spectrograms of {time_label}...")
-        stream_spec = read_hydro_spectrograms(inpath, time_labels = [time_label], min_freq = min_freq, max_freq = max_freq)
+        stream_spec = read_hydro_power_spectrograms(inpath, time_labels = [time_label], min_freq = min_freq, max_freq = max_freq)
 
         # Find the peaks
         print("Detecting the peaks...")
         peak_dfs = []
         for location in locations:
             print(f"Working on {location}...")
-            trace_spec = stream_spec.select(location = location)[0]
+            trace_spec = stream_spec.select(locations = location)[0]
             peak_df = find_trace_spectral_peaks(trace_spec, num_process, 
-                                                rbw_threshold = rbw_threshold, prom_threshold = prom_threshold,
+                                                min_prom, min_rbw, max_mean_db,
                                                 min_freq = min_freq, max_freq = max_freq)
 
             print(f"In total, {len(peak_df)} spectral peaks found.")

@@ -2,8 +2,10 @@
 
 ## Import libraries
 from os.path import join
+from numpy import datetime64
 from numpy import amax, array, log10, ndarray
 from scipy.stats import gmean
+from scipy.signal import hilbert
 from pandas import Timestamp, Timedelta, DatetimeIndex
 from pandas import Series
 from pandas import date_range, to_datetime, read_csv, read_excel
@@ -12,15 +14,26 @@ from obspy import UTCDateTime, read_inventory
 ## Constants
 
 POWER_FLOOR = 1e-50
+NUM_SEONCDS_IN_DAY = 86400
 
 ROOTDIR_OTHER = "/fp/projects01/ec332/data/other_observables"
 ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
+ROOTDIR_BROADBAND = "/fp/projects01/ec332/data/gfz_data"
 ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
 ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
+ROOTDIR_MAP = "/fp/projects01/ec332/data/maps"
 SPECTROGRAM_DIR = "/fp/projects01/ec332/data/spectrograms"
+BEAM_DIR = "/fp/projects01/ec332/data/beams"
+PLOTTING_DIR = "/fp/projects01/ec332/data/plotting"
 FIGURE_DIR = "/fp/projects01/ec332/data/figures"
+GFZ_DATA_DIR = "/fp/projects01/ec332/data/gfz_data"
+IMAGE_DIR = "/fp/projects01/ec332/data/satellite_images"
+MT_DIR = "/fp/projects01/ec332/data/multitaper"
+PHYS_DIR = "/fp/projects01/ec332/data/physical_models"
+
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
+PATH_BROADBAND_METADATA = join(ROOTDIR_BROADBAND, "station_metadata.xml")
 
 CENTER_LONGITUDE = 58.70034
 CENTER_LATITUDE =  22.881751
@@ -39,8 +52,9 @@ HYDRO_DEPTHS = {"01": 30.0, "02": 100.0, "03": 170.0, "04": 240.0, "05": 310.0, 
                 
 ALL_COMPONENTS = ["Z", "1", "2", "H"]
 GEO_COMPONENTS = ["Z", "1", "2"]
-PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
-WAVELET_COMPONENT_PAIRS = [("1", "2"), ("Z", "1"), ("Z", "2")]
+BROADBAND_COMPONENTS = ["Z", "N", "E"]
+#PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
+PHASE_DIFF_COMPONENT_PAIRS = [("1", "2"), ("1", "Z"), ("2", "Z")]
 
 GEO_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A13", "A14", "A15", "A16", "A17", "A19"]
 GEO_STATIONS_B = ["B01", "B02", "B03", "B04", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20"]
@@ -49,6 +63,12 @@ GEO_STATIONS = GEO_STATIONS_A + GEO_STATIONS_B
 INNER_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06"]
 INNER_STATIONS_B = ["B01", "B02", "B03", "B04", "B06"]
 INNER_STATIONS = INNER_STATIONS_A + INNER_STATIONS_B
+
+MIDDLE_STATIONS_A = ["A07", "A08", "A09", "A10", "A11"]
+MIDDLE_STATIONS_B = ["B07", "B08", "B09", "B10", "B11", "B12"]
+
+OUTER_STATIONS_A = ["A13", "A14", "A15", "A16", "A17", "A19"]
+OUTER_STATIONS_B = ["B13", "B14", "B15", "B16", "B17", "B18"]
 
 BROKEN_CHANNELS = ["A18.GH1"]
 BROKEN_LOCATIONS = ["A00.01", "A00.02"]
@@ -68,8 +88,20 @@ EASTMAX_B = 65
 NORTHMIN_B = 15
 NORTHMAX_B = 105
 
+EASTMIN_A_INNER = 15.0
+EASTMAX_A_INNER = 35.0
+NORTHMIN_A_INNER = -70.0
+NORTHMAX_A_INNER = -50.0
+
+EASTMIN_B_INNER = -36.0
+EASTMAX_B_INNER = -16.0
+NORTHMIN_B_INNER = 52.0
+NORTHMAX_B_INNER = 72.0
+
+SAMPLING_RATE = 1000.0
+
 # DAYS_PATH = join(ROOTDIR_GEO, "days.csv")
-# NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")
+# NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")get_broadband_metadata
 SUNRISE_SUNSET_PATH = join(ROOTDIR_GEO, "sunrise_sunset_times.csv")
 STATIONS_PATH = join(ROOTDIR_GEO, "stations.csv")
 
@@ -78,7 +110,8 @@ STARTTIME_GEO = Timestamp("2020-01-10T00:00:00", tz="UTC")
 ENDTIME_GEO = Timestamp("2020-02-01T23:59:59", tz="UTC")
 STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00", tz="UTC")
 ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59", tz="UTC")
-HAMMER_DATE = "2020-01-25"
+HAMMER_STARTTIME = Timestamp("2020-01-25T06:00:00", tz="UTC")
+HAMMER_ENDTIME = Timestamp("2020-01-25T15:00:00", tz="UTC")
 
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
 DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to microPascals
@@ -140,7 +173,7 @@ def local_to_utc(local_time):
 
     return utc_time
 
-### Function to convert power to decibels
+# Power to decibels
 def power2db(power, reference_type=None, **kwargs):
     if reference_type is None:
         reference = 1.0
@@ -159,6 +192,12 @@ def power2db(power, reference_type=None, **kwargs):
 
     return db
 
+# Powers in decibel to amplitude ratios
+def powers2amplitude_ratio(power1, power2):
+    amp_rat = 10 ** ((power2 - power1) / 20)
+
+    return amp_rat
+
 ######
 # Functions for loading substantial data files
 ######
@@ -168,7 +207,13 @@ def get_geo_metadata():
     inv = read_inventory(PATH_GEO_METADATA)
 
     return inv
-    
+
+# Get the broadband metadata
+def get_broadband_metadata():
+    inv = read_inventory(PATH_BROADBAND_METADATA)
+
+    return inv
+
 # Get the geophone station coordinates
 def get_geophone_coords():
     inpath = join(ROOTDIR_GEO, "geo_stations.csv")
@@ -186,20 +231,24 @@ def get_borehole_coords():
     return bh_df
 
 # Get the days of the geophone deployment
-def get_geophone_days():
+def get_geophone_days(timestamp = False):
     inpath = join(ROOTDIR_GEO, "days.csv")
     days_df = read_csv(inpath)
     days = days_df["day"].values
-    days = to_datetime(days, utc=True)
+
+    if timestamp:
+        days = to_datetime(days, utc=True)
 
     return days
 
 # Get the days of the hydrophone deployment
-def get_hydrophone_days():
+def get_hydrophone_days(timestamp = False):
     inpath = join(ROOTDIR_HYDRO, "hydrophone_days.csv")
     days_df = read_csv(inpath)
     days = days_df["day"].values
-    days = to_datetime(days, utc=True)
+
+    if timestamp:
+        days = to_datetime(days, utc=True)
 
     return days
 
@@ -247,22 +296,29 @@ def get_baro_temp_data():
 
     return baro_temp_df
 
+
+
 ######
 # Functions for handling times
 ######
 
 # Convert a string to a Pandas Timestamp object
-def str2timestamp(string):
-    if isinstance(string, str):
-        timestamp = Timestamp(string, tz="UTC")
+def str2timestamp(input):
+    if isinstance(input, Timestamp):
+        timestamp = input
 
-        return timestamp
-    elif isinstance(string, Timestamp):
-
-        timestamp = string
         return timestamp
     else:
-        raise TypeError("Invalid input type!") 
+        timestamp = to_datetime(input, utc=True)
+
+    return timestamp
+
+
+# Convert a Pandas Timestamp object to a ObsPy UTCDateTime object
+def timestamp2utcdatetime(timestamp):
+    utcdatetime = UTCDateTime(timestamp.to_pydatetime())
+
+    return utcdatetime
 
 # Convert seconds to days
 def sec2day(seconds):
@@ -323,6 +379,7 @@ def int2datetime(ints):
         ints = array(ints)
 
     datetimes = DatetimeIndex(ints)
+    datetimes = datetimes.tz_localize('UTC')
 
     return datetimes
 
@@ -403,4 +460,11 @@ def day2suffix(day):
 def is_subset_df(df1, df2):
     return df1.merge(df2).shape[0] == df1.shape[0]
 
+# Convert a string to a list
+def str2list(input):
+    if isinstance(input, str):
+        output = [input]
+    else:
+        output = input
 
+    return output

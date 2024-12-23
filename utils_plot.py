@@ -5,27 +5,36 @@ from pandas import date_range
 from numpy import arctan, array, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
 from numpy.linalg import norm
 from scipy.stats import gmean
-from matplotlib.pyplot import subplots, get_cmap, Circle
+
+from matplotlib.pyplot import figure, subplots, get_cmap, Circle
+from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
 from matplotlib import colormaps
 from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocator, SecondLocator, MicrosecondLocator, DateLocator
 from matplotlib.dates import num2date, date2num
 from matplotlib.colors import LogNorm, Normalize, LinearSegmentedColormap
-from matplotlib.ticker import MultipleLocator, AutoMinorLocator
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FuncFormatter, MaxNLocator
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import ListedColormap
 
-from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, PM_COMPONENT_PAIRS, WAVELET_COMPONENT_PAIRS, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
-from utils_basic import EASTMIN_WHOLE, EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
+import colorcet as cc
+
+from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
+from utils_basic import EASTMIN_WHOLE , EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
 from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, str2timestamp, sec2day
-from utils_wavelet import mask_cross_phase
+# from utils_wavelet import mask_cross_phase
 
+HYDRO_COLOR = "tab:purple"
 GROUND_VELOCITY_UNIT = "nm s$^{-1}$"
 GROUND_VELOCITY_LABEL = f"Velocity (nm s$^{{-1}}$)"
 GROUND_VELOCITY_LABEL_SHORT = "Vel. (nm s$^{{-1}}$)"
 WAVE_VELOCITY_UNIT = "m s$^{-1}$"
 WAVE_SLOWNESS_UNIT = "s km$^{-1}$"
 PRESSURE_UNIT = "Pa"
+PRESSURE_LABEL = "Pressure (mPa)"
 APPARENT_VELOCITY_UNIT = "m s$^{-1}$"
-POWER_LABEL = "Power (dB)"
+HYDRO_PSD_LABEL = "PSD (mPa$^2$ Hz$^{-1}$, dB)"
+GEO_PSD_LABEL = "PSD (nm$^2$ s$^{-2}$ Hz$^{-1}$, dB)"
 X_SLOW_LABEL = "East slowness (s km$^{-1}$)"
 Y_SLOW_LABEL = "North slowness (s km$^{-1}$)"
 
@@ -427,6 +436,201 @@ def plot_cascade_zoom_in_hydro_waveforms(stream, station_df, window_dict,
 
     return fig, axes
 
+
+###### Functions for plotting particle motions ######
+
+###### Functions for plotting stationary-resonance properties vs time ######
+# Property must contains at least four columns  "time", "station", "frequency", and property_name of the property to plot
+# Station names are the indices of coord_df
+# Stations will be plotted from south to north
+def plot_stationary_resonance_properties_vs_time(property_name, property_df,
+                                                 width = 10, height = 6,
+                                                 sun_df = None, coord_df = None,
+                                                 day_night_shading = True,
+                                                 marker_size = 1.0,
+                                                 scale_factor = 5.0,
+                                                 station_label_offset = "2h",
+                                                 station_label_size = 6.0,
+                                                 ylim_offset = 0.5,
+                                                 direction_label_offset = 0.1,
+                                                 cbar_offset = 0.01,
+                                                 axis_label_size = 10,
+                                                 tick_label_size = 8,
+                                                 title_size = 12,
+                                                 **kwargs):
+    starttime = STARTTIME_GEO
+    endtime = ENDTIME_GEO
+
+    print(property_name)
+
+    # Determine if an axis is given
+    if "axis" in kwargs:
+        ax = kwargs["axis"]
+        fig = ax.get_figure()
+    else:
+        fig, ax = subplots(1, 1, figsize=(width, height))
+
+    # Load the station coordinates
+    if coord_df is None:
+        coord_df = get_geophone_coords()
+
+    # Load the day-night time
+    if day_night_shading and sun_df is None:
+        sun_df = get_geo_sunrise_sunset_times()
+
+    # Sort the stations from south to north
+    coord_df = coord_df.sort_values(by="north")
+
+    # Define the color scales
+    if property_name == "frequency":
+
+        if "min_freq" not in kwargs and "max_freq" not in kwargs:
+            vmax = property_df["frequency"].max()
+            vmin = property_df["frequency"].min()
+        else:
+            vmax = kwargs["max_freq"]
+            vmin = kwargs["min_freq"]
+
+        cmap = "coolwarm"
+        cbar_label = "Frequency (Hz)"
+
+    elif property_name == "total_power":
+
+        if "min_power" not in kwargs and "max_power" not in kwargs:
+            vmax = property_df["total_power"].max()
+            vmin = property_df["total_power"].min()
+        else:
+            vmax = kwargs["max_power"]
+            vmin = kwargs["min_power"]
+
+        cmap = "inferno"
+        cbar_label = "Power (dB)"
+
+    elif property_name == "quality_factor":
+            
+        if "min_qf" not in kwargs and "max_qf" not in kwargs:
+            vmax = property_df["quality_factor"].max()
+            vmin = property_df["quality_factor"].min()
+        else:
+            vmax = kwargs["max_qf"]
+            vmin = kwargs["min_qf"]
+
+        cmap = "viridis"
+        cbar_label = "Quality factor"
+
+    elif "phase_diff" in property_name:
+        vmax = 360.0
+        vmin = 0.0
+
+        cmap = cc.cm.CET_C9
+        cbar_label = "Phase difference (deg)"
+
+    elif "amp_ratio" in property_name:
+
+        if "min_amp_rat" not in kwargs and "max_amp_rat" not in kwargs:
+            vmax = property_df[property_name].max()
+            vmin = property_df[property_name].min()
+        else:
+            vmax = kwargs["max_amp_rat"]
+            vmin = kwargs["min_amp_rat"]
+
+        cmap = "magma"
+        cbar_label = "Amplitude ratio"
+
+    elif "dip" in property_name:
+        vmax = 90.0
+        vmin = 0.0
+        cmap = "cividis"
+        cbar_label = "Dip (deg)"
+
+    elif "strike" in property_name:
+        vmax = 360.0
+        vmin = 0.0
+        cmap = "twilight"
+        cbar_label = "Strike (deg)"
+
+    # Plot the property vs time
+    station_label_time = starttime + Timedelta(station_label_offset)
+    i = 0
+    for index, _ in coord_df.iterrows():
+        station = index
+        print(f"Plotting {station}...")
+
+        # Get the properties of all time points
+        property_sta_df = property_df.loc[property_df["station"] == station]
+        times = property_sta_df["time"]
+        freqs = property_sta_df["frequency"]
+        mean_freq_plot = freqs.mean()
+        
+        if property_name != "frequency":
+            properties = property_sta_df[property_name]
+        else:
+            properties = freqs
+
+        # Plot the property vs time
+        freqs_to_plot = (freqs - mean_freq_plot) * scale_factor + i
+
+        # Plot the power vs time dots
+        mappable = ax.scatter(times, freqs_to_plot, 
+                              c = properties, s = marker_size,
+                              cmap = cmap, vmin = vmin, vmax = vmax,
+                              edgecolors = None, linewidths = 0,
+                              zorder = 2)
+
+        # Plot the station labels
+        ax.text(station_label_time, i, station, color = "black", fontsize = station_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "left")
+
+        # Update the counter
+        i += 1
+
+    # Add the day-night shading
+    print("Adding the day-night shading...")
+    ax = add_day_night_shading(ax, sun_df)
+
+    # Plot the direction labels
+    min_y = -1 - ylim_offset
+    max_y = len(coord_df) + ylim_offset
+
+    direction_label_time = station_label_time
+    north_label_y = max_y - direction_label_offset
+    south_label_y = min_y + direction_label_offset
+
+    ax.text(direction_label_time, north_label_y, "North", color = "black", fontsize = station_label_size, fontweight = "bold", verticalalignment = "top", horizontalalignment = "left")
+    ax.text(direction_label_time, south_label_y, "South", color = "black", fontsize = station_label_size, fontweight = "bold", verticalalignment = "bottom", horizontalalignment = "left")
+
+    # Turn off the y ticks
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+    ax.set_ylabel("")
+    ax.yaxis.label.set_visible(False)
+
+    # Set the axis labels and limits
+    ax.set_xlim(starttime, endtime)
+    ax.set_ylim(min_y, max_y)
+
+    # Format the x-axis labels
+    format_datetime_xlabels(ax, 
+                            major_tick_spacing = "1d", num_minor_ticks = 4,
+                            date_format = "%Y-%m-%d", 
+                            axis_label_size = axis_label_size, tick_label_size = tick_label_size,
+                            va = "top", ha = "right", rotation = 30)
+
+
+    # Add a vertical colorbar on the right
+    print("Adding the colorbar...")
+    bbox = ax.get_position()
+    position = [bbox.x1 + cbar_offset, bbox.y0, cbar_offset / 2, bbox.height]
+    cbar = add_colorbar(fig, position, cbar_label,
+                        mappable = mappable, orientation = "vertical", axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    # Add the title
+    if "title" in kwargs:
+        title = kwargs["title"]
+        ax.set_title(title, fontsize = title_size, fontweight = "bold")
+
+    return fig, ax, cbar
+        
+
 ###### Functions for plotting STFT power spectrograms and related data ######   
 
 # Plot the 3C seismograms and spectrograms computed using STFT of a list of stations
@@ -479,7 +683,7 @@ def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
                 ax.set_title(title, fontsize=title_size, fontweight="bold")
             
             if i == 0:
-                label = component_to_label(component)
+                label = component2label(component)
                 ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
                 format_vel_ylabels(ax, major_tick_spacing=major_vel_spacing, minor_tick_spacing=minor_vel_spacing, tick_label_size=tick_label_size)
             else:
@@ -497,7 +701,7 @@ def plot_geo_3c_waveforms_and_stfts(stream_wf, stream_spec,
             quadmesh = ax.pcolormesh(timeax_spec, freqax, spec, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
             if i == 0:
-                label = component_to_label(component)
+                label = component2label(component)
                 ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize=component_label_size, fontweight="bold", ha="left", va="top", bbox=dict(facecolor='white', alpha=1.0))
 
             if j == 2:
@@ -570,19 +774,19 @@ def plot_geo_stft_spectrograms(stream_spec,
 
     ax = axes[0]
     quadmesh = ax.pcolormesh(timeax, freqax, data_z, cmap = cmap, vmin = dbmin, vmax = dbmax)
-    label = component_to_label("Z")
+    label = component2label("Z")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, axis_label_size = axis_label_size, tick_label_size = tick_label_size)  
 
     ax = axes[1]
     quadmesh = ax.pcolormesh(timeax, freqax, data_1, cmap = cmap, vmin = dbmin, vmax = dbmax)
-    label = component_to_label("1")
+    label = component2label("1")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, tick_label_size = tick_label_size)
 
     ax = axes[2]
     quadmesh = ax.pcolormesh(timeax, freqax, data_2, cmap = cmap, vmin = dbmin, vmax = dbmax)
-    label = component_to_label("2")
+    label = component2label("2")
     ax.text(component_label_x, component_label_y, label, transform=ax.transAxes, fontsize = component_label_size, fontweight = "bold", ha = "left", va = "top", bbox=dict(facecolor='white', alpha=1.0))
     format_freq_ylabels(ax, major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks, tick_label_size = tick_label_size)
 
@@ -648,13 +852,13 @@ def plot_hydro_stft_spectrograms(stream_spec,
     cmap = get_quadmeshmap()
 
     for i, location in enumerate(locations):
-        trace_spec = stream_spec.select(location = location)[0]
+        trace_spec = stream_spec.select(locations = location)[0]
         timeax = trace_spec.times
         freqax = trace_spec.freqs
         data = trace_spec.data
         
         ax = axes[i]
-        quadmesh = ax.pcolormesh(timeax, freqax, data, cmap = cmap, vmin = dbmin, vmax = dbmax)
+        mappable = ax.pcolormesh(timeax, freqax, data, cmap = cmap, vmin = dbmin, vmax = dbmax)
 
         station = trace_spec.station
         label = f"{station}.{location}"
@@ -684,9 +888,9 @@ def plot_hydro_stft_spectrograms(stream_spec,
         axes[0].set_title(title, fontsize = title_size, fontweight = "bold")
 
     if axes is None:
-        return fig, axes, quadmesh
+        return fig, axes, mappable
     else:
-        return axes, quadmesh
+        return axes, mappable
 
 # Plot the total PSD of a geophone station and the detected spectral peaks
 def plot_geo_total_psd_and_peaks(trace_total, peak_df,
@@ -1298,7 +1502,7 @@ def plot_3c_waveforms_and_cwts(stream, specs,
 
                 #### Plot the compoent name
                 if j == 0:
-                    title = component_to_label(component)
+                    title = component2label(component)
                     ax.set_title(f"{title}", fontsize=title_size, fontweight="bold")
 
                 #### Set the y tick labels
@@ -1364,7 +1568,7 @@ def plot_cwt_powers(specs,
             # ax.add_patch(box)
 
             if j == 0:
-                title = component_to_label(component)
+                title = component2label(component)
                 ax.set_title(f"{title}", fontsize=title_size, fontweight="bold")
 
             if i == 0:
@@ -1435,7 +1639,7 @@ def plot_cascade_zoom_in_geo_waveforms_and_cwt_powers(stream, specs, window_dict
         waveform = trace.data
         timeax = get_datetime_axis_from_trace(trace)
         color = get_geo_component_color(component_to_plot)
-        label = component_to_label(component_to_plot)
+        label = component2label(component_to_plot)
 
         ax = axes[0, i]
         ax.plot(timeax, waveform, color=color, linewidth=linewidth_wf)
@@ -1644,7 +1848,7 @@ def plot_cwt_cross_station_spectra(cross_specs, station_pair,
         quadmesh = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
 
-        label = component_to_label(component)
+        label = component2label(component)
         ax.text(component_label_x, component_label_y, label, fontsize=compoent_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
         format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
@@ -1750,7 +1954,7 @@ def plot_cwt_cross_component_spectra(cross_specs, station,
         ax = axes[0, i]
         quadmesh = ax.pcolormesh(timeax, freqs, power, cmap="inferno", vmin=dbmin, vmax=dbmax)
 
-        label = f"{component_to_label(component1)}-{component_to_label(component2)}"
+        label = f"{component2label(component1)}-{component2label(component2)}"
         ax.text(component_label_x, component_label_y, label, fontsize=compoent_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
         format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
@@ -1865,7 +2069,7 @@ def plot_freq_phase_pairs(freq_phi_dict, station_pair, freq_lim=(0, 200),
         freqs = freq_phi_pairs[:, 0]
         phases = freq_phi_pairs[:, 1]
         color = get_geo_component_color(component)
-        title = component_to_label(component)
+        title = component2label(component)
 
         ### Plot the frequency-phase pairs
         ax = axes[i]
@@ -1950,7 +2154,7 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
         if i == 0:
             ax.text(station_label_x, station_label_y, station1, fontsize=station_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
-        title = component_to_label(component)
+        title = component2label(component)
         ax.set_title(title, fontsize=title_size, fontweight="bold")
 
         format_datetime_xlabels(ax, label=False, major_tick_spacing=major_time_spacing, minor_tick_spacing=minor_time_spacing, tick_label_size=tick_label_size)
@@ -2055,58 +2259,79 @@ def plot_waveforms_cwt_and_xcorr(stream, specs, cc_dict, station_pair,
 
     return fig, axes
 
-## Function to plot the beamforming results
-def plot_beam_images(xslow, yslow, beamdict, 
-                     vmin=0, vmax=1, reference_vels=[150, 300, 600], slow_spacing=2, subarray="A", station_selection="inner",
-                     axis_label_size=12, tick_label_size=12, title_size=15, label_size=10, label_angle=90):
+# Plot the 3C beamforming results
+# Input slownesses are in s/m and will be converted to s/km
+def plot_beam_images(xslowax, yslowax, bimage_dict,
+                     plot_global_max = True, plot_local_max = False,
+                     vmin=0, vmax=1, reference_vels=[500, 1500, 3500],           
+                     marker_color = "deepskyblue", marker_size_max = 20.0, marker_size_local_max = 10.0,
+                     major_slow_spacing=0.5, num_minor_slow_ticks=5,
+                     axis_label_size=10, tick_label_size=10, title_size=14, label_size=10, label_angle=90):
     
     xslow_label = X_SLOW_LABEL
     yslow_label = Y_SLOW_LABEL
     vel_unit = WAVE_VELOCITY_UNIT
     
-    numcomp = len(beamdict)
-    xslow = xslow * 1000
-    yslow = yslow * 1000
+    numcomp = len(bimage_dict)
+    xslowax = xslowax * 1000
+    yslowax = yslowax * 1000
 
     fig, axes = subplots(1, numcomp, figsize=(15, 5), sharex=True, sharey=True)
 
-    for i, component in enumerate(beamdict.keys()):
-        bimage = beamdict[component]
+    for i, component in enumerate(bimage_dict.keys()):
+        bimage = bimage_dict[component].bimage
         ax = axes[i]
-        cmap = ax.pcolor(xslow, yslow, bimage, cmap="inferno", vmin=vmin, vmax=vmax)
+        cmap = ax.pcolor(xslowax, yslowax, bimage, cmap="inferno", vmin=vmin, vmax=vmax)
 
         if i == 0:
-            ax.set_xlabel(xslow_label, fontsize=tick_label_size)
-            ax.set_ylabel(yslow_label, fontsize=tick_label_size)
+            ax.set_xlabel(xslow_label, fontsize=axis_label_size)
+            ax.set_ylabel(yslow_label, fontsize=axis_label_size)
 
-        ax.set_title(component_to_label(component), fontsize=title_size, fontweight="bold")
+        ax.set_title(component2label(component), fontsize=title_size, fontweight="bold")
         ax.set_aspect("equal")
-        
-        for j, vel in enumerate(reference_vels):
-            slow = 1 / vel * 1000
-            ax.add_patch(Circle((0, 0), slow, edgecolor='turquoise', facecolor='none', linestyle="--"))
-            ax.add_patch(Circle((0, 0), slow, edgecolor='turquoise', facecolor='none', linestyle="--"))
-            ax.add_patch(Circle((0, 0), slow, edgecolor='turquoise', facecolor='none', linestyle="--"))
 
-            if i == 0:
-                x = slow * cos(radians(label_angle))
-                y = slow * sin(radians(label_angle))
-                if j == 0:
-                    ax.text(x, y, f"{vel} {vel_unit}", fontsize=label_size, fontweight="bold", color="turquoise", va="bottom", ha="left")
-                else:
-                    ax.text(x, y, f"{vel}", fontsize=label_size, fontweight="bold", color="turquoise", va="bottom", ha="left")
+        # Plot the local maxima
+        if plot_local_max:
+            xslows_local_max = bimage_dict[component].xslows_local_max * 1000
+            yslows_local_max = bimage_dict[component].yslows_local_max * 1000
 
-    ### Plot the reference apparent velocities and labels
-    for ax in axes:
-        
-        ax.axhline(0, color="turquoise", linestyle="--")
-        ax.axvline(0, color="turquoise", linestyle="--")
+            for xslow_local_max, yslow_local_max in zip(xslows_local_max, yslows_local_max):
+                ax.scatter(xslow_local_max, yslow_local_max, color=marker_color, s=marker_size_local_max, marker="D", alpha=0.5)
+
+        # Plot the reference slownesses and the crosshair
+        if i == 0:
+            plot_reference_slownesses(ax, reference_vels, 
+                                      plot_label = True,
+                                      linewidth=1.0, label_angle=label_angle, label_size=label_size)
+        else:
+            plot_reference_slownesses(ax, reference_vels, 
+                                      plot_label = False,
+                                      linewidth=1.0, label_angle=label_angle, label_size=label_size)
+
+        # Plot the global maxima
+        if plot_global_max:
+            xslow_global_max = bimage_dict[component].xslow_global_max * 1000
+            yslow_global_max = bimage_dict[component].yslow_global_max * 1000
+            
+            ax.scatter(xslow_global_max, yslow_global_max, color=marker_color, s=marker_size_max, marker="D", edgecolor="black", linewidth=0.5)
 
     ### Set the axis ticks and labels
-    for ax in axes:
-        ax.xaxis.set_major_locator(MultipleLocator(slow_spacing))
-        ax.yaxis.set_major_locator(MultipleLocator(slow_spacing))
-
+    for i, ax in enumerate(axes):
+        if i == 0:
+            format_slowness_xlabels(ax,
+                                    major_tick_spacing=major_slow_spacing, num_minor_ticks=num_minor_slow_ticks, 
+                                    axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+            format_slowness_ylabels(ax,
+                                    major_tick_spacing=major_slow_spacing, num_minor_ticks=num_minor_slow_ticks, 
+                                    axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+        else:
+            format_slowness_xlabels(ax, label=False,
+                                    major_tick_spacing=major_slow_spacing, num_minor_ticks=num_minor_slow_ticks, 
+                                    axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+            format_slowness_ylabels(ax, label=False,
+                                    major_tick_spacing=major_slow_spacing, num_minor_ticks=num_minor_slow_ticks, 
+                                    axis_label_size=axis_label_size, tick_label_size=tick_label_size)
+            
     ### Add the colorbar
     bbox = axes[-1].get_position()
     position = [bbox.x0 + bbox.width + 0.01, bbox.y0, 0.01, bbox.height]
@@ -2114,21 +2339,54 @@ def plot_beam_images(xslow, yslow, beamdict,
     cbar = fig.colorbar(cmap, cax=caxis)
     cbar.set_label("Normalized power", fontsize=12)
 
-    ### Add the title
-    if subarray == "A":
-        if station_selection == "inner":
-            title = "Array A, inner"
-        else:
-            title = "Array A, all"
-    else:
-        if station_selection == "inner":
-            title = "Array B, inner"
-        else:
-            title = "Array B, all"
+    # ### Add the title
+    # if subarray == "A":
+    #     if station_selection == "inner":
+    #         title = "Array A, inner"
+    #     else:
+    #         title = "Array A, all"
+    # elif subarray == "B":
+    #     if station_selection == "inner":
+    #         title = "Array B, inner"
+    #     else:
+    #         title = "Array B, all"
+    # else:
+    #     title = "Whole array"
 
-    fig.suptitle(title, fontsize=title_size, fontweight="bold")
+    # fig.suptitle(title, fontsize=title_size, fontweight="bold")
     
     return fig, axes
+
+# Plot reference slownesses on the beamforming images
+def plot_reference_slownesses(ax, vels,
+                              plot_label = True,
+                              color = "deepskyblue", linewidth = 1.0, label_angle=90, label_size=10):
+        
+        vel_unit = WAVE_VELOCITY_UNIT
+
+        # Plot the reference slownesses
+        for i, vel in enumerate(vels):
+            slow = 1 / vel * 1000
+            ax.add_patch(Circle((0, 0), slow, edgecolor=color, facecolor='none', linestyle="--", linewidth=linewidth))
+            ax.add_patch(Circle((0, 0), slow, edgecolor=color, facecolor='none', linestyle="--", linewidth=linewidth))
+            ax.add_patch(Circle((0, 0), slow, edgecolor=color, facecolor='none', linestyle="--", linewidth=linewidth))
+
+            if plot_label:
+                x = slow * cos(radians(label_angle))
+                y = slow * sin(radians(label_angle))
+
+                if i == 0:
+                    label = f"{vel} {vel_unit}"
+                else:
+                    label = f"{vel}"
+
+                ax.text(x, y, label, fontsize=label_size, fontweight="bold", color=color, va="top", ha="left")
+
+        # Plot the crosshair
+        ax.axhline(0, color=color, linestyle="--", linewidth=linewidth)
+        ax.axvline(0, color=color, linestyle="--", linewidth=linewidth)
+
+        return ax
 
 ## Function for plotting the 3C particle-motion variation with time
 def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
@@ -2162,7 +2420,7 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
     cbar_coord = [0.91, 0.8, 0.01, 0.07]
     cbar = add_quadmeshbar(fig, quadmesh, cbar_coord, orientation="vertical", dbspacing=dbspacing)
 
-    ax.text(0.01, 0.85, component_to_label("Z"), fontsize=component_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
+    ax.text(0.01, 0.85, component2label("Z"), fontsize=component_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
     
     ax.set_ylim(freqmin, freqmax)
     ax.yaxis.set_major_locator(MultipleLocator(major_freq_spacing))
@@ -2189,7 +2447,7 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
         ax.plot(timeax, data, color=color, linewidth=linewidth_wf)
 
         ## Label the component
-        ax.text(0.01, 0.85, component_to_label(component), fontsize=component_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
+        ax.text(0.01, 0.85, component2label(component), fontsize=component_label_size, fontweight="bold", transform=ax.transAxes, ha="left", va="top", bbox=dict(facecolor="white", alpha=1))
 
         ## Set the axis limits
         ax.set_xlim(timeax[0], timeax[-1])
@@ -2224,8 +2482,8 @@ def plot_3c_particle_motion_with_time(stream, specs, pm_data_list,
         component1 = component_pair[0]
         component2 = component_pair[1]
 
-        label1 = component_to_label(component1)
-        label2 = component_to_label(component2)
+        label1 = component2label(component1)
+        label2 = component2label(component2)
 
         ax.set_xlabel(label1, fontsize=axis_label_size)
         ax.set_ylabel(label2, fontsize=axis_label_size)
@@ -2350,6 +2608,183 @@ def get_windowed_pm_data(stream_in, window_length):
 
     return pm_data_list
 
+# Plot the projection of the particle-motion data on the three planes
+def plot_pm_projections(signal_1, signal_2, signal_z,
+                        linewidth = 0.5, linecolor = "gray",
+                        panel_width = 5.0, panel_height = 5.0, panel_gap = 1.0,
+                        **kwargs):
+
+    if "axes" in kwargs:
+        axes = kwargs["axes"]
+        fig = axes[0].get_figure()
+
+        if len(axes) != 3:
+            raise ValueError("Three axes are required!")
+    else:
+        fig, axes = subplots(1, 3, figsize=(panel_width * 3 + 2 * panel_gap, panel_height))
+
+    # Normalize the signals by the maximum value of the three components
+    max_val = max([amax(abs(signal_1)), amax(abs(signal_2)), amax(abs(signal_z))])
+    signal_1 = signal_1 / max_val
+    signal_2 = signal_2 / max_val
+    signal_z = signal_z / max_val
+
+    # Plot the 1-2 projection
+    ax = axes[0]
+    ax.plot(signal_2, signal_1, color=linecolor, linewidth=linewidth)
+    ax.set_xlabel(component2label("2"))
+    ax.set_ylabel(component2label("1"))
+    ax.set_xlim([-1.05, 1.05])
+    ax.set_ylim([-1.05, 1.05])
+    ax.set_aspect("equal")
+
+
+    # Plot the 1-Z projection
+    ax = axes[1]
+    ax.plot(signal_1, signal_z, color=linecolor, linewidth=linewidth)
+    ax.set_xlabel(component2label("1"))
+    ax.set_ylabel(component2label("Z"))
+    ax.set_xlim([-1.05, 1.05])
+    ax.set_ylim([-1.05, 1.05])
+    ax.set_aspect("equal")
+
+    # Plot the 2-Z projection
+    ax = axes[2]
+    ax.plot(signal_2, signal_z, color=linecolor, linewidth=linewidth)
+    ax.set_xlabel(component2label("2"))
+    ax.set_ylabel(component2label("Z"))
+    ax.set_xlim([-1.05, 1.05])
+    ax.set_ylim([-1.05, 1.05])
+    ax.set_aspect("equal")
+
+    return fig, axes
+
+###### Functions for plotting FFT PSDs ######
+def plot_all_geo_fft_psd_n_maps(stream_fft, coord_df, min_freq, max_freq, 
+                                factor = 0.05, base = -10, psd_plot_hw_ratio = 2.0, psd_plot_width = 4.0, panel_gap = 0.2,
+                                linewidth_psd = 1.0, marker_size = 10, linewidth = 0.5, 
+                                station_label_offset = 0.005, station_label_size = 8, direction_label_offset = 0.5,
+                                axis_label_size = 12, tick_label_size = 10, title_size = 14,
+                                major_freq_spacing = 0.2, num_minor_freq_ticks = 10,
+                                stations_highlight = {"A16": (3.0, -3.0), "A01": (-3.0, 3.0), "A19": (3.0, -3.0), "B01": (-3.0, 3.0), "B20": (3.0, -3.0)}):
+    
+    max_north = NORTHMAX_WHOLE
+    min_north = NORTHMIN_WHOLE
+    max_east = EASTMAX_WHOLE
+    min_east = EASTMIN_WHOLE
+
+    ### Sort the stations by their S-N coordinates
+    coord_df = coord_df.sort_values(by = "north", ascending = True)
+
+    ### Generate the figure and axes ###
+    print("Plotting the frequency vs time for each station...")
+    print("Generating the figure and axes...")
+    map_hw_ratio = (max_north - min_north) / (max_east - min_east)
+    width_ratios = [1, 1, 1, psd_plot_hw_ratio / map_hw_ratio]
+
+    gs = GridSpec(1, 4, width_ratios=width_ratios)
+
+    fig_width = psd_plot_width * (3 + psd_plot_hw_ratio / map_hw_ratio + 3 * panel_gap)
+    fig_height = psd_plot_width * psd_plot_hw_ratio
+
+    fig = figure(figsize = (fig_width, fig_height))
+
+    ### Plot the 3D PSDs for each station ###
+    ax_psd_z = fig.add_subplot(gs[0, 0])
+    ax_psd_1 = fig.add_subplot(gs[0, 1])
+    ax_psd_2 = fig.add_subplot(gs[0, 2])
+
+    i = 0
+    for index, _ in coord_df.iterrows():
+        station = index
+        print(f"Plotting {station}...")
+
+        # Get the 3C PSD of the station
+        trace_fft_z = stream_fft.select(stations=station, components="Z")[0]
+        trace_fft_1 = stream_fft.select(stations=station, components="1")[0]
+        trace_fft_2 = stream_fft.select(stations=station, components="2")[0]
+
+        trace_fft_z.to_db()
+        trace_fft_1.to_db()
+        trace_fft_2.to_db()
+
+        psd_z = trace_fft_z.psd
+        psd_1 = trace_fft_1.psd
+        psd_2 = trace_fft_2.psd
+        freqax = trace_fft_z.freqs
+
+        psd_z_to_plot = psd_z[(freqax >= min_freq) & (freqax <= max_freq)]
+        psd_1_to_plot = psd_1[(freqax >= min_freq) & (freqax <= max_freq)]
+        psd_2_to_plot = psd_2[(freqax >= min_freq) & (freqax <= max_freq)]
+        freqax_to_plot = freqax[(freqax >= min_freq) & (freqax <= max_freq)]
+
+        # Plot the frequency vs time curves
+        psd_z_to_plot = (psd_z_to_plot - base) * factor + i
+        psd_1_to_plot = (psd_1_to_plot - base) * factor + i
+        psd_2_to_plot = (psd_2_to_plot - base) * factor + i
+
+        ax_psd_z.plot(freqax_to_plot, psd_z_to_plot, color = get_geo_component_color("Z"), linewidth = linewidth_psd)
+        ax_psd_1.plot(freqax_to_plot, psd_1_to_plot, color = get_geo_component_color("1"), linewidth = linewidth_psd)
+        ax_psd_2.plot(freqax_to_plot, psd_2_to_plot, color = get_geo_component_color("2"), linewidth = linewidth_psd)
+
+        # Plot the station labels
+        station_label_x = min_freq + station_label_offset
+        ax_psd_z.text(station_label_x, i, station, color = "black", fontsize = station_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "left")
+
+        # Update the counter
+        i += 1
+
+    # Plot the direction labels
+    min_y = -1
+    max_y = len(coord_df) + 1
+
+    direction_label_x = station_label_x
+    north_label_y = max_y - direction_label_offset
+    south_label_y = min_y + direction_label_offset
+
+    ax_psd_z.text(direction_label_x, north_label_y, "North", color = "black", fontsize = station_label_size, fontweight = "bold", verticalalignment = "bottom", horizontalalignment = "left")
+    ax_psd_z.text(direction_label_x, south_label_y, "South", color = "black", fontsize = station_label_size, fontweight = "bold", verticalalignment = "top", horizontalalignment = "left")
+
+    # Turn off the y ticks
+    ax_psd_z.set_yticks([])
+    ax_psd_1.set_yticks([])
+    ax_psd_2.set_yticks([])
+
+    # Set the axis labels and limits
+    ax_psd_z.set_xlim(min_freq, max_freq)
+    ax_psd_1.set_xlim(min_freq, max_freq)
+    ax_psd_2.set_xlim(min_freq, max_freq)
+
+    format_freq_xlabels(ax_psd_z, 
+                        major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks,
+                        axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    format_freq_xlabels(ax_psd_1,
+                        major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks,
+                        axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+    
+    format_freq_xlabels(ax_psd_2,
+                        major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks,
+                        axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+
+    ax_psd_z.set_ylim(min_y, max_y)
+    ax_psd_1.set_ylim(min_y, max_y)
+    ax_psd_2.set_ylim(min_y, max_y)
+
+    # Set the axis titles
+    ax_psd_z.set_title(component2label("Z"), fontsize = title_size, fontweight = "bold")
+    ax_psd_1.set_title(component2label("1"), fontsize = title_size, fontweight = "bold")
+    ax_psd_2.set_title(component2label("2"), fontsize = title_size, fontweight = "bold")
+
+    # Add a station map on the right
+    ax_map = fig.add_subplot(gs[0, 3])
+    add_station_map(ax_map,
+                    stations_highlight = stations_highlight,
+                    axis_label_size = axis_label_size, tick_label_size = tick_label_size)
+
+    return fig, [ax_psd_z, ax_psd_1, ax_psd_2, ax_map]
+
 ###### Functions for adding elements to the plots ######
 
 # Add day-night shading to the plot
@@ -2360,12 +2795,20 @@ def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="light
     for i in range(len(sun_df) - 1):
         sunrise = sun_df.iloc[i]["sunrise"]
         sunset = sun_df.iloc[i]["sunset"]
-        ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0, edgecolor=None)
+
+        if i == 0:
+            day_handle = ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0, edgecolor=None, label="Day")
+        else:
+            ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0, edgecolor=None)
 
         surise_next = sun_df.iloc[i + 1]["sunrise"]
-        ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0, edgecolor=None)
 
-    return ax
+        if i == 0:
+            night_handle = ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0, edgecolor=None, label="Night")
+        else:
+            ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0, edgecolor=None)
+
+    return ax, day_handle, night_handle
 
 # Add a station map to the plot
 # Make sure that the axis has the correct aspect ratio!
@@ -2424,77 +2867,26 @@ def add_station_map(ax,
     return ax
 
 # Add a colorbar to the plot 
-def add_colorbar(fig, color, label, position, orientation="vertical", axis_label_size=12, tick_label_size=10, major_tick_spacing=10):
+def add_colorbar(fig, position, label, 
+                 orientation="vertical", axis_label_size=10, tick_label_size=10, max_num_ticks=5, **kwargs):
+    
+    if "mappable" in kwargs:
+        color = kwargs["mappable"]
+    elif "cmap" in kwargs and "norm" in kwargs:
+        color = ScalarMappable(cmap=kwargs["cmap"], norm=kwargs["norm"])
+    else:
+        raise ValueError("No colorbar object found!")
+    
     cax = fig.add_axes(position)
     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+
+
+    cbar.locator = MaxNLocator(nbins=max_num_ticks)
     cbar.set_label(label, fontsize=axis_label_size)
     cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(major_tick_spacing)
     cbar.update_ticks()
 
     return cbar
-
-# # Add a power colorbar to the plot
-# def add_quadmeshbar(fig, color, position, orientation="horizontal", tick_spacing=5, axis_label_size=10, tick_label_size=10, tick_length=5, tick_width=1, labelpad=5):
-#     cax = fig.add_axes(position)
-#     cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-#     cbar.set_label("Power (dB)", fontsize=axis_label_size, labelpad=labelpad)
-#     cbar.ax.tick_params(labelsize=tick_label_size, length=tick_length, width=tick_width)
-#     cbar.locator = MultipleLocator(tick_spacing)
-#     cbar.update_ticks() 
-
-#     return cbar
-
-# Add a frequency colorbar to the plot
-def add_freq_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10, major_tick_spacing = 0.1):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-
-    cbar.set_label("Frequency (Hz)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(major_tick_spacing)
-    cbar.update_ticks()
-
-    return cbar
-
-# Add a phase colorbar to the plot
-def add_phase_colorbar(fig, color, position, orientation="horizontal", tick_spacing=pi/2, axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Phase (rad)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
-
-    return cbar
-
-# Add a coherence colorbar to the plot
-def add_coherence_colorbar(fig, color, position, orientation="horizontal", tick_spacing=0.1, axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Coherence", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks() 
-
-    return cbar
-
-# Add a reverse-bandwidth colorbar to the plot
-def add_rbw_colorbar(fig, color, position, orientation="horizontal", axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Bandwidth$^{-1}$ (Hz$^{-1}$)", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.update_ticks()
-
-# Add a count colorbar to the plot
-def add_count_colorbar(fig, color, position, orientation="horizontal", tick_spacing=10, axis_label_size=12, tick_label_size=10):
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
-    cbar.set_label("Count", fontsize=axis_label_size)
-    cbar.ax.tick_params(labelsize=tick_label_size)
-    cbar.locator = MultipleLocator(tick_spacing)
-    cbar.update_ticks()
 
 # Add a vertical scale bar
 # Coordinates are in fractions of the axis
@@ -2517,7 +2909,7 @@ def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_u
 
 
     ax.errorbar(scale_x, scale_y, yerr=length * scale/2, xerr=None, capsize=2.5, color=color, fmt='-', linewidth=linewidth)
-    ax.text(label_x, label_y, f"{length} {label_unit}", fontsize=fontsize, color='color', ha='left', va='center')
+    ax.text(label_x, label_y, f"{length} {label_unit}", fontsize=fontsize, color=color, ha='left', va='center')
     
     return ax
 
@@ -2576,13 +2968,13 @@ def get_quadmeshmap(**kwargs):
 
 # Format the x labels in datetime
 def format_datetime_xlabels(ax, 
-                            label=True, date_format = '%Y-%m-%d %H:%M:%S', 
+                            plot_axis_label=True, plot_tick_label=True,
+                            date_format = '%Y-%m-%d %H:%M:%S', 
                             major_tick_spacing = "24h", num_minor_ticks = 5,
                             axis_label_size = 12, tick_label_size = 10, rotation = 0,
                             major_tick_length = 5, minor_tick_length = 2.5, tick_width = 1,
                             va = "top", ha = "center"):
-    if label:
-        ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
+
 
     # Convert to time deltas
     major_tick_spacing = Timedelta(major_tick_spacing)
@@ -2593,32 +2985,43 @@ def format_datetime_xlabels(ax,
     ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
     ax.xaxis.set_major_formatter(DateFormatter(date_format))
 
-    for label in ax.get_xticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment(va)
-        label.set_horizontalalignment(ha)
-        label.set_rotation(rotation)
-
     ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
+
+    if plot_tick_label:
+        for label in ax.get_xticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment(va)
+            label.set_horizontalalignment(ha)
+            label.set_rotation(rotation)
+    else:
+        ax.set_xticklabels([])
+
+    if plot_axis_label:
+        ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
 
     return ax
 
 # Format the x labels in frequency
-def format_freq_xlabels(ax, label=True, 
+def format_freq_xlabels(ax,
+                        plot_axis_label=True, plot_tick_label=True,
                         major_tick_spacing=100.0, num_minor_ticks=5,
                         axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
-    if label:
+    
+    if plot_axis_label:
         ax.set_xlabel("Frequency (Hz)", fontsize=axis_label_size)
 
     ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
-    for label in ax.get_xticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment('top')
-        label.set_horizontalalignment('center')
+    if plot_tick_label:
+        for label in ax.get_xticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('top')
+            label.set_horizontalalignment('center')
+    else:
+        ax.set_xticklabels([])
 
     ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
@@ -2647,15 +3050,15 @@ def format_rel_time_xlabels(ax, label=True,
     return ax
 
 # Format the x labels in easting
-def format_east_xlabels(ax, label=True, 
-                        major_tick_spacing=50, minor_tick_spacing=10, 
+def format_east_xlabels(ax, plot_axis_label=True, 
+                        major_tick_spacing=50, num_minor_ticks=5,
                         axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
-    if label:
+    if plot_axis_label:
         ax.set_xlabel("East (m)", fontsize=axis_label_size)
 
     ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.xaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_xticklabels():
         label.set_fontsize(tick_label_size) 
@@ -2668,15 +3071,15 @@ def format_east_xlabels(ax, label=True,
     return ax
 
 # Format the y labels in northing
-def format_north_ylabels(ax, label=True, 
-                         major_tick_spacing=50, minor_tick_spacing=10, 
+def format_north_ylabels(ax, plot_axis_label=True, 
+                         major_tick_spacing=50, num_minor_ticks=5,
                          axis_label_size=12, tick_label_size=10,
                          major_tick_length=5, minor_tick_length=2.5, tick_width=1):
-    if label:
+    if plot_axis_label:
         ax.set_ylabel("North (m)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_yticklabels():
         label.set_fontsize(tick_label_size) 
@@ -2710,12 +3113,13 @@ def format_depth_ylabels(ax, label=True,
     return ax
 
 ## Function to format the y labels in frequency
-def format_freq_ylabels(ax, label=True, 
+def format_freq_ylabels(ax, 
+                        plot_axis_label=True, plot_tick_label=True,
                         abbreviation=False, 
                         major_tick_spacing=20, num_minor_ticks=4,
                         axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
-    if label:
+    if plot_axis_label:
         if abbreviation:
             ax.set_ylabel("Freq. (Hz)", fontsize=axis_label_size)
         else:
@@ -2724,10 +3128,13 @@ def format_freq_ylabels(ax, label=True,
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
-    for label in ax.get_yticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment('center')
-        label.set_horizontalalignment('right')
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
 
     ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
@@ -2735,20 +3142,28 @@ def format_freq_ylabels(ax, label=True,
     return ax
 
 # Format the y labels in decibels
-def format_db_ylabels(ax, label=True,
+def format_db_ylabels(ax, sensor="geo",
+                      plot_axis_label=True, plot_tick_label=True,
                       major_tick_spacing=10, num_minor_ticks=5,
                       axis_label_size=12, tick_label_size=10,
                       major_tick_length=5, minor_tick_length=2.5, tick_width=1):
-    if label:
-        ax.set_ylabel("Power (dB)", fontsize=axis_label_size)
+    
+    if plot_axis_label:
+        if sensor == "geo":
+            ax.set_ylabel(GEO_PSD_LABEL, fontsize=axis_label_size)
+        else:
+            ax.set_ylabel(HYDRO_PSD_LABEL, fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
-    for label in ax.get_yticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment('center')
-        label.set_horizontalalignment('right')
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
 
     ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
@@ -2783,17 +3198,17 @@ def format_vel_ylabels(ax, label=True,
 # Format the ylabel in pressure
 def format_pressure_ylabels(ax, label=True, 
                             abbreviation=False, 
-                            major_tick_spacing=5, minor_tick_spacing=1, 
+                            major_tick_spacing=0.5, num_minor_ticks=5,
                             axis_label_size=12, tick_label_size=12,
                             major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         if abbreviation:
-            ax.set_ylabel(f"Press. (Pa)", fontsize=axis_label_size)
+            ax.set_ylabel(f"Press. (mPa)", fontsize=axis_label_size)
         else:
-            ax.set_ylabel(f"Pressure (Pa)", fontsize=axis_label_size)
+            ax.set_ylabel(f"Pressure (mPa)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_yticklabels():
         label.set_fontsize(tick_label_size) 
@@ -2805,8 +3220,86 @@ def format_pressure_ylabels(ax, label=True,
 
     return ax
 
+# Format the ylabel in phase difference
+def format_phase_diff_ylabels(ax, 
+                              plot_axis_label=True, plot_tick_label=True,
+                              abbreviation=False,
+                              major_tick_spacing=pi/2, num_minor_ticks=3,
+                              axis_label_size=12, tick_label_size=10,
+                              major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if plot_axis_label:
+        if abbreviation:
+            ax.set_ylabel("Phase diff. (rad)", fontsize=axis_label_size)
+        else:
+            ax.set_ylabel("Phase difference (rad)", fontsize=axis_label_size)
+    
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+    ax.yaxis.set_major_formatter(FuncFormatter(pi_format_func))
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
+# Format the xlabel in slowness in s/km
+def format_slowness_xlabels(ax, label=True,
+                            major_tick_spacing=1.0, num_minor_ticks=5,
+                            axis_label_size=10, tick_label_size=10,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if label:
+        ax.set_xlabel("East slowness (s km$^{-1}$)", fontsize=axis_label_size)
+
+    ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    for label in ax.get_xticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('top')
+        label.set_horizontalalignment('center')
+
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
+
+    return
+
+# Format the ylabel in slowness in s/km
+def format_slowness_ylabels(ax, label=True,
+                            major_tick_spacing=1.0, num_minor_ticks=5,
+                            axis_label_size=10, tick_label_size=10,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if label:
+        ax.set_ylabel("North slowness (s km$^{-1}$)", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    for label in ax.get_yticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('center')
+        label.set_horizontalalignment('right')
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return
+
 
 ###### Functions for handling colors ######
+# Create a cunstomized colormap using a portion of an existing colormap
+def get_cmap_segment(cmap, begin_portion, end_portion, num = 256):
+    cmap_in = get_cmap(cmap)
+    cmap_segment = cmap_in(linspace(begin_portion, end_portion, num))
+    cmap_out = LinearSegmentedColormap.from_list("customized_cmap", cmap_segment, N=num)
+
+    return cmap_out
+    
 
 # Create a categorical colormap with more categories by interpolating a segment of an existing colormap
 def get_interp_cat_colors(cmap, begin_index, end_index, num_cat):
@@ -2841,18 +3334,18 @@ def timedelta_to_locator(time_delta):
 # Function for getting the color for the three geophone components
 def get_geo_component_color(component):
     if component == "Z":
-        color = "black"
+        color = "tab:blue"
     elif component == "1":
-        color = "forestgreen"
+        color = "tab:orange"
     elif component == "2":
-        color = "royalblue"
+        color = "tab:green"
     else:
         raise ValueError("Invalid component name!")
 
     return color
 
 # Function to convert component names to subplot titles
-def component_to_label(component):
+def component2label(component):
     if component == "Z":
         title = "Up"
     elif component == "1":
@@ -2911,3 +3404,17 @@ def save_figure(fig, filename, outdir=FIGURE_DIR, dpi=300):
 
     fig.savefig(outpath, dpi=dpi, bbox_inches='tight')
     print(f"Figure saved to {outpath}")
+
+# Format a phase difference in radians to a fraction of pi
+def pi_format_func(value, tick_number):
+    # Convert value to multiples of π
+    if value == 0:
+        return "0"
+    elif value == pi:
+        return "π"
+    elif value == -pi:
+        return "-π"
+    elif value >0:
+        return f"π/{pi / value:.0f}"
+    else:
+        return f"-π/{pi / abs(value):.0f}"

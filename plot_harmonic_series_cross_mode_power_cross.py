@@ -11,8 +11,8 @@ from utils_plot import add_colorbar, save_figure
 
 # Inputs
 # Data
-name1 = "SR25a"
-name2 = "SR76a"
+name1 = "PR15295"
+name2 = "PR16556"
 
 min_num_sta = 9
 
@@ -60,24 +60,23 @@ for station in stations:
     resonance_sta_df1 = resonance_df1.loc[resonance_df1["station"] == station]
     resonance_sta_df2 = resonance_df2.loc[resonance_df2["station"] == station]
 
-    resonance_sta_df1 = resonance_sta_df1.reindex(resonance_sta_df2.index, method="nearest", limit=1)
+    resonance_sta_df1.set_index("time", inplace=True)
+    resonance_sta_df2.set_index("time", inplace=True)
 
-    power1_in = resonance_sta_df1["power"].values
-    power2_in = resonance_sta_df2["power"].values
+    resonance_merged_df = resonance_sta_df1.merge(resonance_sta_df2, how = "inner", left_index = True, right_index = True, suffixes = ("_1", "_2"))
 
-    # Remove the NaN values
-    power1_raw = power1_in[~isnan(power1_in) & ~isnan(power2_in)]
-    power2_raw = power2_in[~isnan(power1_in) & ~isnan(power2_in)]
+    power1_in = resonance_merged_df["power_1"].values
+    power2_in = resonance_merged_df["power_2"].values
 
     # Compute the correlation coefficient
-    power_corr = corrcoef(power1_raw, power2_raw)[0, 1]
+    power_corr = corrcoef(power1_in, power2_in)[0, 1]
     sta_corr_dict[station] = power_corr
 
     # Remove the mean and divide by the standard deviation
-    power1_norm = (power1_raw - mean(power1_raw)) / std(power1_raw)
-    power2_norm = (power2_raw - mean(power2_raw)) / std(power2_raw)
+    power1_norm = (power1_in - mean(power1_in)) / std(power1_in)
+    power2_norm = (power2_in - mean(power2_in)) / std(power2_in)
 
-    sta_raw_dict[station] = column_stack((power1_raw, power2_raw))
+    sta_raw_dict[station] = column_stack((power1_in, power2_in))
     sta_norm_dict[station] = column_stack((power1_norm, power2_norm))
 
 # Plot the raw power distribution
@@ -158,10 +157,12 @@ cbar_bottom = bbox_bottom.y0
 cbar_height = bbox_top.y1 - bbox_bottom.y0
 cbar_position = [cbar_left, cbar_bottom, cbar_width, cbar_height]
 
-cbar = add_colorbar(fig, mappable, "Correlation coefficient", cbar_position, orientation = "vertical", major_tick_spacing = 0.2)
+cbar = add_colorbar(fig, cbar_position, "Correlation coefficient", 
+                    mappable = mappable,
+                    orientation = "vertical", major_tick_spacing = 0.2)
 
 fig.suptitle(f"Cross plots of the normalized power of {name1} and {name2} on all geophone stations", fontsize=title_size, fontweight='bold', y=0.9)
 
 # Save the plot
-figname = f"stationary_resonance_power_plots_norm_geo_{name1}_{name2}.png"
+figname = f"harmonic_series_cross_mode_cross_plot_{name1}_{name2}.png"
 save_figure(fig, figname)

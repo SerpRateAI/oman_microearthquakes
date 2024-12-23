@@ -1,12 +1,14 @@
 # Classes and functions for operations using PyTorch
 from torch import Tensor
-from torch import abs, hann_window, square, stft, sum, tensor
-from numpy import linspace, round
+from torch import abs, hann_window, square, stft, sum, tensor, atan2, rad2deg
+from numpy import angle, linspace, round
+from pandas import date_range
+from pandas import Timedelta, Timestamp
 
 from utils_basic import SPECTROGRAM_DIR
 from utils_basic import power2db, reltimes_to_timestamps
 from utils_preproc import read_and_process_day_long_geo_waveforms
-from utils_spec import StreamSTFTPSD, TraceSTFTPSD
+from utils_spec import StreamSTFTPSD, TraceSTFTPSD, StreamSTFT, TraceSTFT
 from utils_spec import downsample_stft_stream_freq
 
 ######
@@ -105,11 +107,11 @@ from utils_spec import downsample_stft_stream_freq
 
 #     return stream_spec_out, stream_spec_ds_out
 
-# Compute a day-long spectrogram of a geophone station and return BOTH the original and downsampled spectrograms
+# Compute a day-long spectrogram of a geophone station
 # Window length is in SECONDS!
-def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, resample_in_parallel = False, downsample = False, **kwargs):
-    if downsample and "downsample_factor" not in kwargs:
-        raise ValueError("The downsample factor is not set!")
+# The new version of the function returns a StreamSTFT object containing both the complex coefficients and the PSD, 2024-09-17
+# Downsample option is no longer available
+def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, resample_in_parallel = False, **kwargs):
 
     if resample_in_parallel and "num_process_resample" not in kwargs:
         raise ValueError("Error: Number of processes is not given!")
@@ -128,63 +130,80 @@ def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, 
 
     # Set the time labels
     stream_spec.set_time_labels(block_type = "daily")
-    
-    # Downsample the spectrograms along the frequency axis
-    if downsample:
-        print(f"Downsampling the spectrograms...")
-        downsample_factor = kwargs["downsample_factor"]
-        stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
-    else:
-        stream_spec_ds = None
-    
-    return stream_spec, stream_spec_ds
-
-# Compute a day-long spectrogram of ALL locations of a hydrophone station and return BOTH the original and downsampled spectrograms
-# Window length is in SECONDS!
-def get_daily_hydro_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, resample_in_parallel = False, downsample = False, **kwargs):
-    if downsample and "downsample_factor" not in kwargs:
-        raise ValueError("The downsample factor is not set!")
-
-    if resample_in_parallel and "num_process_resample" not in kwargs:
-        raise ValueError("Error: Number of processes is not given!")
-    
-    # Compute the spectrograms
-    print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap = overlap, cuda = cuda)
-
-    # Pad and resample the spectrograms to the begin and end of the day
-    print(f"Resampling the spectrograms to the begin and end of the day...")
-    if resample_in_parallel:
-        num_process = kwargs["num_process_resample"]
-        stream_spec.resample_to_day(parallel = True, num_process = num_process)
-    else:
-        stream_spec.resample_to_day(parallel = False)
-
-    # Set the time labels
-    stream_spec.set_time_labels(block_type = "daily")
-
-    # Downsample the spectrograms along the frequency axis
-    if downsample:
-        print(f"Downsampling the spectrograms...")
-        downsample_factor = kwargs["downsample_factor"]
-        stream_spec_ds = downsample_stft_stream_freq(stream_spec, factor = downsample_factor)
-    else:
-        stream_spec_ds = None
-    
-    return stream_spec, stream_spec_ds
-    
-# Compute the spectrograms in PSD of a stream using STFT
-def get_stream_spectrograms(stream, window_length = 1.0, overlap = 0.5, cuda = False):
-    stream_spec = StreamSTFTPSD()
-
-    for trace in stream:
-        trace_spec = get_trace_spectrogram(trace, window_length, overlap, cuda = cuda)
-        stream_spec.append(trace_spec)
 
     return stream_spec
 
+# Compute the STFT with both power and phase information of a day-long stream object
+# Window length is in SECONDS!
+def get_daily_stft(stream_day, window_length = 60.0, overlap = 0.0):
+        
+        # Compute the spectrograms
+        print(f"Computing the spectrograms...")
+        stream_stft = get_stream_stft(stream_day, window_length = window_length, overlap = overlap)
+        # print(type(stream_spec[0].psd_mat[0, 0]))
+    
+        # # Pad and resample the spectrograms to the begin and end of the day
+        # print(f"Resampling the spectrograms to the begin and end of the day...")
+        # stream_stft.resample_to_day(num_process = num_process)
+    
+        # Set the time labels
+        stream_stft.set_time_labels(block_type = "daily")
+        
+        return stream_stft
+
+# # Compute a day-long STFT with both power and phase information of ALL locations of a hydrophone station
+# # Window length is in SECONDS!
+# def get_daily_hydro_stft(stream_day, window_length = 60.0, overlap = 0.0):
+    
+#         # Compute the spectrograms
+#         print(f"Computing the spectrograms...")
+#         stream_stft = get_stream_stft(stream_day, window_length = window_length, overlap = overlap)
+#         # print(type(stream_spec[0].psd_mat[0, 0]))
+    
+#         # # Pad and resample the spectrograms to the begin and end of the day
+#         # print(f"Resampling the spectrograms to the begin and end of the day...")
+#         # stream_stft.resample_to_day(num_process = num_process)
+    
+#         # Set the time labels
+#         stream_stft.set_time_labels(block_type = "daily")
+        
+#         return stream_stft
+
+# Compute a day-long spectrogram of ALL locations of a hydrophone station
+# Window length is in SECONDS!
+# The new version of the function returns a StreamSTFT object containing both the complex coefficients and the PSD, 2024-09-29
+# Downsample option is no longer available
+def get_daily_hydro_stft_psd(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, num_process = 1):
+
+    
+    # Compute the spectrograms
+    print(f"Computing the spectrograms...")
+    stream_stft = get_stream_stft(stream_day, window_length = window_length, overlap = overlap)
+    # print(type(stream_spec[0].psd_mat[0, 0]))
+
+    # Pad and resample the spectrograms to the begin and end of the day
+    print(f"Resampling the spectrograms to the begin and end of the day...")
+    stream_stft.resample_to_day(num_process = num_process, psd_only = True)
+
+    # Set the time labels
+    stream_stft.set_time_labels(block_type = "daily")
+    
+    return stream_stft
+
+# Compute the spectrogram and return the complex coefficients of a stream using STFT
+def get_stream_stft(stream, window_length = 1.0, overlap = 0.0):
+    #stream_spec = StreamSTFTPSD()
+    stream_stft = StreamSTFT()
+
+    for trace in stream:
+        trace_spec = get_trace_stft(trace, window_length, overlap)
+        stream_stft.append(trace_spec)
+
+    return stream_stft
+
 # Compute the spectrogram in PSD of a trace using STFT
-def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = False):
+# The new version of the function returns a TraceSTFT object containing both the complex coefficients and the PSD, 2024-09-17
+def get_trace_stft(trace, window_length = 1.0, overlap = 0.0):
     signal = trace.data
     station = trace.stats.station
     location = trace.stats.location
@@ -197,45 +216,46 @@ def get_trace_spectrogram(trace, window_length = 1.0, overlap = 0.0, cuda = Fals
     window = hann_window(num_fft)
     hop_length = int(round(window_length * sampling_rate * (1 - overlap)))
     signal_tsr = tensor(signal)
-
-    # Determine if GPU is used
-    if cuda:
-        signal_tsr.to("cuda")
-
-    stft_tsr = stft(signal_tsr, num_fft, hop_length = hop_length, window = window, return_complex = True)
+    coeff_tsr = stft(signal_tsr, num_fft, hop_length = hop_length, window = window, return_complex = True, center = False)
 
     # Normalize the STFT
-    stft_tsr[1:-1] =  2 * stft_tsr[1:-1] / num_fft
+    coeff_tsr = coeff_tsr / num_fft
+    coeff_tsr[1:-1] =  2 * coeff_tsr[1:-1]
+
+    # Get the phase in degrees
+    pha_tsr = atan2(coeff_tsr.imag, coeff_tsr.real)
+    pha_tsr = rad2deg(pha_tsr)
+    pha_mat = pha_tsr.numpy()
 
     # Convert to PSD
-    power_tsr = square(abs(stft_tsr)) / 2
+    power_tsr = square(abs(coeff_tsr))
+    # psd_tsr = psd_tsr.real
     enbw = get_window_enbw(window, sampling_rate)
     psd_tsr = power_tsr / enbw
+    psd_mat = psd_tsr.numpy()
 
-    if cuda:
-        psd_tsr.to("cpu")
-        
-    psd = psd_tsr.numpy()
-
-    # Assemble the output TraceSTFTPSD object
-    num_freq = psd.shape[0]
+    # Assemble the output TraceSTFT object
+    num_freq = psd_mat.shape[0]
     nyfreq = sampling_rate / 2
     freqax = linspace(0, nyfreq, num_freq)
     
-    num_time = psd.shape[1]
+    num_time = psd_mat.shape[1]
     time_interval = hop_length / sampling_rate
-    timeax = linspace(0, (num_time - 1) * time_interval, num_time)
-    timeax = reltimes_to_timestamps(timeax, starttime)
+    # timeax = linspace(0, (num_time - 1) * time_interval, num_time)
+    starttime_left = Timestamp(trace.stats.starttime.datetime)
+    starttime_center = starttime_left + Timedelta(seconds = window_length / 2)
+    timeax = date_range(start = starttime_center, periods = num_time, freq = f"{time_interval}s")
 
+    trace_stft = TraceSTFT(station, location, component, "", timeax, freqax, psd_mat, pha_mat, overlap = overlap, db = False)
+    # print(type(trace_spec.psd_mat[0, 0]))
+    #trace_spec = TraceSTFTPSD(station, location, component, "", timeax, freqax, psd, overlap = overlap, db = False)
 
-    trace_spec = TraceSTFTPSD(station, location, component, "", timeax, freqax, psd, overlap = overlap, db = False)
-
-    return trace_spec
+    return trace_stft
     
 # Get the effective noise bandwidth of a window function
 def get_window_enbw(window, sampling_rate):
     if not isinstance(window, Tensor):
-        raise ValueError("Invalid start time format!")
+        raise ValueError("Invalid input type for the window function!")
 
     enbw = sampling_rate * sum(square((abs(window)))) / square(abs(sum(window)))
 

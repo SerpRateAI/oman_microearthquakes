@@ -16,7 +16,7 @@ from utils_torch import get_daily_geo_spectrograms
 
 # Inputs
 block_type = "daily"
-window_length = 1.0 # IN SECONDS
+window_length = 300.0 # IN SECONDS
 overlap = 0.0
 downsample = False # Downsample along the frequency axis
 downsample_factor = 60 # Downsample factor for the frequency axis

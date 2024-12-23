@@ -22,19 +22,49 @@ rbw_threshold = 3.0
 min_freq_peak = None
 max_freq_peak = 200
 
-file_ext_in = "h5"
-
 # Array grouping
 count_threshold = 9
 
-# Peak detection
+# Resonance detection
 frac_threshold = -3.0 # In log10 units
 prom_frac_threshold = 0.5 # In log10 units
 
 # Harmonic relations
-base_mode = 2
+base_mode = 1
 error_threshold = 0.003
 gap_threshold = 2
+
+# Print the inputs
+print("Computing the harmonic relations between the stationary resonances...")
+print("Inputs:")
+print("")
+print("Spectrogram computation:")
+print(f"Window length: {window_length:.1f} s")
+print(f"Overlap: {overlap:.1f}")
+print(f"Downsample: {downsample}")
+print(f"Downsample factor: {downsample_factor}")
+print("")
+
+print("Spectral-peak finding:")
+print(f"Prominence threshold: {prom_spec_threshold:.1f} dB")
+print(f"Reverse bandwidth threshold: {rbw_threshold:.1f} 1 / Hz")
+print(f"Minimum frequency: {min_freq_peak}")
+print(f"Maximum frequency: {max_freq_peak}")
+print("")
+
+print("Array grouping:")
+print(f"Count threshold: {count_threshold}")
+print("")
+
+print("Resonance detection:")
+print(f"Fractional threshold: {frac_threshold:.1f}")
+print(f"Prominence fractional threshold: {prom_frac_threshold:.1f}")
+
+print("Harmonic-relation finding:")
+print(f"Base mode: {base_mode}")
+print(f"Error threshold: {error_threshold}")
+print(f"Gap threshold: {gap_threshold}")
+print("")
 
 # Read the stationary-resonance detections
 print("Reading the stationary resonance detections...")
@@ -52,22 +82,24 @@ print("Computing the harmonic relations...")
 harmo_dict = {}
 for i, row1 in detections_df.iterrows():
     freq1 = row1['frequency']
+    lower_freq_bound = row1['lower_freq_bound']
+    upper_freq_bound = row1['upper_freq_bound']
     print(f"Searching for harmonic series with a base frequency of {freq1} Hz...")
     # print(f"i = {i}")
 
-    harmo_list = [{'frequency': freq1, 'harmonic_number': base_mode, 'error': 0.0}]
+    harmo_list = [{'frequency': freq1, 'harmonic_number': base_mode, 'error': 0.0, 'lower_freq_bound': lower_freq_bound, 'upper_freq_bound': upper_freq_bound}]
     for j in range(i + 1, len(detections_df)):
         row2 = detections_df.iloc[j]
         freq2 = row2['frequency']
-        # print(f"Comparing with {freq2} Hz...")
-        # print(f"j = {j}")
+        lower_freq_bound2 = row2['lower_freq_bound']
+        upper_freq_bound2 = row2['upper_freq_bound']
 
         ratio = freq2 / freq1 * base_mode
         harmo = round(ratio)
         error = abs(ratio - harmo) / harmo
 
         if error < error_threshold:
-            harmo_list.append({'frequency': freq2, 'harmonic_number': harmo, 'error': error})
+            harmo_list.append({'frequency': freq2, 'harmonic_number': harmo, 'error': error, 'lower_freq_bound': lower_freq_bound2, 'upper_freq_bound': upper_freq_bound2})
 
     if len(harmo_list) > 1:
         harmo_df = DataFrame(harmo_list)

@@ -16,7 +16,7 @@ from multiprocessing import Pool
 
 # Inputs
 # Spectrogram
-window_length = 60.0
+window_length = 300.0
 overlap = 0.0
 downsample = False
 downsample_factor = 60
@@ -31,11 +31,11 @@ max_freq_peak = 200
 # Spectral-peak counting
 count_threshold = 9
 
-# Peak detection
+# Stationary-resonance detection
 frac_threshold = -3.0 # In log10 units
 prom_frac_threshold = 0.5 # In log10 units
 
-height_factor = 0.5 # Height factor applied to the fraction prominence threshold while finding the peak bounds
+height_factor = 0.3 # Height factor applied to the fraction prominence threshold while finding the peak widths
 
 # Plotting
 marker_size = 20.0
@@ -44,7 +44,33 @@ marker_offset = 1.1
 linewidth_marker = 1.0
 
 min_freq_plot = 0.0
-max_freq_plot = 200.0
+max_freq_plot = 10.0
+
+major_freq_spacing = 1.0
+num_minor_freq_ticks = 5
+
+# Print the inputs
+print(f"### Detecting stationary resonances from the cumulative spectral-peak counts ###")
+print(f"# Spectrogram computation #")
+print(f"Window length: {window_length} s")
+print(f"Overlap: {overlap}")
+print(f"Downsample: {downsample}")
+print(f"Downsample factor: {downsample_factor}")
+
+
+print(f"# Spectral-peak detection #")
+print(f"Prominence threshold: {prom_spec_threshold}")
+print(f"Reverse-bandwidth threshold: {rbw_threshold} 1/Hz")
+print(f"Frequency range: {min_freq_peak} - {max_freq_peak} Hz")
+
+print(f"# Spectral-peak counting #")
+print(f"Count threshold: {count_threshold}")
+
+print(f"# Stationary-resonance detection #")
+print(f"Fraction threshold: {frac_threshold}")
+print(f"Fraction prominence threshold: {prom_frac_threshold}")
+print(f"Height factor: {height_factor}")
+
 
 # Read the spectral-peak cummulative counts
 print("Reading the spectral peak counts...")
@@ -75,12 +101,20 @@ stationary_resonance_df.reset_index(drop = True, inplace = True)
 print("Finding the frequency bounds of the detected resonances...")
 stationary_resonance_df = get_stationary_resonance_freq_intervals(stationary_resonance_df, peak_dict, cum_count_df, height_factor = height_factor)
 
-# Save the detected resonances
-print("Saving the detected resonances...")
-filename_out = f"stationary_resonances_detected_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}.csv"
+# Save the detected resonances sorted by fraction and frequency
+print("Saving the detected resonances sorted by frequency...")
+filename_out = f"stationary_resonances_detected_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}_hf{height_factor:.1f}_freq_sorted.csv"
 outpath = join(indir, filename_out)
 stationary_resonance_df.to_csv(outpath)
-print(f"Saved the detected resonances to {outpath}.")
+print(f"Saved the detected resonances sorted by frequency to {outpath}.")
+
+# Save the detected resonances sorted by count
+print("Saving the detected resonances sorted by fraction...")
+filename_out = f"stationary_resonances_detected_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}_hf{height_factor:.1f}_count_sorted.csv"
+outpath = join(indir, filename_out)
+stationary_resonance_df.sort_values('count', ascending = False, inplace = True, ignore_index = True)
+stationary_resonance_df.to_csv(outpath)
+print(f"Saved the detected resonances sorted by count to {outpath}.")
 
 # Plot the fractions and the detected resonances
 # Plot the fractions
@@ -88,7 +122,7 @@ print("Plotting the cumulative frequency fractions and the detected resonances..
 fig, ax = plot_cum_freq_fractions(cum_count_df,
                                   min_freq = min_freq_plot, max_freq = max_freq_plot,
                                   linewidth = 0.01, marker_size = 0.2,
-                                  major_freq_spacing = 10.0, num_minor_freq_ticks = 2)
+                                  major_freq_spacing = major_freq_spacing, num_minor_freq_ticks = num_minor_freq_ticks)
 
 # Plot triangles marking the detected resonances
 for _, row in stationary_resonance_df.iterrows():
@@ -97,5 +131,5 @@ for _, row in stationary_resonance_df.iterrows():
     ax.scatter(freq, frac * marker_offset, s = marker_size, marker = 'v', facecolors = 'none', edgecolors = 'crimson', linewidth = linewidth_marker, zorder = 10)
 
 # Save the figure
-figname = f"geo_spectral_peak_time_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_resonance_detected_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}.png"
+figname = f"geo_spectral_peak_time_cum_freq_counts_{suffix_spec}_{suffix_peak}_count{count_threshold:d}_resonance_detected_frac{frac_threshold:.1f}_prom{prom_frac_threshold:.1f}_plot{min_freq_plot:.0f}to{max_freq_plot:.0f}hz.png"
 save_figure(fig, figname)

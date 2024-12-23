@@ -22,8 +22,6 @@ rbw_threshold = 3.0
 min_freq_peak = None
 max_freq_peak = 200
 
-file_ext_in = "h5"
-
 # Array grouping
 count_threshold = 9
 
@@ -34,6 +32,32 @@ prom_frac_threshold = 0.5 # In log10 units
 # Harmonic relations
 base_mode = 1
 freq_base_in = 6.0
+
+# Print the inputs
+print(f"Extracting harmonic seris with a based frequency of {freq_base_in:.2f} Hz and mode of {base_mode:d}...")
+print("Inputs:")
+print("")
+print("Spectrogram computation:")
+print(f"Window length: {window_length:.1f} s")
+print(f"Overlap: {overlap:.1f}")
+print(f"Downsample: {downsample}")
+print(f"Downsample factor: {downsample_factor}")
+print("")
+
+print("Spectral-peak finding:")
+print(f"Prominence threshold: {prom_spec_threshold:.1f} dB")
+print(f"Reverse bandwidth threshold: {rbw_threshold:.1f} 1 / Hz")
+print(f"Minimum frequency: {min_freq_peak}")
+print(f"Maximum frequency: {max_freq_peak}")
+print("")
+
+print("Array grouping:")
+print(f"Count threshold: {count_threshold}")
+print("")
+
+print("Resonance detection:")
+print(f"Fractional threshold: {frac_threshold:.1f}")
+print(f"Prominence fractional threshold: {prom_frac_threshold:.1f}")
 
 # Read the harmonic relations
 suffix_spec = get_spectrogram_file_suffix(window_length, overlap, downsample, downsample_factor = downsample_factor)
@@ -64,7 +88,7 @@ harmo_df_out["predicted_freq"] = freq_base / base_mode * harmo_df_out["harmonic_
 harmo_df_out["detected"] = True
 
 harmo_df_out.rename(columns={"frequency": "observed_freq"}, inplace=True)
-harmo_df_out = harmo_df_out[["name", "detected", "observed_freq", "predicted_freq", "harmonic_number", "error"]]
+harmo_df_out = harmo_df_out[["name", "detected", "observed_freq", "predicted_freq", "harmonic_number", "error", "lower_freq_bound", "upper_freq_bound"]]
 
 
 # Fill the missing harmonic numbers
@@ -92,7 +116,6 @@ filename_out = f"stationary_harmonic_series_PR{freq_base_str}_base{base_mode:d}.
 outpath = join(indir, filename_out)
 
 harmo_df_out["detected"] = harmo_df_out["detected"].map({True: "true", False: "false"})
-harmo_df_out["extract_min_freq"] = nan
-harmo_df_out["extract_max_freq"] = nan
+harmo_df_out.rename(columns = {"lower_freq_bound": "extract_min_freq", "upper_freq_bound": "extract_max_freq"}, inplace = True)
 harmo_df_out.to_csv(outpath, na_rep = "nan")
-print(f"Saved the harmonic series with a base frequency of {freq_base} Hz to {outpath}.")
+print(f"Saved the harmonic series with a base frequency of {freq_base:.2f} Hz to {outpath}.")

@@ -4,16 +4,16 @@
 from os.path import join
 from numpy import column_stack, corrcoef, isnan, mean, nan, std, zeros
 from pandas import DataFrame
-from pandas import read_hdf
+from pandas import read_csv, read_hdf
 from matplotlib.pyplot import subplots, get_cmap
 
 from utils_basic import SPECTROGRAM_DIR as indir, GEO_STATIONS as stations
-from utils_spec import read_harmonic_data_table
 from utils_plot import add_colorbar, save_figure
 
 # Inputs
 # Data
-base_name = "SR25a"
+base_name = "PR02549"
+base_number = 2
 
 cmap_name = "viridis"
 cmin = 0.2
@@ -31,20 +31,20 @@ num_row = 6
 title_size = 12
 
 # Read the list of stationary resonances
-filename_harmo = f"stationary_resonance_params_harmo_{base_name}.csv"
+filename_harmo = f"stationary_harmonic_series_{base_name}_base{base_number}.csv"
 inpath = join(indir, filename_harmo)
-harmo_df = read_harmonic_data_table(inpath)
-exist_df = harmo_df.loc[harmo_df['exist'] == True].copy()
+harmonic_series_df = read_csv(inpath)
+harmonic_series_df = harmonic_series_df.loc[harmonic_series_df["detected"]]
 
 # Read the stationary resonance properties
 mode_dict = {}
-for name, row in exist_df.iterrows():
+for mode_name, row in harmonic_series_df.iterrows():
     # Read the data
-    filename = f"stationary_resonance_properties_{name}_geo.h5"
+    filename = f"stationary_resonance_properties_{mode_name}_geo.h5"
     inpath = join(indir, filename)
 
     property_df = read_hdf(inpath, key="properties")
-    mode_dict[name] = property_df
+    mode_dict[mode_name] = property_df
 
 # Make the plot for each station
 cmap = get_cmap(cmap_name)
@@ -105,12 +105,13 @@ cbar_width = cbar_width
 cbar_height = bbox.y1 - bbox.y0
 position = (cbar_x, cbar_y, cbar_width, cbar_height)
 
-cbar = add_colorbar(fig, mappable, "CC coefficient", position, orientation='vertical', major_tick_spacing = 0.2)
+cbar = add_colorbar(fig, position, "CC coefficient", 
+                    mappable = mappable,
+                    major_tick_spacing = 0.2)
 
 print("Saving the figure...")
 filename = f"harmonic_resonance_power_corr_mat_{base_name}.png"
 save_figure(fig, filename)
-
 
 # Construct and save the mean correlation values
 mean_corr_df = DataFrame(mean_corrs, index=stations, columns=["mean_corr"])

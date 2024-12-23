@@ -30,7 +30,7 @@ min_freq = None
 max_freq = 200.0
 
 # Loop over days and stations
-print(f"### Detecting spectral peaks in the hydrophone spectrograms in {num_process} processes ###")
+print(f"### Detecting spectral peaks in the geophone power spectrograms in {num_process} processes ###")
 print(f"Window length: {window_length} s")
 print(f"Overlap: {overlap}")
 print(f"Downsample: {downsample}")
