@@ -49,7 +49,6 @@ def read_and_process_day_long_geo_waveforms(day,
         metadata = get_geo_metadata()
 
     # Read the waveforms
-    print(f"Reading the waveforms for {day}")
     stations_to_read = get_geo_stations_to_read(stations)
     channels_to_read = get_geo_channels_to_read(components)
 
@@ -73,12 +72,9 @@ def read_and_process_day_long_geo_waveforms(day,
 
     # Process the waveforms
     print("Preprocessing the waveforms...")
-    if len(stream_in) < 3:
-        return None
-    else:
-        stream_proc = preprocess_geo_stream(stream_in, metadata, 
-                                            filter = filter, zerophase = zerophase, normalize = normalize,
-                                            decimate = decimate, **kwargs)
+    stream_proc = preprocess_geo_stream(stream_in, metadata, 
+                                        filter = filter, zerophase = zerophase, normalize = normalize,
+                                        decimate = decimate, **kwargs)
 
     # Trim the waveforms to the begin and end of the day
     sampling_rate = stream_proc[0].stats.sampling_rate
@@ -178,7 +174,7 @@ def read_and_process_windowed_geo_waveforms(starttime,
                                             stations = None, components = None, 
                                             filter = False, zerophase = False, normalize=False, 
                                             decimate=False, 
-                                            all_components=True, **kwargs):
+                                            all_components=False, **kwargs):
 
     # Check if both endtime and dur are specified
     if endtime is not None and dur is not None:

@@ -9,11 +9,11 @@ from pandas import date_range
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 
-from utils_basic import GFZ_DATA_DIR as outdir
+from utils_basic import NORCAL_DATA_DIR as outdir
 
 ### Inputs ###
 # Command line arguments
-parser = ArgumentParser(description="Plot the map of the stations whose phase differences are derived and the respective observations for the AGU 2024 iPoster")
+parser = ArgumentParser(description="Download the data of the Northern California Seismic Network (NC)")
 parser.add_argument("--station", type=str, help="Station")
 parser.add_argument("--starttime", type=str, help="Start time")
 parser.add_argument("--endtime", type=str, help="End time")
@@ -26,11 +26,13 @@ starttime = args.starttime
 endtime = args.endtime
 
 # Constants
-client_name = "GEOFON"
-network = "5H"
+client_name = "NCEDC"
+network = "NC"
 
 # Get the client
+print("Connecting to the data center...")
 client = Client(client_name)
+print("Connection successfully established!")
 
 # Get the date range with one day intervals
 dates = date_range(starttime, endtime, freq = "D")
@@ -46,7 +48,7 @@ for i, date in enumerate(dates):
 
     print("Downloading the waveforms...")
     try:
-        stream = client.get_waveforms(network = network, station = station, location = "*", channel = "*", starttime = starttime, endtime = endtime)
+        stream = client.get_waveforms(network = network, station = station, location = "*", channel = "HH*", starttime = starttime, endtime = endtime)
     except Exception as e:
         print(f"Failed to get the waveforms for {date} with error: {e}. The data will be skipped.")
         continue

@@ -9,7 +9,7 @@ from pandas import date_range
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 
-from utils_basic import GFZ_DATA_DIR as outdir
+from utils_basic import DHOFAR_DATA_DIR as outdir
 
 ### Inputs ###
 # Command line arguments
@@ -26,8 +26,8 @@ starttime = args.starttime
 endtime = args.endtime
 
 # Constants
-client_name = "GEOFON"
-network = "5H"
+client_name = "IRIS"
+network = "YR"
 
 # Get the client
 client = Client(client_name)
@@ -46,7 +46,7 @@ for i, date in enumerate(dates):
 
     print("Downloading the waveforms...")
     try:
-        stream = client.get_waveforms(network = network, station = station, location = "*", channel = "*", starttime = starttime, endtime = endtime)
+        stream = client.get_waveforms(network = network, station = station, location = "*", channel = "HH*", starttime = starttime, endtime = endtime)
     except Exception as e:
         print(f"Failed to get the waveforms for {date} with error: {e}. The data will be skipped.")
         continue
