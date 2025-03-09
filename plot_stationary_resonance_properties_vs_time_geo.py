@@ -22,16 +22,32 @@ parser.add_argument("--mode_name", type = str, help = "Mode name.")
 parser.add_argument("--max_power", type = float, default = 15.0, help = "Maximum power for plotting the power variation.")
 parser.add_argument("--min_power", type = float, default = -10.0, help = "Maximum quality factor for plotting the quality factor variation.")
 
+parser.add_argument("--base_mode_name", type = str, default = "PR02549", help = "Base mode name.")
+parser.add_argument("--base_mode_order", type = int, default = 2, help = "Base mode order.")
+
 # Parse the arguments
 args = parser.parse_args()
 mode_name = args.mode_name
 min_power = args.min_power
 max_power = args.max_power
+base_mode_name = args.base_mode_name
+base_mode_order = args.base_mode_order
 
+# Constants
+axis_label_size = 8.0
+tick_label_size = 6.0
 
 # Print the inputs
 print(f"### Plotting the stationary resonance properties of {mode_name} vs time for all geophone stations ###")
 print("")
+
+# Read the resonance frequencies
+filename = f"stationary_harmonic_series_{base_mode_name}_base{base_mode_order}.csv"
+filepath = join(indir, filename)
+
+harmonic_df = read_csv(filepath)
+
+mode_order = harmonic_df.loc[harmonic_df["mode_name"] == mode_name, "mode_order"].values[0]
 
 # Read the sunrise and sunset times
 print("Reading the sunrise and sunset times...")
@@ -49,7 +65,9 @@ coord_df.sort_values(by = "north", inplace = True)
 
 # Plot the frequency variation
 print("Plotting the frequency variation...")
-fig_freq, ax_freq, cbar_freq = plot_stationary_resonance_properties_vs_time("frequency", resonance_df)
+fig_freq, ax_freq, cbar_freq = plot_stationary_resonance_properties_vs_time("frequency", resonance_df,
+                                                                            title = f"Mode {mode_order}, frequency vs time",
+                                                                            axis_label_size = axis_label_size, tick_label_size = tick_label_size)
                      
 # Save the figure
 print("Saving the figure...")
@@ -59,7 +77,9 @@ save_figure(fig_freq, figname, dpi = 600)
 # Plot the power variation
 print("Plotting the power variation...")
 fig_power, ax_power, cbar_power = plot_stationary_resonance_properties_vs_time("total_power", resonance_df,
-                                                                                min_power = min_power, max_power = max_power)
+                                                                                title = f"Mode {mode_order}, power vs time",
+                                                                                min_power = min_power, max_power = max_power,
+                                                                                axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
 # Save the figure
 print("Saving the figure...")
@@ -68,7 +88,9 @@ save_figure(fig_power, figname, dpi = 600)
 
 # Plot the quality factor variation
 print("Plotting the quality factor variation...")
-fig_qf, ax_qf, cbar_qf = plot_stationary_resonance_properties_vs_time("quality_factor", resonance_df)
+fig_qf, ax_qf, cbar_qf = plot_stationary_resonance_properties_vs_time("quality_factor", resonance_df,
+                                                                     title = f"Mode {mode_order}, quality factor vs time",
+                                                                     axis_label_size = axis_label_size, tick_label_size = tick_label_size)
 
 # Save the figure
 print("Saving the figure...")

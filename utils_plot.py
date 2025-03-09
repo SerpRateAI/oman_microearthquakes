@@ -14,6 +14,7 @@ from matplotlib.dates import DateFormatter, DayLocator, HourLocator, MinuteLocat
 from matplotlib.dates import num2date, date2num
 from matplotlib.colors import LogNorm, Normalize, LinearSegmentedColormap
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FuncFormatter, MaxNLocator
+from matplotlib.patches import Rectangle
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import ListedColormap
 
@@ -454,9 +455,9 @@ def plot_stationary_resonance_properties_vs_time(property_name, property_df,
                                                  ylim_offset = 0.5,
                                                  direction_label_offset = 0.1,
                                                  cbar_offset = 0.01,
-                                                 axis_label_size = 10,
-                                                 tick_label_size = 8,
-                                                 title_size = 12,
+                                                 axis_label_size = 8,
+                                                 tick_label_size = 6,
+                                                 title_size = 10,
                                                  **kwargs):
     starttime = STARTTIME_GEO
     endtime = ENDTIME_GEO
@@ -504,7 +505,7 @@ def plot_stationary_resonance_properties_vs_time(property_name, property_df,
             vmin = kwargs["min_power"]
 
         cmap = "inferno"
-        cbar_label = "Power (dB)"
+        cbar_label = GEO_PSD_LABEL
 
     elif property_name == "quality_factor":
             
@@ -585,7 +586,7 @@ def plot_stationary_resonance_properties_vs_time(property_name, property_df,
 
     # Add the day-night shading
     print("Adding the day-night shading...")
-    ax = add_day_night_shading(ax, sun_df)
+    ax, _, _ = add_day_night_shading(ax, sun_df)
 
     # Plot the direction labels
     min_y = -1 - ylim_offset
@@ -2866,9 +2867,10 @@ def add_station_map(ax,
 
     return ax
 
-# Add a colorbar to the plot 
+# Add a colorbar to the plot
 def add_colorbar(fig, position, label, 
-                 orientation="vertical", axis_label_size=10, tick_label_size=10, max_num_ticks=5, **kwargs):
+                 orientation="vertical", axis_label_size=12, tick_label_size=10, max_num_ticks=5,
+                 frameon=True, **kwargs):
     
     if "mappable" in kwargs:
         color = kwargs["mappable"]
@@ -2877,9 +2879,11 @@ def add_colorbar(fig, position, label,
     else:
         raise ValueError("No colorbar object found!")
     
-    cax = fig.add_axes(position)
-    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
+    # Add the colorbar axis
+    cax = fig.add_axes(position, zorder=10)  # Ensures it's above the subplot
 
+    # Now, draw the color bar
+    cbar = fig.colorbar(color, cax=cax, orientation=orientation)
 
     cbar.locator = MaxNLocator(nbins=max_num_ticks)
     cbar.set_label(label, fontsize=axis_label_size)
@@ -2915,7 +2919,9 @@ def add_vertical_scalebar(ax, coordinates, length, scale, label_offsets, label_u
 
 # Add a horizontal scale bar
 # Coordinates are in fractions of the axis
-def add_horizontal_scalebar(ax, coordinates, length, scale, color = "black", linewidth = 1.0, plot_label = True, **kwargs):
+def add_horizontal_scalebar(ax, coordinates, length, scale, 
+                            color = "black", linewidth = 1.0, plot_label = True, plot_bbox = False,
+                            **kwargs):
     xlim = ax.get_xlim()
     xmin = xlim[0]
     xmax = xlim[1]
@@ -2947,6 +2953,9 @@ def add_horizontal_scalebar(ax, coordinates, length, scale, color = "black", lin
         label_x = scale_x + label_offsets[0] * xdim
         label_y = scale_y + label_offsets[1] * ydim
         ax.text(label_x, label_y, f"{label}", fontsize=fontsize, color=color, ha='left', va='center', fontweight=fontweight)
+
+    if plot_bbox:
+        ax.add_patch(Rectangle((scale_x - length * scale / 2, scale_y - length * scale / 2), length * scale, length * scale, fill=False, edgecolor=color, linewidth=linewidth))
     
     return ax
 
@@ -3050,7 +3059,8 @@ def format_rel_time_xlabels(ax, label=True,
     return ax
 
 # Format the x labels in easting
-def format_east_xlabels(ax, plot_axis_label=True, 
+def format_east_xlabels(ax, 
+                        plot_axis_label=True, plot_tick_label=True,
                         major_tick_spacing=50, num_minor_ticks=5,
                         axis_label_size=12, tick_label_size=10,
                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
@@ -3060,10 +3070,13 @@ def format_east_xlabels(ax, plot_axis_label=True,
     ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
-    for label in ax.get_xticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment('top')
-        label.set_horizontalalignment('center')
+    if plot_tick_label:
+        for label in ax.get_xticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('top')
+            label.set_horizontalalignment('center')
+    else:
+        ax.set_xticklabels([])
 
     ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
@@ -3071,20 +3084,24 @@ def format_east_xlabels(ax, plot_axis_label=True,
     return ax
 
 # Format the y labels in northing
-def format_north_ylabels(ax, plot_axis_label=True, 
-                         major_tick_spacing=50, num_minor_ticks=5,
-                         axis_label_size=12, tick_label_size=10,
-                         major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+def format_north_ylabels(ax, 
+                        plot_axis_label=True, plot_tick_label=True,
+                        major_tick_spacing=50, num_minor_ticks=5,
+                        axis_label_size=12, tick_label_size=10,
+                        major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if plot_axis_label:
         ax.set_ylabel("North (m)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
-    for label in ax.get_yticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment('center')
-        label.set_horizontalalignment('right')
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
 
     ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
@@ -3092,20 +3109,24 @@ def format_north_ylabels(ax, plot_axis_label=True,
     return ax
 
 # Format the y labels in depth
-def format_depth_ylabels(ax, label=True, 
+def format_depth_ylabels(ax, 
+                        plot_axis_label=True, plot_tick_label=True,
                          major_tick_spacing=50, num_minor_ticks=5,
                          axis_label_size=12, tick_label_size=10,
                          major_tick_length=5, minor_tick_length=2.5, tick_width=1):
-    if label:
+    if plot_axis_label:
         ax.set_ylabel("Depth (m)", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
-
-    for label in ax.get_yticklabels():
-        label.set_fontsize(tick_label_size) 
-        label.set_verticalalignment('center')
-        label.set_horizontalalignment('right')
+    
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
 
     ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
@@ -3279,6 +3300,64 @@ def format_slowness_ylabels(ax, label=True,
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
     ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    for label in ax.get_yticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('center')
+        label.set_horizontalalignment('right')
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return
+
+# Format the y label in apparent velocity
+def format_app_vel_ylabels(ax,
+                          abbreviation=False,
+                          plot_axis_label=True, plot_tick_label=True,
+                          major_tick_spacing=500.0, num_minor_ticks=5,
+                          axis_label_size=12, tick_label_size=10,
+                          major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if plot_axis_label:
+        if abbreviation:
+            ax.set_ylabel(f"App. vel. ({APPARENT_VELOCITY_UNIT})", fontsize=axis_label_size)
+        else:
+            ax.set_ylabel(f"Apparent velocity ({APPARENT_VELOCITY_UNIT})", fontsize=axis_label_size)
+
+    if plot_tick_label:
+        ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+    else:
+        ax.set_yticklabels([])
+
+    for label in ax.get_yticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('center')
+        label.set_horizontalalignment('right')
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return
+
+# Format the y label in back azimuth
+def format_back_azi_ylabels(ax,
+                            abbreviation=False,
+                            plot_axis_label=True, plot_tick_label=True,
+                            major_tick_spacing=45.0, num_minor_ticks=3,
+                            axis_label_size=12, tick_label_size=10,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if plot_axis_label:
+        if abbreviation:
+            ax.set_ylabel("Back azi. (deg)", fontsize=axis_label_size)
+        else:
+            ax.set_ylabel("Back azimuth (deg)", fontsize=axis_label_size)
+
+    if plot_tick_label:
+        ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+    else:
+        ax.set_yticklabels([])
 
     for label in ax.get_yticklabels():
         label.set_fontsize(tick_label_size) 

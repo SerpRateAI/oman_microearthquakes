@@ -9,7 +9,7 @@ from os.path import join
 from argparse import ArgumentParser
 from numpy import nan, isnan, isrealobj, var
 from pandas import DataFrame
-from pandas import read_csv
+from pandas import read_csv, to_datetime
 from scipy.signal.windows import dpss
 from matplotlib.pyplot import subplots
 from time import time
@@ -17,8 +17,7 @@ from time import time
 from utils_basic import SPECTROGRAM_DIR as dirname_spec, MT_DIR as dirname_mt, GEO_COMPONENTS as components
 from utils_basic import timestamp_to_utcdatetime
 from utils_preproc import read_and_process_day_long_geo_waveforms
-from utils_mt import mt_cspec, get_avg_phase_diff, get_indep_phase_diffs
-from utils_plot import save_figure
+from utils_mt import mt_cspec, get_avg_phase_diff
 
 
 ###
@@ -29,14 +28,15 @@ from utils_plot import save_figure
 parser = ArgumentParser(description="Compute the 3C inter-station phase differences for a geophone station pair using the multi-taper method.")
 parser.add_argument("--station1", type=str, help="Station 1")
 parser.add_argument("--station2", type=str, help="Station 2")
+parser.add_argument("--window_length_mt", type=float, help="Window length for multitaper analysis")
+parser.add_argument("--min_stft_win", type=int, help="Minimum number of STFT windows in a MT window")
 
 parser.add_argument("--mode_name", type=str, help="Mode name", default="PR02549")
 parser.add_argument("--nw", type=float, help="Time-bandwidth product", default=3.0)
-parser.add_argument("--min_cohe", type=float, help="Minimum coherence", default=0.95)
+parser.add_argument("--min_cohe", type=float, help="Minimum coherence", default=0.85)
 parser.add_argument("--decimate_factor", type=int, help="Decimation factor", default=10)
-parser.add_argument("--bandwidth", type=float, help="Resonance bandwidth for computing the average frequency", default=0.02)
+parser.add_argument("--bandwidth", type=float, help="Resonance bandwidth for computing the average frequency", default=0.02) 
 
-parser.add_argument("--min_stft_win", type=int, help="Minimum number of STFT windows in a MT window", default=5)
 
 
 # Parse the command line inputs
@@ -44,28 +44,42 @@ args = parser.parse_args()
 
 station1 = args.station1
 station2 = args.station2
+window_length_mt = args.window_length_mt
+min_stft_win = args.min_stft_win
 
 mode_name = args.mode_name
 nw = args.nw
 min_cohe = args.min_cohe
 decimate_factor = args.decimate_factor
 
-min_stft_win = args.min_stft_win
 bandwidth = args.bandwidth
 
 num_taper = int(2 * nw -1)
 
+print("######")
+print(f"Computing the phase differences between {station1} and {station2}...")
+print("#######")
+print("")
+
 # Constants
-win_len_mt = 1800.0
-win_len_stft = 300.0
+window_length_stft = 300.0
+
+# Print the input arguments
+print("")
+print(f"Station 1: {station1}")
+print(f"Station 2: {station2}")
+print(f"MT window length: {window_length_mt:.0f} s")
+print(f"Minimum coherence: {min_cohe:.2f}")
+print("")
+
 
 ###
 # Read and process the time window information
 ###
 
 # Read the data
-filename = f"multitaper_time_windows_{mode_name}_{station1}_{station2}_mt_win{win_len_mt:.0f}s_stft_win{win_len_stft:.0f}s.csv"
-filepath = join(dirname_spec, filename)
+filename = f"multitaper_time_windows_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_stft_win{window_length_stft:.0f}s.csv"
+filepath = join(dirname_mt, filename)
 time_win_df = read_csv(filepath, parse_dates = ["start", "end"])
 
 # Keep only the MT windows with sufficient STFT windows
@@ -84,16 +98,22 @@ print(f"In total, {len(time_win_df)} MT time windows to compute.")
 time_win_grouped = time_win_df.groupby(time_win_df['start'].dt.date)
 
 # Loop over all components
-result_dict = {}
+result_df = DataFrame()
+result_df["time"] = time_win_df[["start", "end"]].mean(axis = 1)
+result_df["time"] = to_datetime(result_df["time"], utc = True)
+result_df["frequency"] = time_win_df["mean_freq"]
+
+phase_diff_dict = {}
 for component in components:
     print("######")
     print(f"Start processing Component {component}...")
     print("######")
     print("")
 
-    result_dict["time"] = []
-    result_dict[f"phase_diff_{component.lower()}"] = []
-    result_dict[f"phase_diff_uncer_{component.lower()}"] = []
+    centertimes = []
+    phase_diffs = []
+    phase_diff_uncers = []
+
     # Loop over each date
     for date, group in time_win_grouped:
             print("######")
@@ -102,6 +122,7 @@ for component in components:
             print("")
 
             print("Reading the waveform data...")
+            clock1 = time()
             date_str = date.strftime("%Y-%m-%d")
             stream1 = read_and_process_day_long_geo_waveforms(date_str, 
                                                                 stations = station1, components = component, 
@@ -111,6 +132,10 @@ for component in components:
                                                                 stations = station2, components = component, 
                                                                 decimate = True, decimate_factor = decimate_factor)           
             
+            clock2 = time()
+            print(f"Elapsed time: {clock2 - clock1} s")
+            print("")
+            
             print("Processing each time window of the day...")
             for _, row in group.iterrows():
                     clock1 = time()
@@ -119,8 +144,8 @@ for component in components:
                     starttime = row["start"]
                     endtime = row["end"]
 
-                    centertime = starttime + (starttime -  endtime) / 2
-                    result_dict["time"].append(centertime)
+                    centertime = starttime + (endtime -  starttime) / 2
+                    centertimes.append(centertime)
 
                     print(f"Processing the time window {starttime}-{endtime}..")
 
@@ -135,8 +160,8 @@ for component in components:
 
                     if any(isnan(signal1)) or any(isnan(signal2)):
                         print("The input signals contain NaNs! Skipping...")
-                        result_dict[f"phase_diff_{component.lower()}"].append(nan)
-                        result_dict[f"phase_diff_uncer_{component.lower()}"].append(nan)
+                        phase_diffs.append(nan)
+                        phase_diff_uncers.append(nan)
                         
                         continue
 
@@ -157,18 +182,18 @@ for component in components:
                     min_freq_reson = freq_reson - bandwidth / 2
                     max_freq_reson = freq_reson + bandwidth / 2
 
-                    avg_phase_diff, avg_phase_diff_uncer = get_avg_phase_diff((min_freq_reson, max_freq_reson), freqax, mt_phase_diff, mt_phase_diff_uncer, mt_cohe, nw = nw, verbose = False)
+                    avg_phase_diff, avg_phase_diff_uncer = get_avg_phase_diff((min_freq_reson, max_freq_reson), freqax, mt_phase_diff, mt_phase_diff_uncer, mt_cohe, min_cohe = min_cohe, nw = nw, verbose = False)
 
                     if avg_phase_diff is not None:
                         print(f"Phase difference is {avg_phase_diff} +/- {avg_phase_diff_uncer}")
 
-                        result_dict[f"phase_diff_{component.lower()}"].append(avg_phase_diff)                     
-                        result_dict[f"phase_diff_uncer_{component.lower()}"].append(avg_phase_diff_uncer)
+                        phase_diffs.append(avg_phase_diff)                     
+                        phase_diff_uncers.append(avg_phase_diff_uncer)
                     else:
                         print("The time wnidow produces no phase difference")
 
-                        result_dict[f"phase_diff_{component.lower()}"].append(nan)
-                        result_dict[f"phase_diff_uncer_{component.lower()}"].append(nan)
+                        phase_diffs.append(nan)
+                        phase_diff_uncers.append(nan)
 
 
                     clock2 = time()
@@ -179,19 +204,25 @@ for component in components:
     
     print("Finished processing the component.")
     print("")
-
+    
+    print("Incorporating the results into the result dataframe...")
+    phase_diff_df = DataFrame({"time": centertimes, f"phase_diff_{component.lower()}": phase_diffs, f"phase_diff_uncer_{component.lower()}": phase_diff_uncers})
+    phase_diff_df["time"] = to_datetime(phase_diff_df["time"], utc = True)
+    # print("Data type of the time column in the phase_diff_df: ", phase_diff_df["time"].dtype)
+    # print("Data type of the time column in the result_df: ", result_df["time"].dtype)
+    result_df = result_df.merge(phase_diff_df, on = "time", how = "outer")
 ###
 # Save the results
 ###
 
-print("Saving the results...")
-result_df = DataFrame(result_dict)
+print("Combining the results...")
+result_df.reset_index(drop=True, inplace=True)
 
-# Reorder the columns to put the column 'time' first
-columns_order = ['time'] + [col for col in result_df.columns if col != 'time']
+# Reorder the columns to put the columns 'time' and 'frequency' first
+columns_order = ['time', 'frequency'] + [col for col in result_df.columns if col not in ['time', 'frequency']]
 result_df = result_df[columns_order]
 
-filename = f"multitaper_inter_sta_phase_diffs_{mode_name}_{station1}_{station2}.csv"
+filename = f"multitaper_inter_sta_phase_diffs_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
 filepath = join(dirname_mt, filename)
 
 result_df.to_csv(filepath, na_rep="nan")

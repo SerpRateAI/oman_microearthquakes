@@ -16,8 +16,6 @@ from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
 # Command-line arguments
 parser = ArgumentParser(description = "Find time windows for multitaper analysis.")
 parser.add_argument("--mode_name", type = str, help = "Mode name.")
-parser.add_argument("--station1", type = str, help = "Name of the first station.")
-parser.add_argument("--station2", type = str, help = "Name of the second station.")
 
 parser.add_argument("--window_length_mt", type = float, default = 3600.0, help = "Window length in seconds for multitaper analysis.")
 parser.add_argument("--window_length_stft", type = float, default = 300.0, help = "Window length in seconds for computing the STFT.")
@@ -30,8 +28,6 @@ parser.add_argument("--max_mean_db", type = float, default = 10.0, help = "Maxim
 # Parse the arguments
 args = parser.parse_args()
 mode_name = args.mode_name
-station1 = args.station1
-station2 = args.station2
 
 window_length_mt = args.window_length_mt
 window_length_stft = args.window_length_stft

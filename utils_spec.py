@@ -1115,7 +1115,7 @@ def find_geo_spectral_peaks(timeax, freqax, power_z_mat, power_1_mat, power_2_ma
 # The function runs in parallel using the given number of processes
 # The power threshold is in dB!
 def find_hydro_location_spectral_peaks(trace_stft, num_process, min_prom, min_rbw, max_mean_db, 
-                              min_freq = None, max_freq = None):
+                                        min_freq = None, max_freq = None):
     # Convert the trace to dB
     trace_stft.to_db()
     
@@ -1192,7 +1192,9 @@ def find_hydro_spectral_peaks(timeax, freqax, power_mat, phase_mat, min_prom, mi
                 peak_rbws.append(rbw)
                 peak_phases.append(phase)
 
-
+    if len(peak_freqs) == 0:
+        return DataFrame()
+    else:
         peak_df = DataFrame({"frequency": peak_freqs, "time": peak_times, "power": peak_powers, "reverse_bandwidth": peak_rbws, "phase": peak_phases})
 
     return peak_df
@@ -3428,7 +3430,7 @@ def get_quality_factor(freqax, power_in_db, freq0):
 
 # Get the time label for a spectrogram block from a time string
 def string_to_time_label(time_str):
-    time_label = Timestamp(time_str).strftime("%Y%m%d%H%M%S%f")
+    time_label = Timestamp(time_str).strftime("day_%Y%m%d")
 
     return time_label
 

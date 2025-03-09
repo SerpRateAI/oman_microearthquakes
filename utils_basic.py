@@ -3,7 +3,7 @@
 ## Import libraries
 from os.path import join
 from numpy import datetime64
-from numpy import amax, array, log10, ndarray
+from numpy import angle, amax, array, exp, log10, mean, sqrt, ndarray
 from scipy.stats import gmean
 from scipy.signal import hilbert
 from pandas import Timestamp, Timedelta, DatetimeIndex
@@ -68,9 +68,11 @@ INNER_STATIONS = INNER_STATIONS_A + INNER_STATIONS_B
 
 MIDDLE_STATIONS_A = ["A07", "A08", "A09", "A10", "A11"]
 MIDDLE_STATIONS_B = ["B07", "B08", "B09", "B10", "B11", "B12"]
+MIDDLE_STATIONS = MIDDLE_STATIONS_A + MIDDLE_STATIONS_B
 
-OUTER_STATIONS_A = ["A13", "A14", "A15", "A16", "A17", "A19"]
+OUTER_STATIONS_A = ["A13", "A14", "A15", "A16", "A17"]
 OUTER_STATIONS_B = ["B13", "B14", "B15", "B16", "B17", "B18"]
+OUTER_STATIONS = OUTER_STATIONS_A + OUTER_STATIONS_B
 
 BROKEN_CHANNELS = ["A18.GH1"]
 BROKEN_LOCATIONS = ["A00.01", "A00.02"]
@@ -224,6 +226,15 @@ def get_geophone_coords():
     
     return sta_df
 
+# Get the indices of the stations forming the delaunay triads
+def get_station_triad_indices(coords_df, triad_df):
+    ind_mat = []
+    for _, row in triad_df.iterrows():
+        ind_mat.append([coords_df.index.get_loc(row["station1"]), coords_df.index.get_loc(row["station2"]), coords_df.index.get_loc(row["station3"])])
+
+    ind_mat = array(ind_mat)
+    return ind_mat
+
 # Function to get the hydrophone station coordinates
 def get_borehole_coords():
     inpath = join(ROOTDIR_HYDRO, "boreholes.csv")
@@ -298,7 +309,33 @@ def get_baro_temp_data():
 
     return baro_temp_df
 
+# Get the tidal strain data
+def get_tidal_strain_data():
+    inpath = join(ROOTDIR_OTHER, "earthtide_oman_waves-all_tidalarealstrain.xlsx")
+    tidal_strain_df = read_excel(inpath)
 
+    # Change the column names
+    tidal_strain_df = tidal_strain_df[["UTC", "Signal [nstr]"]]
+    tidal_strain_df.columns = ["time", "strain"]
+
+    # Convert the time column to a Pandas Timestamp object
+    tidal_strain_df["time"] = to_datetime(tidal_strain_df["time"], utc=True)
+
+    # Set the time column as the index
+    tidal_strain_df.set_index("time", inplace=True)
+
+    return tidal_strain_df
+
+# Get mode order
+def get_mode_order(mode_name, base_mode_name = "PR02549", base_mode_order = 2):
+    filename = f"stationary_harmonic_series_{base_mode_name}_base{base_mode_order:d}.csv"
+
+    inpath = join(SPECTROGRAM_DIR, filename)
+    harmonic_df = read_csv(inpath)
+
+    mode_order = harmonic_df.loc[harmonic_df["mode_name"] == mode_name, "mode_order"].values[0]
+
+    return mode_order
 
 ######
 # Functions for handling times
@@ -470,3 +507,15 @@ def str2list(input):
         output = input
 
     return output
+
+### Functions for handling angles ###
+
+# Compute the standard deviation of a set of angles using the vector mean
+# The angles are assumed to be in radians
+def get_angle_std(angles):
+    vec = exp(1j * angles)
+    vec_mean = mean(vec)
+    
+    std = sqrt(mean(angle(vec * vec_mean.conjugate()) ** 2))
+
+    return std

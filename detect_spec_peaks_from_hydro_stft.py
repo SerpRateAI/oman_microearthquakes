@@ -65,7 +65,7 @@ for station, locations in location_dict.items():
     inpath = join(indir, filename_in)
     block_timing_in_df = read_spec_block_timings(inpath)
 
-    suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db, min_freq = min_freq, max_freq = max_freq)
+    suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db)
     filename_out = f"hydro_spectral_peaks_{station}_{suffix_spec}_{suffix_peak}.h5"
 
     # Save the block timings
@@ -90,11 +90,11 @@ for station, locations in location_dict.items():
             peak_df = find_hydro_location_spectral_peaks(trace_stft, num_process, 
                                                          min_prom, min_rbw, max_mean_db,
                                                          min_freq = min_freq, max_freq = max_freq)
+            if peak_df is None:
+                print(f"No spectral peaks found for {location}!")
+                continue
 
             print(f"In total, {len(peak_df)} spectral peaks found.")
-
-            if len(peak_df) == 0:
-                continue
 
             peak_df["station"] = station
             peak_df["location"] = location
@@ -126,6 +126,4 @@ for station, locations in location_dict.items():
     # Save the block timings
     print("Saving the block timings...")
     block_timing_out_df = DataFrame(block_timing_out_dicts)
-    # block_timing_out_df["start_time"] = block_timing_out_df["start_time"].astype("datetime64[ns]")
-    # block_timing_out_df["end_time"] = block_timing_out_df["end_time"].astype("datetime64[ns]")
     block_timing_out_df.to_hdf(outpath, key = "block_timing", mode = "a")
