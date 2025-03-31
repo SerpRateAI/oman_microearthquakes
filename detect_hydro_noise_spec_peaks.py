@@ -20,7 +20,7 @@ from utils_plot import save_figure
 parser = ArgumentParser(description="Compute the time-cumulative counts of the spectral peaks detected in the hydrophone data")
 parser.add_argument("--min_height", type=float, default=0.05, help="Minimum height in fraction for peak detection")
 parser.add_argument("--min_threshold", type=float, default=0.03, help="Minimum threshold in fraction for peak detection")
-parser.add_argument("--window_length", type=float, default=60.0, help="Spectrogram window length in seconds")
+parser.add_argument("--window_length", type=float, default=300.0, help="Spectrogram window length in seconds")
 parser.add_argument("--overlap", type=float, default=0.0, help="Overlap fraction between adjacent windows")
 parser.add_argument("--min_prom", type=float, default=10.0, help="Minimum prominence in dB for peak detection")
 parser.add_argument("--min_rbw", type=float, default=3.0, help="Minimum reverse bandwidth in 1/Hz for peak detection")

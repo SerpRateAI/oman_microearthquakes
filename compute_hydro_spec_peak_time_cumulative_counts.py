@@ -7,17 +7,14 @@ from argparse import ArgumentParser
 from pandas import Timedelta
 from pandas import concat
 from pandas import read_hdf
-from matplotlib.pyplot import subplots
 
 from utils_basic import HYDRO_LOCATIONS as location_dict, SPECTROGRAM_DIR as indir, STARTTIME_HYDRO as starttime, ENDTIME_HYDRO as endtime
-from utils_basic import str2timestamp, time2suffix
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
-from utils_plot import save_figure
 
 # Inputs
 # Command-line arguments
 parser = ArgumentParser(description="Compute the time-cumulative counts of the spectral peaks detected in the hydrophone data")
-parser.add_argument("--window_length", type=float, default=60.0, help="Spectrogram window length in seconds")
+parser.add_argument("--window_length", type=float, default=300.0, help="Spectrogram window length in seconds")
 parser.add_argument("--overlap", type=float, default=0.0, help="Overlap fraction between adjacent windows")
 parser.add_argument("--min_prom", type=float, default=15.0, help="Minimum prominence threshold for peak detection")
 parser.add_argument("--min_rbw", type=float, default=15.0, help="Minimum reverse bandwidth threshold for peak detection")

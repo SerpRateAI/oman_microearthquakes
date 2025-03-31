@@ -9,14 +9,13 @@ from pandas import read_hdf
 from matplotlib.pyplot import subplots
 
 from utils_basic import HYDRO_LOCATIONS as location_dict, SPECTROGRAM_DIR as indir
-from utils_basic import str2timestamp, time2suffix
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
 from utils_plot import format_datetime_xlabels, format_freq_ylabels, save_figure
 
 # Inputs
 # Command-line arguments
 parser = ArgumentParser(description="Computing the spectral peak array detections for hydrophone data")
-parser.add_argument("--window_length", type=float, default=60.0, help="Spectrogram window length in seconds")
+parser.add_argument("--window_length", type=float, default=300.0, help="Spectrogram window length in seconds")
 parser.add_argument("--overlap", type=float, default=0.0, help="Overlap fraction between adjacent windows")
 parser.add_argument("--min_prom", type=float, default=15.0, help="Prominence threshold for peak detection")
 parser.add_argument("--min_rbw", type=float, default=15.0, help="Reverse bandwidth threshold for peak detection")
@@ -58,7 +57,7 @@ print("")
 # Read the data
 # Assemble the file suffices
 suffix_spec = get_spectrogram_file_suffix(window_length, overlap)
-suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db, min_freq = min_freq, max_freq = max_freq)
+suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db)
 
 # Loop over the hydrophone stations
 array_detect_to_plot_dfs = []
@@ -146,7 +145,8 @@ for i, station in enumerate(location_dict.keys()):
                                 rotation = 15.0)
     else:
         format_datetime_xlabels(ax,
-                                label = False,
+                                plot_axis_label = False,
+                                plot_tick_label = True,
                                 major_tick_spacing = "6h", num_minor_ticks = 6,
                                 date_format = "%Y-%m-%d %H:%M:%S",
                                 va = "top", ha = "right",

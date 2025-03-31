@@ -16,22 +16,24 @@ from obspy import UTCDateTime, read_inventory
 POWER_FLOOR = 1e-50
 NUM_SEONCDS_IN_DAY = 86400
 
-ROOTDIR_OTHER = "/fp/projects01/ec332/data/other_observables"
-ROOTDIR_GEO = "/fp/projects01/ec332/data/geophones"
-ROOTDIR_BROADBAND = "/fp/projects01/ec332/data/gfz_data"
-ROOTDIR_HYDRO = "/fp/projects01/ec332/data/hydrophones"
-ROOTDIR_HAMMER = "/Volumes/OmanData/data/hammer"
-ROOTDIR_MAP = "/fp/projects01/ec332/data/maps"
-SPECTROGRAM_DIR = "/fp/projects01/ec332/data/spectrograms"
-BEAM_DIR = "/fp/projects01/ec332/data/beams"
-PLOTTING_DIR = "/fp/projects01/ec332/data/plotting"
-FIGURE_DIR = "/fp/projects01/ec332/data/figures"
-GFZ_DATA_DIR = "/fp/projects01/ec332/data/gfz_data"
-NORCAL_DATA_DIR = "/fp/projects01/ec332/data/norcal_data"
-DHOFAR_DATA_DIR = "/fp/projects01/ec332/data/dhofar_data"
-IMAGE_DIR = "/fp/projects01/ec332/data/satellite_images"
-MT_DIR = "/fp/projects01/ec332/data/multitaper"
-PHYS_DIR = "/fp/projects01/ec332/data/physical_models"
+ROOTDIR_OTHER = "/proj/mazu/tianze.liu/oman/other_observables"
+ROOTDIR_GEO = "/proj/mazu/tianze.liu/oman/geophones"
+ROOTDIR_BROADBAND = "/proj/mazu/tianze.liu/oman/gfz_data"
+ROOTDIR_HYDRO = "/proj/mazu/tianze.liu/oman/hydrophones"
+ROOTDIR_MAP = "/proj/mazu/tianze.liu/oman/maps"
+SPECTROGRAM_DIR = "/proj/mazu/tianze.liu/oman/spectrograms"
+BEAM_DIR = "/proj/mazu/tianze.liu/oman/beams"
+PLOTTING_DIR = "/proj/mazu/tianze.liu/oman/plotting"
+FIGURE_DIR = "/proj/mazu/tianze.liu/oman/figures"
+PICK_DIR = "/proj/mazu/tianze.liu/oman/snuffler_picks"
+GFZ_DATA_DIR = "/proj/mazu/tianze.liu/oman/gfz_data"
+NORCAL_DATA_DIR = "/proj/mazu/tianze.liu/oman/norcal_data"
+DHOFAR_DATA_DIR = "/proj/mazu/tianze.liu/oman/dhofar_data"
+IMAGE_DIR = "/proj/mazu/tianze.liu/oman/satellite_images"
+MT_DIR = "/proj/mazu/tianze.liu/oman/multitaper"
+PHYS_DIR = "/proj/mazu/tianze.liu/oman/physical_models"
+VEL_MODEL_DIR = "/proj/mazu/tianze.liu/oman/velocity_models"
+LOC_DIR = "/proj/mazu/tianze.liu/oman/locations"
 
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
@@ -78,13 +80,13 @@ BROKEN_CHANNELS = ["A18.GH1"]
 BROKEN_LOCATIONS = ["A00.01", "A00.02"]
 
 EASTMIN_WHOLE = -115
-EASTMAX_WHOLE = 65
-NORTHMIN_WHOLE = -100
+EASTMAX_WHOLE = 100
+NORTHMIN_WHOLE = -110
 NORTHMAX_WHOLE = 105
 
-EASTMIN_A = -20
-EASTMAX_A = 65
-NORTHMIN_A = -100
+EASTMIN_A = -25
+EASTMAX_A = 100
+NORTHMIN_A = -110
 NORTHMAX_A = 15
 
 EASTMIN_B = -115
@@ -510,12 +512,20 @@ def str2list(input):
 
 ### Functions for handling angles ###
 
-# Compute the standard deviation of a set of angles using the vector mean
-# The angles are assumed to be in radians
-def get_angle_std(angles):
-    vec = exp(1j * angles)
-    vec_mean = mean(vec)
-    
-    std = sqrt(mean(angle(vec * vec_mean.conjugate()) ** 2))
+# Compute the differences between a set of angles while accounting for the periodicity nature
+# The angles are in radians!
+def get_angle_diff(angles1, angles2):
+    comps1 = exp(1j * angles1)
+    comps2 = exp(1j * angles2)
 
-    return std
+    diffs = comps1 / comps2
+    angles_diff = angle(diffs)
+
+    return angles_diff
+
+# Compute the mean of a set of angles while accounting for the periodicity nature
+def get_angle_mean(angles, axis = 0):
+    angle_mean = angle(mean(exp(1j * angles), axis = axis))
+
+    return angle_mean
+    

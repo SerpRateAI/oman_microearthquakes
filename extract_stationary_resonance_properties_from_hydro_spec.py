@@ -54,8 +54,8 @@ def select_resonance_peak(peak_df, min_num_loc, freq_ref = None):
                 return None
             
             peak_df = peak_freq_group[peak_freq_group["frequency"] == freq_ref]
-        # Find the frequency with the highest mean power
         else:
+            # Find the frequency with the highest mean power
             mean_powers = peak_freq_group.groupby("frequency")["power"].mean()
             i_max = mean_powers.idxmax()  
             peak_df = peak_freq_group[peak_freq_group["frequency"] == i_max]
@@ -69,12 +69,10 @@ parser.add_argument("--mode_name", type=str, help="Mode name")
 parser.add_argument("--min_num_loc_dict", type=dict, default={"A00": 3, "B00": 4}, help="Minimum number of locations that detect the peak")
 parser.add_argument("--max_mean_db", type=float, default=-10.0, help="Maximum mean dB for excluding noisy windows")
 
-parser.add_argument("--window_length", type=float, default=60.0, help="Spectrogram window length in seconds")
+parser.add_argument("--window_length", type=float, default=300.0, help="Spectrogram window length in seconds")
 parser.add_argument("--overlap", type=float, default=0.0, help="Overlap fraction between adjacent windows")
 parser.add_argument("--min_prom", type=float, default=15.0, help="Prominence threshold for peak detection")
 parser.add_argument("--min_rbw", type=float, default=15.0, help="Reverse bandwidth threshold for peak detection")
-parser.add_argument("--min_freq_peak", type=float, default=0.0, help="Minimum frequency in Hz for peak detection")
-parser.add_argument("--max_freq_peak", type=float, default=200.0, help="Maximum frequency in Hz for peak detection")
 
 # Parse the command-line arguments
 args = parser.parse_args()
@@ -85,8 +83,6 @@ window_length = args.window_length
 overlap = args.overlap
 min_prom = args.min_prom
 min_rbw = args.min_rbw
-min_freq_peak = args.min_freq_peak
-max_freq_peak = args.max_freq_peak
 max_mean_db = args.max_mean_db
 
 # Print the inputs
@@ -97,9 +93,6 @@ print(f"Spectrogram window length: {window_length:.2f} s")
 print(f"Overlap fraction: {overlap:.2f}")
 print(f"Prominence threshold: {min_prom:.2f}")
 print(f"Reverse bandwidth threshold: {min_rbw:.2f}")
-print(f"Minimum frequency for peak detection: {min_freq_peak:.2f} Hz")
-print(f"Maximum frequency for peak detection: {max_freq_peak:.2f} Hz")
-print("")
 
 # Read the resonance frequency range
 print("Reading the resonance frequency range...")
@@ -150,7 +143,7 @@ for time_label in block_timing_df["time_label"]:
     peak_df = peak_df[(peak_df["frequency"] >= min_freq_reson) & (peak_df["frequency"] <= max_freq_reson)]
 
     # Remove the peak if the frequency is different from the nosie frequency by less than the frequency interval
-    peak_df = peak_df[peak_df["frequency"].apply(lambda x: all(abs(x - noise_df["frequency"]) > freq_interval / 2))]
+    peak_df = peak_df[peak_df["frequency"].apply(lambda x: all(abs(x - noise_df["frequency"]) > 2 *freq_interval))]
 
     # Group the peaks by time
     peak_time_group = peak_df.groupby("time")

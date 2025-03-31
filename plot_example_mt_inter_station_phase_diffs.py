@@ -14,7 +14,6 @@ from matplotlib.pyplot import figure
 from utils_basic import MT_DIR as indir, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime, GEO_COMPONENTS as components
 from utils_basic import EASTMIN_WHOLE as min_east, EASTMAX_WHOLE as max_east, NORTHMIN_WHOLE as min_north, NORTHMAX_WHOLE as max_north
 from utils_basic import get_geophone_coords, get_mode_order
-from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
 from utils_plot import add_day_night_shading, component2label, format_east_xlabels, format_north_ylabels, format_datetime_xlabels, format_phase_diff_ylabels, save_figure, get_geo_component_color
 
 ### Inputs ###
@@ -27,6 +26,7 @@ parser.add_argument("--pair3", type=str, help = "The third station pair")
 parser.add_argument("--min_cohe", type=float, default=0.85, help="Minimum coherence")
 parser.add_argument("--mode_name", type=str, default="PR02549", help="Mode name")
 parser.add_argument("--window_length_mt", type=float, default=900.0, help="Window length for the multitaper analysis")
+
 parser.add_argument("--figwidth", type=float, default=12.0, help="Figure width")
 parser.add_argument("--widthfrac_map", type=float, default=0.25, help="Fraction of the figure width for the map")
 parser.add_argument("--gap_x", type=float, default=0.02, help="Gap between the map and the phase differences")
@@ -34,6 +34,21 @@ parser.add_argument("--gap_y", type=float, default=0.02, help="Gap between the p
 parser.add_argument("--margin_x", type=float, default=0.02, help="Margin on the left and right of the figure")
 parser.add_argument("--margin_y", type=float, default=0.02, help="Margin on the top and bottom of the figure")
 
+parser.add_argument("--markersize", type=float, default=2.0, help="Marker size for the stations and velocities")
+
+parser.add_argument("--linewidth_sta", type=float, default=0.2, help="Line width for the stations")
+parser.add_argument("--linewidth_conn", type=float, default=1.0, help="Line width for the connections")
+parser.add_argument("--linewidth_vel", type=float, default=0.5, help="Line width for the velocities")
+
+parser.add_argument("--fontsize_pair_label", type=float, default=12.0, help="Font size for the pair label")
+parser.add_argument("--fontsize_legend", type=float, default=10.0, help="Font size for the legend")
+parser.add_argument("--fontsize_title", type=float, default=14.0, help="Font size for the title")
+
+parser.add_argument("--major_date_tick_spacing", type=str, default="5d", help="Major date tick spacing")
+parser.add_argument("--num_minor_date_ticks", type=int, default=5, help="Number of minor date ticks")
+
+parser.add_argument("--pair_label_x", type=float, default=0.01, help="X coordinate for the pair label")
+parser.add_argument("--pair_label_y", type=float, default=0.97, help="Y coordinate for the pair label")
 
 args = parser.parse_args()
 
@@ -52,23 +67,21 @@ gap_y = args.gap_y
 margin_x = args.margin_x
 margin_y = args.margin_y
 
-# Constants
-markersize_sta = 15.0
-markersize_pha = 3.0
+markersize = args.markersize
 
-fontsize_pair_label = 12.0
-fontsize_legend = 10.0
-fontsize_title = 14.0
+linewidth_sta = args.linewidth_sta
+linewidth_conn = args.linewidth_conn
+linewidth_vel = args.linewidth_vel
 
-linewidth_sta = 0.2
-linewidth_conn = 1.0
-linewidth_pha = 0.5
+fontsize_pair_label = args.fontsize_pair_label
+fontsize_legend = args.fontsize_legend
+fontsize_title = args.fontsize_title
 
-pair_label_x = 0.01
-pair_label_y = 0.97
+major_date_tick_spacing = args.major_date_tick_spacing
+num_minor_date_ticks = args.num_minor_date_ticks
 
-major_date_tick_spacing = "5d"
-num_minor_date_ticks = 5
+pair_label_x = args.pair_label_x
+pair_label_y = args.pair_label_y
 
 ### Read the station coordinates and station pair informations ###
 filename = "delaunay_station_pairs.csv"
@@ -156,8 +169,8 @@ for i, pair in enumerate(pairs):
 
         # Plot the data
         marker = ax_pha.errorbar(phase_diff_df["time"], phase_diff_df[f"phase_diff_{component.lower()}"], yerr = phase_diff_df[f"phase_diff_uncer_{component.lower()}"], 
-                        fmt = "o", markerfacecolor="none", markeredgecolor=color, label = component2label(component), markersize = markersize_pha,
-                        markeredgewidth = linewidth_pha, elinewidth = linewidth_pha, capsize=2, zorder=2)
+                        fmt = "o", markerfacecolor="none", markeredgecolor=color, label = component2label(component), markersize = markersize_vel,
+                        markeredgewidth = linewidth_vel, elinewidth = linewidth_vel, capsize=2, zorder=2)
 
         label = component2label(component)
         legend_dict[label] = marker
@@ -199,5 +212,5 @@ mode_order = get_mode_order(mode_name)
 fig.suptitle(f"Mode {mode_order:d}, 3C phase differences between example geophone pairs", fontsize = fontsize_title, fontweight = "bold", y = 1.01)
 
 ### Save the figure ###
-figname = f"example_mt_inter_sta_phase_diffs_{mode_name}.png"
+figname = f"stationary_resonance_example_mt_inter_sta_phase_diffs_{mode_name}.png"
 save_figure(fig, figname)

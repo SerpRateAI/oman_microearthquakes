@@ -1,7 +1,7 @@
 # Functions and classes for plotting
 from os.path import join
 from pandas import Timestamp, Timedelta
-from pandas import date_range
+from pandas import date_range, merge
 from numpy import arctan, array, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
 from numpy.linalg import norm
 from scipy.stats import gmean
@@ -33,7 +33,8 @@ WAVE_VELOCITY_UNIT = "m s$^{-1}$"
 WAVE_SLOWNESS_UNIT = "s km$^{-1}$"
 PRESSURE_UNIT = "Pa"
 PRESSURE_LABEL = "Pressure (mPa)"
-APPARENT_VELOCITY_UNIT = "m s$^{-1}$"
+APPARENT_VELOCITY_LABEL = "Velocity (m s$^{-1}$)"
+APPARENT_VELOCITY_LABEL_SHORT = "Vel. (m s$^{-1}$)"
 HYDRO_PSD_LABEL = "PSD (mPa$^2$ Hz$^{-1}$, dB)"
 GEO_PSD_LABEL = "PSD (nm$^2$ s$^{-2}$ Hz$^{-1}$, dB)"
 X_SLOW_LABEL = "East slowness (s km$^{-1}$)"
@@ -2786,6 +2787,29 @@ def plot_all_geo_fft_psd_n_maps(stream_fft, coord_df, min_freq, max_freq,
 
     return fig, [ax_psd_z, ax_psd_1, ax_psd_2, ax_map]
 
+###### Functions for plotting maps ######
+# Plot the station triads while ensuring that each edge is plotted only once
+def plot_station_triads(ax, coord_df, triad_df, linewidth = 1.0, linecolor = "gray", zorder = 1, **kwargs):
+
+    if "triads_to_plot" in kwargs:
+        triads_to_plot_df = kwargs["triads_to_plot"]
+        triad_df = merge(triad_df, triads_to_plot_df, on = ["station1", "station2", "station3"], how = "inner")
+
+    edges_plotted = set()
+    for _, row in triad_df.iterrows():
+        edges = set([tuple(sorted([row["station1"], row["station2"]])), tuple(sorted([row["station2"], row["station3"]])), tuple(sorted([row["station3"], row["station1"]]))])
+
+        for edge in edges:
+            if edge not in edges_plotted:
+                station1, station2 = edge
+                east1, north1 = coord_df.loc[station1, ["east", "north"]]
+                east2, north2 = coord_df.loc[station2, ["east", "north"]]
+
+                ax.plot([east1, east2], [north1, north2], color = linecolor, linewidth = linewidth, zorder = zorder)
+                edges_plotted.add(edge)
+
+    return ax
+
 ###### Functions for adding elements to the plots ######
 
 # Add day-night shading to the plot
@@ -3216,6 +3240,35 @@ def format_vel_ylabels(ax, label=True,
 
     return ax
 
+# Format the y axis label in normalized amplitude
+def format_norm_amp_ylabels(ax, 
+                            plot_axis_label=True, plot_tick_label=True,
+                            abbreviation=False, 
+                            major_tick_spacing=0.5, num_minor_ticks=5,
+                            axis_label_size=12, tick_label_size=12,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if plot_axis_label:
+        if abbreviation:
+            ax.set_ylabel("Norm. amp.", fontsize=axis_label_size)
+        else:
+            ax.set_ylabel("Normalized amplitude", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
 # Format the ylabel in pressure
 def format_pressure_ylabels(ax, label=True, 
                             abbreviation=False, 
@@ -3241,6 +3294,84 @@ def format_pressure_ylabels(ax, label=True,
 
     return ax
 
+# Format the ylabel in pressure PSD for hydrophones
+def format_hydro_psd_ylabels(ax, 
+                                plot_axis_label=True, plot_tick_label=True,
+                                major_tick_spacing=10, num_minor_ticks=5,
+                                axis_label_size=12, tick_label_size=10,
+                                major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    
+    if plot_axis_label:
+        ax.set_ylabel(HYDRO_PSD_LABEL, fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
+# Format the ylabel in normalized PSD
+def format_norm_psd_ylabels(ax, 
+                            plot_axis_label=True, plot_tick_label=True,
+                            major_tick_spacing=10, num_minor_ticks=5,
+                            axis_label_size=12, tick_label_size=10,
+                            major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    
+    if plot_axis_label:
+        ax.set_ylabel("Normalized PSD (dB)", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
+# Format the ylabel in coherence
+def format_coherence_ylabels(ax, 
+                              plot_axis_label=True, plot_tick_label=True,
+                              major_tick_spacing=0.5, num_minor_ticks=5,
+                              axis_label_size=12, tick_label_size=10,
+                              major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    
+    if plot_axis_label:
+        ax.set_ylabel("Coherence", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))   
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
 # Format the ylabel in phase difference
 def format_phase_diff_ylabels(ax, 
                               plot_axis_label=True, plot_tick_label=True,
@@ -3248,6 +3379,9 @@ def format_phase_diff_ylabels(ax,
                               major_tick_spacing=pi/2, num_minor_ticks=3,
                               axis_label_size=12, tick_label_size=10,
                               major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    
+    ax.set_ylim(-pi, pi)
+    
     if plot_axis_label:
         if abbreviation:
             ax.set_ylabel("Phase diff. (rad)", fontsize=axis_label_size)
@@ -3263,6 +3397,8 @@ def format_phase_diff_ylabels(ax,
             label.set_fontsize(tick_label_size) 
             label.set_verticalalignment('center')
             label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
 
     ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
@@ -3320,9 +3456,9 @@ def format_app_vel_ylabels(ax,
                           major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if plot_axis_label:
         if abbreviation:
-            ax.set_ylabel(f"App. vel. ({APPARENT_VELOCITY_UNIT})", fontsize=axis_label_size)
+            ax.set_ylabel(f"{APPARENT_VELOCITY_LABEL_SHORT}", fontsize=axis_label_size)
         else:
-            ax.set_ylabel(f"Apparent velocity ({APPARENT_VELOCITY_UNIT})", fontsize=axis_label_size)
+            ax.set_ylabel(f"{APPARENT_VELOCITY_LABEL}", fontsize=axis_label_size)
 
     if plot_tick_label:
         ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))

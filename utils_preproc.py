@@ -321,6 +321,11 @@ def read_and_process_windowed_hydro_waveforms(starttime,
                                               filter = False, zerophase=False, normalize=False, 
                                               decimate=False,
                                               **kwargs):
+    
+    # Check if either the location dictionary or stations is specified
+    if loc_dict is None and stations is None:
+        loc_dict = HYDRO_LOCATIONS
+    
     # Check if both the location dictionary and stations are specified
     if loc_dict is not None and stations is not None:
         raise ValueError("Error: Only one of loc_dict and stations can be specified!")
