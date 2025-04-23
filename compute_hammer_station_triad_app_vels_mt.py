@@ -1,6 +1,7 @@
 """
-Compute the apparent velocities of the hammer signal at a given frequency on each geophone station triad
+Compute the apparent velocities for a hammer shot on the station triads using the phase differences estimated using the multitaper method
 """
+
 
 ###
 # Import the necessary libraries
@@ -9,13 +10,13 @@ Compute the apparent velocities of the hammer signal at a given frequency on eac
 from os.path import join
 from argparse import ArgumentParser
 from json import loads
-from numpy import zeros, mean, sqrt, rad2deg, nan
+from numpy import zeros, mean, sqrt, rad2deg, nan, pi
 from pandas import DataFrame
 from pandas import read_csv, concat
 
-from utils_basic import MT_DIR as dirpath_mt, GEO_COMPONENTS as components
+from utils_basic import MT_DIR as dirpath_mt, GEO_COMPONENTS as components, LOC_DIR as dirpath_loc
 from utils_basic import get_geophone_coords, get_angle_mean, get_angle_diff
-from utils_mt import get_triad_app_vel, get_dist_mat_inv
+from utils_loc import get_triad_app_vel, get_dist_mat_inv
 
 ###
 # Input parameters
@@ -126,7 +127,10 @@ for _, row in triad_df.iterrows():
         phase_diff_12 = phase_diff_df.loc[(phase_diff_df["station1"] == station1) & (phase_diff_df["station2"] == station2), f"phase_diff_{component.lower()}"]
         phase_diff_23 = phase_diff_df.loc[(phase_diff_df["station1"] == station2) & (phase_diff_df["station2"] == station3), f"phase_diff_{component.lower()}"]
 
-        vel_app, back_azi, vel_app_east, vel_app_north = get_triad_app_vel(phase_diff_12, phase_diff_23, dist_mat_inv, freq_target)
+        time_diff_12 = phase_diff_12 / freq_target / 2 / pi
+        time_diff_23 = phase_diff_23 / freq_target / 2 / pi
+
+        vel_app, back_azi, vel_app_east, vel_app_north = get_triad_app_vel(time_diff_12, time_diff_23, dist_mat_inv)
 
         result_dict[f"vel_app_{component.lower()}"] = vel_app
         result_dict[f"back_azi_{component.lower()}"] = rad2deg(back_azi) # Convert to degrees
@@ -146,7 +150,10 @@ for _, row in triad_df.iterrows():
         vel_app_north_jk = zeros(num_jk)
 
         for i in range(num_jk):
-            vel_app_jk[i], back_azi_jk[i], vel_app_east_jk[i], vel_app_north_jk[i] = get_triad_app_vel(phase_diff_jk_12[i], phase_diff_jk_23[i], dist_mat_inv, freq_target)
+            time_diff_12 = phase_diff_jk_12[i] / freq_target / 2 / pi
+            time_diff_23 = phase_diff_jk_23[i] / freq_target / 2 / pi
+            
+            vel_app_jk[i], back_azi_jk[i], vel_app_east_jk[i], vel_app_north_jk[i] = get_triad_app_vel(time_diff_12, time_diff_23, dist_mat_inv)
         
         vel_app_jk_mean = mean(vel_app_jk)
         back_azi_jk_mean = get_angle_mean(back_azi_jk)
@@ -176,6 +183,6 @@ for _, row in triad_df.iterrows():
 result_df = DataFrame(result_dicts)
 
 # Save the result dataframe
-outpath = join(dirpath_mt, f"hammer_triad_app_vels_{hammer_id}_{freq_target:.0f}hz_min_cohe_{min_cohe:.2f}.csv")
-result_df.to_csv(outpath, na_rep = "nan")
+outpath = join(dirpath_loc, f"hammer_station_triad_app_vels_mt_{hammer_id}_{freq_target:.0f}hz_min_cohe{min_cohe:.2f}.csv")
+result_df.to_csv(outpath, na_rep = "nan", index = False)
 print(f"The result dataframe has been saved to {outpath}")

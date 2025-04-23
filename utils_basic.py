@@ -76,6 +76,10 @@ OUTER_STATIONS_A = ["A13", "A14", "A15", "A16", "A17"]
 OUTER_STATIONS_B = ["B13", "B14", "B15", "B16", "B17", "B18"]
 OUTER_STATIONS = OUTER_STATIONS_A + OUTER_STATIONS_B
 
+CORE_STATIONS = INNER_STATIONS + MIDDLE_STATIONS + OUTER_STATIONS
+CORE_STATIONS_A = INNER_STATIONS_A + MIDDLE_STATIONS_A + OUTER_STATIONS_A
+CORE_STATIONS_B = INNER_STATIONS_B + MIDDLE_STATIONS_B + OUTER_STATIONS_B
+
 BROKEN_CHANNELS = ["A18.GH1"]
 BROKEN_LOCATIONS = ["A00.01", "A00.02"]
 
@@ -222,11 +226,26 @@ def get_broadband_metadata():
 
 # Get the geophone station coordinates
 def get_geophone_coords():
-    inpath = join(ROOTDIR_GEO, "geo_stations.csv")
+    inpath = join(LOC_DIR, "geo_stations.csv")
     sta_df = read_csv(inpath, index_col=0)
     sta_df.set_index("name", inplace=True, drop=True)
     
     return sta_df
+
+# Get the delaunay geophone pairs
+def get_geophone_pairs():
+    inpath = join(MT_DIR, "delaunay_station_pairs.csv")
+    pair_df = read_csv(inpath)
+
+    return pair_df
+
+# Get the delaunay geophone triads
+def get_geophone_triads():
+    inpath = join(MT_DIR, "delaunay_station_triads.csv")
+    triad_df = read_csv(inpath)
+
+    return triad_df
+
 
 # Get the indices of the stations forming the delaunay triads
 def get_station_triad_indices(coords_df, triad_df):
@@ -239,7 +258,7 @@ def get_station_triad_indices(coords_df, triad_df):
 
 # Function to get the hydrophone station coordinates
 def get_borehole_coords():
-    inpath = join(ROOTDIR_HYDRO, "boreholes.csv")
+    inpath = join(LOC_DIR, "boreholes.csv")
     bh_df = read_csv(inpath, index_col=0)
     bh_df.set_index("name", inplace=True)
 
@@ -513,8 +532,8 @@ def str2list(input):
 ### Functions for handling angles ###
 
 # Compute the differences between a set of angles while accounting for the periodicity nature
-# The angles are in radians!
-def get_angle_diff(angles1, angles2):
+# The input angles are in radians!
+def get_angles_diff(angles1, angles2):
     comps1 = exp(1j * angles1)
     comps2 = exp(1j * angles2)
 
@@ -524,8 +543,17 @@ def get_angle_diff(angles1, angles2):
     return angles_diff
 
 # Compute the mean of a set of angles while accounting for the periodicity nature
-def get_angle_mean(angles, axis = 0):
+# The input angles are in radians!
+def get_angles_mean(angles, axis = 0):
     angle_mean = angle(mean(exp(1j * angles), axis = axis))
 
     return angle_mean
     
+# Compute the standard deviation of a set of angles while accounting for the periodicity nature
+# The input angles are in radians!
+def get_angles_std(angles, axis = 0):
+    angle_mean = get_angles_mean(angles, axis = axis)
+    angles_diff = get_angles_diff(angles, angle_mean)
+    angle_std = sqrt(mean(angles_diff ** 2, axis = axis))
+
+    return angle_std

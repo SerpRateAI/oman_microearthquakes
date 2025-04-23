@@ -4,7 +4,7 @@ from scipy.fft import fft, fftfreq, ifft
 from scipy.signal import find_peaks
 from scipy.signal.windows import hann
 from scipy.interpolate import RegularGridInterpolator
-from numpy import abs, amax, angle, arange, array, column_stack, concatenate, convolve, cumsum, delete, interp, isnan, load, log, log10, linspace, amax, mean, median, amin, nan, ones, pi, savez, zeros
+from numpy import abs, amax, angle, arange, column_stack, concatenate, convolve, cumsum, delete, exp, log, log10, linspace, mean, amin, nan, ones, pi, zeros, std, where
 from pandas import Series, DataFrame, DatetimeIndex, IntervalIndex, Timedelta, Timestamp
 from pandas import concat, crosstab, cut, date_range, merge, read_csv, read_hdf, to_datetime
 from matplotlib.pyplot import subplots, get_cmap
@@ -13,7 +13,7 @@ from multitaper import MTSpec
 from multiprocessing import Pool
 from skimage.morphology import remove_small_objects
 
-from utils_basic import ALL_COMPONENTS, GEO_COMPONENTS, POWER_FLOOR
+from utils_basic import ALL_COMPONENTS, GEO_COMPONENTS, POWER_FLOOR, SAMPLING_RATE
 from utils_basic import SPECTROGRAM_DIR, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO
 from utils_basic import WATER_HEIGHT
 from utils_basic import assemble_timeax_from_ints, convert_boolean, datetime2int, int2datetime, power2db, reltimes_to_timestamps, str2timestamp, timestamp2utcdatetime
@@ -869,6 +869,22 @@ class TraceSTFT:
         end_of_day = ref_time.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         self.trim_time(start_of_day, end_of_day)
+
+    # Get the PSD of a given time window
+    def get_psd(self, time_window):
+        timeax = self.times
+
+        try:
+            idx = where(timeax == time_window)[0][0]
+        except:
+            print(f"Warning: Time window {time_window} not found!")
+            print(f"Looking for the closest time window...")
+            idx = timeax.searchsorted(time_window)
+            print(f"Closest time window is {timeax[idx]}")
+
+        psd = self.psd_mat[:, idx]
+
+        return psd
 
 
 # List-like class for storing the FFT of a number of time series
@@ -3251,37 +3267,55 @@ def get_geo_3c_fft(stream):
 
     return stream_fft
 
-# Calculate the FFT PSD of a signal using FFT
-def get_fft(signal, sampling_rate=1000.0):
-    n = len(signal)
+# # Calculate the FFT PSD of a signal using FFT
+# def get_fft(signal, sampling_rate=1000.0):
+#     n = len(signal)
 
+#     # Remove the mean
+#     signal = signal - mean(signal)
+
+#     # Apply a hann function
+#     window = hann(n)
+#     signal = signal * window
+
+#     # Compute the FFT and keep only the positive frequencies
+#     freqs = fftfreq(n, 1/sampling_rate)
+#     freqs = freqs[:n//2]
+
+#     signal_fft = fft(signal)
+#     signal_fft = signal_fft[:n//2]
+
+#     return freqs, signal_fft, window
+
+# Calculate the PSD of the FFT of a signal using a Hann window
+def get_fft_psd(signal, sampling_rate = 1000.0, normalize = False):
     # Remove the mean
     signal = signal - mean(signal)
 
-    # Apply a hann function
-    window = hann(n)
+    # Normalize the signal
+    if normalize:
+        signal = signal / std(signal)
+
+    # Apply the window
+    num_pts = len(signal)
+    window = hann(num_pts)
     signal = signal * window
 
-    # Compute the FFT and keep only the positive frequencies
-    freqs = fftfreq(n, 1/sampling_rate)
-    freqs = freqs[:n//2]
-
+    # Compute the FFT
     signal_fft = fft(signal)
-    signal_fft = signal_fft[:n//2]
 
-    return freqs, signal_fft, window
-
-# Calculate the PSD of the FFT of a signal
-def get_fft_psd(signal_fft, sampling_rate, window):
-    # Compute the power spectral density
-    n = len(signal_fft)
-    signal_fft = signal_fft / n
+    # Compute the PSD with right-sided FFT
+    signal_fft = signal_fft[0:num_pts//2 + 1]
     signal_fft[1:] = 2 * signal_fft[1:]
 
-    enbw = get_window_enbw(window, sampling_rate)
-    psd = abs(signal_fft) ** 2 / 2 / enbw
+    # Compute the PSD
+    psd = abs(signal_fft) ** 2 / num_pts
 
-    return psd
+    # Compute the frequency axis
+    freqax = fftfreq(num_pts, 1/sampling_rate)
+    freqax = freqax[0:num_pts//2 + 1]
+
+    return freqax, psd
 
 # Calculate the cepstrum of a signal
 def get_cepstrum(signal):
@@ -3404,21 +3438,21 @@ def get_fraction_peak_bounds(freqax, log_fracs, prominence, i_peak, i_left_base,
 
 # Get the quality factor and resonance width of a peak in a power spectrum
 # The input power must be in dB!
-def get_quality_factor(freqax, power_in_db, freq0):
+def get_quality_factor(freqax, powers_in_db, freq0):
     
     # Find the peak point
     ipeak = freqax.searchsorted(freq0)
-    power0 = power_in_db[ipeak]
+    power0 = powers_in_db[ipeak]
     power3db = power0 - 3.0
 
     # Find the points where power drops below the 3 dB level
-    for i in range(ipeak, len(power_in_db)):
-        if power_in_db[i] < power3db:
+    for i in range(ipeak, len(powers_in_db)):
+        if powers_in_db[i] < power3db:
             break
     freq_high = freqax[i]
 
     for i in range(ipeak, 0, -1):
-        if power_in_db[i] < power3db:
+        if powers_in_db[i] < power3db:
             break
     freq_low = freqax[i]
 
@@ -3458,3 +3492,37 @@ def get_start_n_end_from_center(center_time, window_length):
     endtime = center_time + Timedelta(seconds = window_length) / 2
 
     return starttime, endtime
+
+###
+# Functions for the autoregressive model
+###
+
+# Get the PSD of the autoregressive model
+# results is the output of the AutoReg model
+def get_ar_psd(results, num_pts, sampling_rate = SAMPLING_RATE):
+    # Get the AR coefficients
+    ar_coeffs = results.params
+    ar_coeffs = ar_coeffs[1:]
+
+    # Get the variance of the innovations
+    var_inov = results.sigma2
+
+    # Get the frequency axis
+    freqax = fftfreq(num_pts, 1/sampling_rate)
+    freqax = freqax[0:num_pts//2 + 1]
+
+    # Compute the denominator of the PSD
+    denom = 1.0
+    freqax_norm = freqax / sampling_rate
+    for i, ar_coeff in enumerate(ar_coeffs, start = 1):
+        print(f"i: {i}, ar_coeff: {ar_coeff}")
+        denom -= ar_coeff * exp(-2j * pi * freqax_norm * i)
+
+    denom = abs(denom) ** 2
+
+    # Compute the PSD
+    psd = var_inov / denom
+
+    return freqax, psd
+    
+    

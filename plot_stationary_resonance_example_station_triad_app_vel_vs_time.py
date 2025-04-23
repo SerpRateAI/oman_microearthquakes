@@ -114,10 +114,10 @@ triads = [triad1, triad2, triad3]
 
 # Compute the plot dimensions
 aspect_ratio_map = (max_north - min_north) / (max_east - min_east)
-aspect_ratio_fig = aspect_ratio_map * 3 * widthfrac_map / (1 - 2 * margin_y - 2 * margin_y)
+aspect_ratio_fig = aspect_ratio_map * 3 * widthfrac_map / (1 - 2 * margin_y)
 figheight = figwidth * aspect_ratio_fig
 
-map_height = (1 - 2 * margin_y - 2 * margin_y) / 3
+map_height = (1 - 2 * margin_y) / 3
 map_width = map_height * figheight / aspect_ratio_map / figwidth
 phase_height = map_height
 phase_width = 1 - 2 * margin_x - gap_x - map_width

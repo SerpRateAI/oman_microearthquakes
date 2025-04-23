@@ -7,8 +7,8 @@ from os.path import join
 from argparse import ArgumentParser
 from time import time
 
-from utils_basic import SPECTROGRAM_DIR as outdir, GEO_STATIONS as stations, GEO_COMPONENTS as components
-from utils_basic import get_geophone_days, get_unique_locations
+from utils_basic import SPECTROGRAM_DIR as outdir, GEO_STATIONS as stations
+from utils_basic import get_geophone_days
 from utils_preproc import read_and_process_day_long_geo_waveforms
 from utils_spec import create_geo_stft_file, write_geo_stft_block, finish_geo_stft_file
 from utils_torch import get_daily_stft

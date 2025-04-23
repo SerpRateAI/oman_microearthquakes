@@ -218,26 +218,24 @@ def get_trace_stft(trace, window_length = 1.0, overlap = 0.0):
     signal_tsr = tensor(signal)
     coeff_tsr = stft(signal_tsr, num_fft, hop_length = hop_length, window = window, return_complex = True, center = False)
 
-    # Normalize the STFT
-    coeff_tsr = coeff_tsr / num_fft
-    coeff_tsr[1:-1] =  2 * coeff_tsr[1:-1]
-
     # Get the phase in degrees
     pha_tsr = atan2(coeff_tsr.imag, coeff_tsr.real)
     pha_tsr = rad2deg(pha_tsr)
     pha_mat = pha_tsr.numpy()
 
-    # Convert to PSD
-    power_tsr = square(abs(coeff_tsr))
+    # Get the correct scaling factor for the PSD
+    psd_tsr = square(abs(coeff_tsr)) / sampling_rate
+    psd_tsr[1:-1, :] =  2 * psd_tsr[1:-1, :]
+    window_power = sum(square(window))
+    psd_tsr = psd_tsr / window_power
     # psd_tsr = psd_tsr.real
-    enbw = get_window_enbw(window, sampling_rate)
-    psd_tsr = power_tsr / enbw
+    # enbw = get_window_enbw(window, sampling_rate)
     psd_mat = psd_tsr.numpy()
 
     # Assemble the output TraceSTFT object
     num_freq = psd_mat.shape[0]
-    nyfreq = sampling_rate / 2
-    freqax = linspace(0, nyfreq, num_freq)
+    freq_interval = sampling_rate / num_fft
+    freqax = linspace(0, (num_freq - 1) * freq_interval, num_freq)
     
     num_time = psd_mat.shape[1]
     time_interval = hop_length / sampling_rate

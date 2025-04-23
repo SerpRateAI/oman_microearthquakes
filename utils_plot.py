@@ -22,7 +22,7 @@ import colorcet as cc
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import EASTMIN_WHOLE , EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
-from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, str2timestamp, sec2day
+from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_geophone_triads, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, str2timestamp, sec2day
 # from utils_wavelet import mask_cross_phase
 
 HYDRO_COLOR = "tab:purple"
@@ -37,6 +37,7 @@ APPARENT_VELOCITY_LABEL = "Velocity (m s$^{-1}$)"
 APPARENT_VELOCITY_LABEL_SHORT = "Vel. (m s$^{-1}$)"
 HYDRO_PSD_LABEL = "PSD (mPa$^2$ Hz$^{-1}$, dB)"
 GEO_PSD_LABEL = "PSD (nm$^2$ s$^{-2}$ Hz$^{-1}$, dB)"
+GEO_PSD_UNIT = "nm$^2$ s$^{-2}$ Hz$^{-1}$, dB"
 X_SLOW_LABEL = "East slowness (s km$^{-1}$)"
 Y_SLOW_LABEL = "North slowness (s km$^{-1}$)"
 
@@ -2789,13 +2790,37 @@ def plot_all_geo_fft_psd_n_maps(stream_fft, coord_df, min_freq, max_freq,
 
 ###### Functions for plotting maps ######
 # Plot the station triads while ensuring that each edge is plotted only once
-def plot_station_triads(ax, coord_df, triad_df, linewidth = 1.0, linecolor = "gray", zorder = 1, **kwargs):
+def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color = "crimson", zorder = 1, **kwargs):
+
+    coord_df = get_geophone_coords()
+    triad_df = get_geophone_triads()
+
+    edges_plotted = set()
 
     if "triads_to_plot" in kwargs:
         triads_to_plot_df = kwargs["triads_to_plot"]
-        triad_df = merge(triad_df, triads_to_plot_df, on = ["station1", "station2", "station3"], how = "inner")
 
-    edges_plotted = set()
+        if len(triads_to_plot_df) == 0:
+            return ax
+        else:
+            triad_df = merge(triad_df, triads_to_plot_df, on = ["station1", "station2", "station3"], how = "inner")
+
+    # Plot the edges of the highlighted triads first
+    if "triads_to_highlight" in kwargs:
+        triads_to_highlight_df = kwargs["triads_to_highlight"]
+        for _, row in triads_to_highlight_df.iterrows():
+            edges = set([tuple(sorted([row["station1"], row["station2"]])), tuple(sorted([row["station2"], row["station3"]])), tuple(sorted([row["station3"], row["station1"]]))])
+
+            for edge in edges:
+                if edge not in edges_plotted:
+                    station1, station2 = edge
+                    east1, north1 = coord_df.loc[station1, ["east", "north"]]
+                    east2, north2 = coord_df.loc[station2, ["east", "north"]]
+
+                    ax.plot([east1, east2], [north1, north2], color = highlight_color, linewidth = linewidth, zorder = zorder)
+                    edges_plotted.add(edge)
+
+    # Plot the remaining edges
     for _, row in triad_df.iterrows():
         edges = set([tuple(sorted([row["station1"], row["station2"]])), tuple(sorted([row["station2"], row["station3"]])), tuple(sorted([row["station3"], row["station1"]]))])
 
@@ -2807,7 +2832,7 @@ def plot_station_triads(ax, coord_df, triad_df, linewidth = 1.0, linecolor = "gr
 
                 ax.plot([east1, east2], [north1, north2], color = linecolor, linewidth = linewidth, zorder = zorder)
                 edges_plotted.add(edge)
-
+            
     return ax
 
 ###### Functions for adding elements to the plots ######
@@ -3444,6 +3469,31 @@ def format_slowness_ylabels(ax, label=True,
 
     ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
     ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return
+
+# Format the x label in apparent velocity
+def format_app_vel_xlabels(ax, 
+                           plot_axis_label=True, plot_tick_label=True,
+                           major_tick_spacing=500.0, num_minor_ticks=5,
+                           axis_label_size=12, tick_label_size=10,
+                           major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if plot_axis_label:
+        ax.set_xlabel(f"{APPARENT_VELOCITY_LABEL}", fontsize=axis_label_size)
+
+    if plot_tick_label:
+        ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+        ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+    else:
+        ax.set_xticklabels([])
+
+    for label in ax.get_xticklabels():
+        label.set_fontsize(tick_label_size) 
+        label.set_verticalalignment('top')
+        label.set_horizontalalignment('center')
+
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
 
     return
 

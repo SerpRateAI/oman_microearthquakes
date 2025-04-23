@@ -1,5 +1,5 @@
 """
-Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for a hammer shot
+Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for an earthquake
 """
 
 ###
@@ -8,12 +8,12 @@ Plot the 3C multitaper inter-station cross-spectra analysis between all station 
 from os.path import join
 from argparse import ArgumentParser
 from numpy import abs, amax
-from pandas import read_csv, Timedelta
+from pandas import read_csv, Timestamp
 from matplotlib.pyplot import figure, subplots
 from matplotlib.gridspec import GridSpec
 
-from utils_basic import MT_DIR as dirpath_mt, LOC_DIR as dirpath_loc, GEO_COMPONENTS as components
-from utils_basic import power2db
+from utils_basic import MT_DIR as dirpath_mt, GEO_COMPONENTS as components, LOC_DIR as dirpath_loc
+from utils_basic import power2db, str2timestamp
 from utils_preproc import read_and_process_windowed_geo_waveforms
 from utils_plot import component2label, format_phase_diff_ylabels, format_norm_amp_ylabels, format_coherence_ylabels, format_norm_psd_ylabels, format_freq_xlabels, get_geo_component_color, save_figure
 
@@ -22,16 +22,15 @@ from utils_plot import component2label, format_phase_diff_ylabels, format_norm_a
 ###
 
 # Command line arguments
-parser = ArgumentParser(description = "Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for a hammer shot")
-parser.add_argument("--hammer_id", type = str, help = "Hammer ID")
-parser.add_argument("--window_length", type = float, default = 1.0, help = "Window length in seconds")
-parser.add_argument("--freq_target", type = float, default = 25.0, help = "Frequency target in Hz")
+parser = ArgumentParser(description = "Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for an earthquake")
+parser.add_argument("--earthquake_id", type = int, help = "Earthquake ID")
+parser.add_argument("--freq_target", type = float, default = 25.5, help = "Frequency target in Hz")
 
 # Parse the command line arguments
 args = parser.parse_args()
-hammer_id = args.hammer_id
-window_length = args.window_length
+earthquake_id = args.earthquake_id
 freq_target = args.freq_target
+
 # Constants
 min_freq = 0.0
 max_freq = 100.0
@@ -62,21 +61,21 @@ suptitle_size = 14
 # Read the input files
 ###
 
+# Read the window list
+print(f"Reading the window list...")
+inpath = join(dirpath_loc, f"earthquakes.csv")
+earthquake_df = read_csv(inpath, parse_dates = ["start_time", "end_time"])
+
 # Read the station pairs
 print(f"Reading the station-pair list...")
 inpath = join(dirpath_mt, "delaunay_station_pairs.csv")
 pair_df = read_csv(inpath)
 
-# Read the waveforms
+# Read the waveform
 print(f"Reading the waveforms...")
-inpath = join(dirpath_loc, "hammer_locations.csv")
-hammer_df = read_csv(inpath, dtype={"hammer_id": str}, parse_dates=["origin_time"])
-otime = hammer_df[ hammer_df["hammer_id"] == hammer_id ]["origin_time"].values[0]
-
-starttime = otime
-endtime = otime + Timedelta(seconds = window_length)
-
-stream = read_and_process_windowed_geo_waveforms(starttime, endtime = endtime) 
+start_time = Timestamp(earthquake_df.loc[earthquake_df["earthquake_id"] == earthquake_id, "start_time"].values[0])
+end_time = Timestamp(earthquake_df.loc[earthquake_df["earthquake_id"] == earthquake_id, "end_time"].values[0])
+stream = read_and_process_windowed_geo_waveforms(start_time, endtime = end_time)
 
 ###
 # Plot the cross-spectra
@@ -93,9 +92,14 @@ for _, row in pair_df.iterrows():
     print(f"Plotting the results for {station1} and {station2}...")
 
     # Read the cross-spectral analysis results
-    filename = f"hammer_mt_inter_geo_sta_phase_diffs_{hammer_id}_{station1}_{station2}.csv"
-    inpath = join(dirpath_mt, filename)
-    cspec_df = read_csv(inpath)
+    filename = f"earthquake_mt_inter_geo_sta_phase_diffs_eq{earthquake_id}_{station1}_{station2}.csv"
+    try:
+        inpath = join(dirpath_mt, filename)
+        cspec_df = read_csv(inpath)
+    except FileNotFoundError:
+        print(f"The file {inpath} does not exist. Skipping the station pair {station1} and {station2}...")
+        continue
+
     freqax = cspec_df["frequency"].values
 
     # Initialize the figure
@@ -249,10 +253,11 @@ for _, row in pair_df.iterrows():
                             axis_label_size = axis_label_size)
 
     # Set the suptitle
-    fig.suptitle(f"Hammer {hammer_id}, {station1}-{station2}", fontsize = suptitle_size, fontweight = "bold", y = 1.0)
+
+    fig.suptitle(f"Earthquake {earthquake_id}, {station1}-{station2}, {start_time.strftime('%Y-%m-%d %H:%M:%S')} - {end_time.strftime('%H:%M:%S')}", fontsize = suptitle_size, fontweight = "bold", y = 1.0)
 
     # Save the figure
-    figname = f"hammer_mt_inter_geo_sta_cspec_{hammer_id}_{station1}_{station2}.png"
+    figname = f"earthquake_mt_inter_geo_sta_cspec_eq{earthquake_id}_{station1}_{station2}.png"
     save_figure(fig, figname)
 
     # Close the figure

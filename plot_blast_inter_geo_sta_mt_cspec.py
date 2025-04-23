@@ -1,5 +1,5 @@
 """
-Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for a hammer shot
+Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for a quarry blast
 """
 
 ###
@@ -22,16 +22,17 @@ from utils_plot import component2label, format_phase_diff_ylabels, format_norm_a
 ###
 
 # Command line arguments
-parser = ArgumentParser(description = "Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for a hammer shot")
-parser.add_argument("--hammer_id", type = str, help = "Hammer ID")
-parser.add_argument("--window_length", type = float, default = 1.0, help = "Window length in seconds")
+parser = ArgumentParser(description = "Plot the 3C multitaper inter-station cross-spectra analysis between all station pairs for a quarry blast")
+parser.add_argument("--blast_id", type = str, help = "Quarry blast ID")
+parser.add_argument("--window_length", type = float, default = 8.0, help = "Window length in seconds")
 parser.add_argument("--freq_target", type = float, default = 25.0, help = "Frequency target in Hz")
 
 # Parse the command line arguments
 args = parser.parse_args()
-hammer_id = args.hammer_id
+blast_id = args.blast_id
 window_length = args.window_length
 freq_target = args.freq_target
+
 # Constants
 min_freq = 0.0
 max_freq = 100.0
@@ -69,9 +70,9 @@ pair_df = read_csv(inpath)
 
 # Read the waveforms
 print(f"Reading the waveforms...")
-inpath = join(dirpath_loc, "hammer_locations.csv")
-hammer_df = read_csv(inpath, dtype={"hammer_id": str}, parse_dates=["origin_time"])
-otime = hammer_df[ hammer_df["hammer_id"] == hammer_id ]["origin_time"].values[0]
+inpath = join(dirpath_loc, "quarry_blasts.csv")
+blast_df = read_csv(inpath, dtype={"blast_id": str}, parse_dates=["time"])
+otime = blast_df[ blast_df["blast_id"] == blast_id ]["time"].values[0]
 
 starttime = otime
 endtime = otime + Timedelta(seconds = window_length)
@@ -93,9 +94,14 @@ for _, row in pair_df.iterrows():
     print(f"Plotting the results for {station1} and {station2}...")
 
     # Read the cross-spectral analysis results
-    filename = f"hammer_mt_inter_geo_sta_phase_diffs_{hammer_id}_{station1}_{station2}.csv"
-    inpath = join(dirpath_mt, filename)
-    cspec_df = read_csv(inpath)
+    filename = f"blast_mt_inter_geo_sta_phase_diffs_{blast_id}_{station1}_{station2}_window{window_length:.0f}s.csv"
+    try:
+        inpath = join(dirpath_mt, filename)
+        cspec_df = read_csv(inpath)
+    except FileNotFoundError:
+        print(f"The file {inpath} does not exist. Skipping the station pair {station1} and {station2}...")
+        continue
+
     freqax = cspec_df["frequency"].values
 
     # Initialize the figure
@@ -249,10 +255,10 @@ for _, row in pair_df.iterrows():
                             axis_label_size = axis_label_size)
 
     # Set the suptitle
-    fig.suptitle(f"Hammer {hammer_id}, {station1}-{station2}", fontsize = suptitle_size, fontweight = "bold", y = 1.0)
+    fig.suptitle(f"Quarry blast {blast_id}, {station1}-{station2}", fontsize = suptitle_size, fontweight = "bold", y = 1.0)
 
     # Save the figure
-    figname = f"hammer_mt_inter_geo_sta_cspec_{hammer_id}_{station1}_{station2}.png"
+    figname = f"blast_mt_inter_geo_sta_cspec_{blast_id}_{station1}_{station2}_window{window_length:.0f}s.png"
     save_figure(fig, figname)
 
     # Close the figure

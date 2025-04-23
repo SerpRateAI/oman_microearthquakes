@@ -29,7 +29,8 @@ from utils_basic import get_geophone_coords, get_borehole_coords, str2timestamp
 from utils_basic import INNER_STATIONS as inner_stations, MIDDLE_STATIONS as middle_stations, OUTER_STATIONS as outer_stations
 from utils_basic import power2db
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_time_slice_from_geo_stft
-from utils_plot import add_colorbar, component2label, format_east_xlabels, format_db_ylabels, format_freq_xlabels, format_north_ylabels, format_depth_ylabels, get_geo_component_color, save_figure
+from utils_satellite import load_maxar_image
+from utils_plot import format_east_xlabels, format_db_ylabels, format_freq_xlabels, format_north_ylabels, format_depth_ylabels, get_geo_component_color, save_figure
 
 ### Inputs ###
 # Command line arguments
@@ -43,11 +44,43 @@ parser.add_argument("--min_prom", type=float, default=15.0, help="Minimum promin
 parser.add_argument("--min_rbw", type=float, default=15.0, help="Minimum reverse bandwidth of a spectral peak.")
 parser.add_argument("--max_mean_db", type=float, default=10.0, help="Maximum mean dB value for excluding noise windows.")
 
+parser.add_argument("--station_size", type=float, default=150.0, help="Size of the geophone markers.")
+parser.add_argument("--borehole_size", type=float, default=150.0, help="Size of the borehole markers.")
+parser.add_argument("--hydro_size", type=float, default=150.0, help="Size of the hydrophone markers.")
+
+parser.add_argument("--min_db", type=float, default=-20.0, help="Minimum dB value for the color scale.")
+parser.add_argument("--max_db", type=float, default=80.0, help="Maximum dB value for the color scale.")
+parser.add_argument("--min_arrow_db", type=float, default=0.0, help="Minimum dB value for the arrow color scale.")
+parser.add_argument("--subarray_label_size", type=float, default=15.0, help="Font size of the subarray labels.")
+parser.add_argument("--freq_label_size", type=float, default=15.0, help="Font size of the frequency labels.")
+parser.add_argument("--axis_label_size", type=float, default=12.0, help="Font size of the axis labels.")
+parser.add_argument("--tick_label_size", type=float, default=12.0, help="Font size of the tick labels.")
+parser.add_argument("--title_size", type=float, default=15.0, help="Font size of the title.")
+parser.add_argument("--legend_size", type=float, default=12.0, help="Font size of the legend.")
+parser.add_argument("--location_font_size", type=float, default=15.0, help="Font size of the location labels.")
+parser.add_argument("--arrow_gap", type=float, default=5.0, help="Gap between the arrow and the text.")
+parser.add_argument("--arrow_length", type=float, default=10.0, help="Length of the arrow.")
+parser.add_argument("--arrow_width", type=float, default=0.01, help="Width of the arrow.")
+parser.add_argument("--arrow_head_width", type=float, default=5.0, help="Width of the arrow head.")
+parser.add_argument("--arrow_head_length", type=float, default=5.0, help="Length of the arrow head.")
+
+parser.add_argument("--linewidth_marker", type=float, default=1.0, help="Line width of the markers.")
+parser.add_argument("--linewidth_highlight", type=float, default=2.0, help="Line width of the highlighted markers.")
+parser.add_argument("--linewidth_star", type=float, default=0.5, help="Line width of the star.")
+
+parser.add_argument("--image_alpha", type=float, default=0.5, help="Opacity of the satellite image.")
+
 parser.add_argument("--color_geo", type=str, default="gold", help="Color of the geophone markers.")
 parser.add_argument("--color_borehole", type=str, default="violet", help="Color of the borehole markers.")
 parser.add_argument("--color_hydro", type=str, default="violet", help="Color of the hydrophone markers.")
 parser.add_argument("--color_highlight", type=str, default="crimson", help="Color of the highlighted geophone markers.")
 parser.add_argument("--color_missing", type=str, default="gray", help="Color of the missing resonance frequencies.")
+parser.add_argument("--color_water", type=str, default="deepskyblue", help="Color of the water.")
+
+parser.add_argument("--subarray_a_label_x", type=float, default=-75.0, help="X-coordinate of the subarray A label.")
+parser.add_argument("--subarray_a_label_y", type=float, default=75.0, help="Y-coordinate of the subarray A label.")
+parser.add_argument("--subarray_b_label_x", type=float, default=-5.0, help="X-coordinate of the subarray B label.")
+parser.add_argument("--subarray_b_label_y", type=float, default=-45.0, help="Y-coordinate of the subarray B label.")
 
 # Parse the command line arguments
 args = parser.parse_args()
@@ -61,11 +94,45 @@ min_prom = args.min_prom
 min_rbw = args.min_rbw
 max_mean_db = args.max_mean_db
 
+image_alpha = args.image_alpha
+
+station_size = args.station_size
+borehole_size = args.borehole_size
+hydro_size = args.hydro_size
+
+subarray_label_size = args.subarray_label_size
+freq_label_size = args.freq_label_size
+axis_label_size = args.axis_label_size
+tick_label_size = args.tick_label_size
+title_size = args.title_size
+location_font_size = args.location_font_size
+legend_size = args.legend_size
+
+arrow_gap = args.arrow_gap
+arrow_length = args.arrow_length
+arrow_width = args.arrow_width
+arrow_head_width = args.arrow_head_width
+arrow_head_length = args.arrow_head_length
+
+linewidth_marker = args.linewidth_marker
+linewidth_highlight = args.linewidth_highlight
+linewidth_star = args.linewidth_star
+
+min_db = args.min_db
+max_db = args.max_db
+min_arrow_db = args.min_arrow_db
+
 color_geo = args.color_geo
 color_borehole = args.color_borehole
 color_hydro = args.color_hydro
 color_highlight = args.color_highlight
 color_missing = args.color_missing
+color_water = args.color_water
+
+subarray_a_label_x = args.subarray_a_label_x
+subarray_a_label_y = args.subarray_a_label_y
+subarray_b_label_x = args.subarray_b_label_x
+subarray_b_label_y = args.subarray_b_label_y
 
 # Constants
 fig_width = 15.0
@@ -73,15 +140,10 @@ fig_width = 15.0
 margin_x = 0.05
 margin_y = 0.05
 hspace = 0.05
-vspace = 0.06
+vspace = 0.08
 
-width_ratio = 5 # Width ratio between the station map and the hydrophone depth profile
+width_ratio = 6 # Width ratio between the station map and the hydrophone depth profile
 height_ratio = 3 # Height ratio between the station map and the spectral plot
-
-colorbar_offset_x = 0.02
-colorbar_offset_y = 0.08
-colorbar_width = 0.01
-colorbar_height = 0.3
 
 globe_x = 0.1
 globe_y = 0.4
@@ -91,7 +153,7 @@ globe_height = 0.2
 scale_bar_length = 25.0
 
 min_depth = 0.0
-max_depth = 450.0
+max_depth = 400.0
 
 hydro_min = -0.5
 hydro_max = 0.5
@@ -99,31 +161,17 @@ hydro_max = 0.5
 freq_min = 0.0
 freq_max = 200.0
 
-min_db = -40.0
-max_db = 60.0
-min_arrow_db = 0.0
-
 water_level = 15.0
 water_amp = 2.5
 water_period = 0.2
 
-linewidth_marker = 1.0
 linewidth_coast = 0.2
 linewidth_water = 2.0
 linewidth_spec = 1.0
 linewidth_arrow = 1.0
-linewidth_triad = 1.0
-
-arrow_width = 0.01
-arrow_head_width = 5.0
-arrow_head_length = 5.0
 
 min_vel_app = 0.0
 max_vel_app = 2000.0
-
-station_size = 150.0
-borehole_size = 150.0
-hydro_size = 150.0
 
 station_font_size = 14.0
 station_label_x = 7.0
@@ -133,7 +181,7 @@ borehole_font_size = 14.0
 borehole_label_x = 40.0
 borehole_label_y = -40.0
 
-location_font_size = 14.0
+
 location_label_x = 0.25
 
 water_font_size = 14.0
@@ -143,44 +191,22 @@ major_depth_spacing = 50.0
 major_freq_spacing = 50.0
 major_db_spacing = 20.0
 
-axis_label_size = 14.0
-tick_label_size = 12.0
-title_size = 14.0
-component_label_size = 14.0
-freq_label_size = 12.0
-
-legend_size = 14.0
-
 major_tick_length = 5.0
 minor_tick_length = 2.0
 tick_width = 1.0
 
 frame_width = 1.0
 
-arrow_gap = 5.0
-arrow_length = 10.0
-
 subplot_label_size = 18.0
 subplot_offset_x = -0.02
 subplot_offset_y = 0.02
-
-filename_image = "maxar_2019-09-17_local.tif"
 
 # Load the geophone and borehole coordinates
 geo_df = get_geophone_coords()
 boho_df = get_borehole_coords()
 
 # Load the satellite image
-inpath = join(dir_img, filename_image)
-with open(inpath) as src:
-    # Read the image in RGB format
-    rgb_band = src.read([1, 2, 3])
-
-    # Reshape the image
-    rgb_image = reshape_as_image(rgb_band)
-
-    # Extract the extent of the image
-    extent_img = [src.bounds.left, src.bounds.right, src.bounds.bottom, src.bounds.top]
+rgb_image, extent_img = load_maxar_image()
 
 ### Generate the figure and axes ###
 # Compute the aspect ratio of the figure and generate the figure
@@ -206,7 +232,7 @@ ax_spec = fig.add_axes([margin_x, margin_y, width_spec, height_spec])
 ### Plot the station map ###
 print("Plotting the station map...")
 # Plot the satellite image as the background
-ax_map.imshow(rgb_image, extent = extent_img, zorder = 0)
+ax_map.imshow(rgb_image, extent = extent_img, zorder = 0, alpha = image_alpha)
 
 # Plot the geophone locations
 for station, coords in geo_df.iterrows():
@@ -214,10 +240,10 @@ for station, coords in geo_df.iterrows():
     north = coords["north"]
 
     if station in stations_highlight:
-        ax_map.scatter(east, north, marker = "^", s = station_size, color = color_geo, edgecolors = color_highlight, linewidths = linewidth_marker)
+        ax_map.scatter(east, north, marker = "^", s = station_size, color = color_geo, edgecolors = color_highlight, linewidths = linewidth_highlight)
         ax_map.annotate(station, (east, north), 
                         textcoords = "offset points", xytext = (station_label_x, station_label_y), ha = "left", va = "bottom", fontsize = station_font_size, 
-                        color = color_highlight, fontweight = "bold", bbox = dict(facecolor = "white", edgecolor = "none", alpha = 0.5))
+                        color = "black", fontweight = "bold", bbox = dict(facecolor = "white", edgecolor = "none", alpha = 0.5))
     else:
         ax_map.scatter(east, north, marker = "^", s = station_size, color = color_geo, edgecolors = "black", linewidths = linewidth_marker, label = "Geophone")
 
@@ -229,7 +255,11 @@ for borehole, coords in boho_df.iterrows():
     ax_map.scatter(east, north, marker = "o", s = borehole_size, color = color_hydro, edgecolors = "black", linewidths = linewidth_marker, label = "Borehole/Hydrophones")
     ax_map.annotate(borehole, (east, north), 
                     textcoords = "offset points", xytext = (borehole_label_x, borehole_label_y), ha = "left", va = "top", fontsize = borehole_font_size, fontweight = "bold", 
-                    color = color_hydro, arrowprops=dict(arrowstyle = "-", color = "black"), bbox = dict(facecolor = "white", edgecolor = "none", alpha = 0.5))
+                    color = "black", arrowprops=dict(arrowstyle = "-", color = "black"), bbox = dict(facecolor = "white", edgecolor = "none", alpha = 0.5))
+
+# Add the subarray labels
+ax_map.text(subarray_a_label_x, subarray_a_label_y, "Subarray A", color = "black", fontsize = subarray_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "center")
+ax_map.text(subarray_b_label_x, subarray_b_label_y, "Subarray B", color = "black", fontsize = subarray_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "center")
 
 # Add the scale bar
 scale_bar = AnchoredSizeBar(ax_map.transData, scale_bar_length, 
@@ -276,7 +306,7 @@ ax_coast.add_feature(cfeature.OCEAN, color='skyblue')
 ax_coast.coastlines(linewidth = linewidth_coast)
 
 # Plot a star at the given longitude and latitude
-ax_coast.scatter(lon, lat, marker = '*', s = 100, color=color_hydro, edgecolor = "black", linewidths = linewidth_marker, transform = Geodetic(), zorder = 10)
+ax_coast.scatter(lon, lat, marker = '*', s = 100, color=color_hydro, edgecolor = "black", linewidths = linewidth_star, transform = Geodetic(), zorder = 10)
 
 # Add the subplot label
 bbox_map = ax_map.get_position()
@@ -287,6 +317,14 @@ fig.text(top_left_x + subplot_offset_x, top_left_y + subplot_offset_y, "(a)", fo
 
 ### Plot the hydrophone depth profiles ###
 print(f"Plotting the hydrophone depth profiles...")
+
+# Plot the water level
+water_line_x = linspace(hydro_min, hydro_max, 100)
+water_line_y = water_level + water_amp * cos(2 * pi * water_line_x / water_period)
+
+ax_hydro.plot(water_line_x, water_line_y, color = color_water, linewidth = linewidth_water)
+ax_hydro.fill_between(water_line_x, water_line_y, max_depth, color = color_water, alpha = 0.2)
+ax_hydro.text(hydro_min, water_level, "Water table", color = color_water, fontsize = water_font_size, va = "top", ha = "right", rotation = 60)
 
 # Plot the hydrophones
 for location in depth_dict.keys():
@@ -300,17 +338,11 @@ ax_hydro.text(0.0, -15.0, "BA1A & BA1B\n(A00 & B00)", color = "black", fontsize 
 max_hydro_depth = max(depth_dict.values())
 ax_hydro.plot([0.0, 0.0], [min_depth, max_hydro_depth], color = "black", linewidth = linewidth_marker, zorder = 0)
 
-# Plot the legend
-handles, labels = ax_hydro.get_legend_handles_labels()
-unique_labels = dict(zip(labels, handles))
-legend = ax_hydro.legend(unique_labels.values(), unique_labels.keys(), loc = "lower left", frameon = False, fontsize = legend_size)
+# # Plot the legend
+# handles, labels = ax_hydro.get_legend_handles_labels()
+# unique_labels = dict(zip(labels, handles))
+# legend = ax_hydro.legend(unique_labels.values(), unique_labels.keys(), loc = "lower left", frameon = False, fontsize = legend_size)
 
-# Plot the water level
-water_line_x = linspace(hydro_min, hydro_max, 100)
-water_line_y = water_level + water_amp * cos(2 * pi * water_line_x / water_period)
-
-ax_hydro.plot(water_line_x, water_line_y, color = "dodgerblue", linewidth = linewidth_water)
-ax_hydro.text(hydro_min, water_level, "Water table", color = "dodgerblue", fontsize = water_font_size, va = "top", ha = "right", rotation = 60)
 
 # Set the axis limits
 ax_hydro.set_xlim(hydro_min, hydro_max)
@@ -412,7 +444,7 @@ for mode_order in mode_marker_df["mode_order"].unique():
 
 
     if mode_name.startswith("MH"):
-        ax_spec.annotate(f"?", xy=(freq_resonance, power + arrow_gap), xytext=(freq_resonance, power + arrow_gap + arrow_length),
+        ax_spec.annotate(f"?", xy=(freq_resonance, power + arrow_gap), xytext=(freq_resonance, power + arrow_gap + 2 * arrow_length),
                     color = color_missing, fontsize = freq_label_size, fontweight = "bold", va = "bottom", ha = "center",
                     arrowprops=dict(facecolor=color_missing, edgecolor=color_missing, shrink=0.05, width=arrow_width, headwidth=arrow_head_width, headlength=arrow_head_length))
     else:

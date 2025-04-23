@@ -43,7 +43,7 @@ num_process = args.num_process
 
 
 # Print the parameters
-print(f"### Detecting spectral peaks in the hydrophone spectrograms in {num_process} processes ###")
+print(f"### Detecting spectral peaks in the geophone STFTs in {num_process} processes ###")
 print(f"Window length: {window_length} s")
 print(f"Overlap: {overlap}")
 

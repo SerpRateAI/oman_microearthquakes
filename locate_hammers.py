@@ -51,15 +51,18 @@ min_num_res = args.min_num_res
 
 # Load the list of hammers
 print(f"Loading the list of hammers...")
-filename = f"hammer_ids.csv"
+filename = f"hammers.csv"
 filepath = join(dirpath_loc, filename)
 hammer_df = read_csv(filepath, dtype = {"hammer_id": str})
 
 # Load the list of located hammers
 print(f"Loading the list of located hammers...")
 filename = f"hammer_locations.csv"
-filepath = join(dirpath_loc, filename)
-located_df = read_csv(filepath, dtype = {"hammer_id": str})
+try:
+    filepath = join(dirpath_loc, filename)
+    located_df = read_csv(filepath, dtype = {"hammer_id": str})
+except FileNotFoundError:
+    located_df = DataFrame(columns = ["hammer_id", "origin_time", "east", "north", "rms"])
 
 # Load the traveltime curve
 print(f"Loading the traveltime curve for {model_name}...")
@@ -82,7 +85,6 @@ station_df = station_df[station_df["subarray"] == "A"]
 hammer_df = hammer_df[~hammer_df["hammer_id"].isin(located_df["hammer_id"])]
 
 print(f"Number of hammers to locate: {len(hammer_df)}")
-
 
 # ##
 # Locate each hammer shot
@@ -109,10 +111,10 @@ for hammer_id in hammer_df["hammer_id"]:
     
     # Load the pick data
     print(f"Loading the pick data for hammer {hammer_id}...")
-    filename = f"hammer_{hammer_id}_p_geo.txt"
+    filename = f"hammer_p_picks_{hammer_id}.txt"
     filepath = join(dirpath_pick, filename)
-    pick_df = read_normal_markers(filepath)
-
+    pick_df = read_csv(filepath, parse_dates = ["time"], dtype = {"station": str})
+    
     # Convert pick times to nanoseconds for easier computation
     pick_df["time"] = pick_df["time"].astype("int64")
 

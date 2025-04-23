@@ -3,12 +3,48 @@
 # Import the required libraries
 from os.path import exists, join
 from argparse import ArgumentParser
+from numpy import nan
+from scipy.signal import find_peaks
 from pandas import DataFrame
 from pandas import concat, read_csv
 
-from utils_basic import SPECTROGRAM_DIR as indir, GEO_STATIONS as stations, HAMMER_STARTTIME as hammer_starttime, HAMMER_ENDTIME as hammer_endtime
-from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, get_stationary_resonance_suffix, get_stationary_resonance_name, read_geo_spec_axes, read_geo_spec_peaks, read_spec_peak_array_counts
+from utils_basic import SPECTROGRAM_DIR as indir, GEO_STATIONS as stations, GEO_COMPONENTS as components
+from utils_spec import get_quality_factor,get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_geo_stft, read_geo_spec_peaks, read_spec_peak_array_counts
 
+# Functions
+def get_component_quality_factor(trace_stft, resonance_df, min_prom):
+    trace_stft.to_db()
+    freqax = trace_stft.freqs
+    freq_interval = freqax[1] - freqax[0]
+
+    quality_factors = []
+    for _, row in resonance_df.iterrows():
+        time_window = row["time"]
+        freq_total = row["frequency"]
+        # print(f"Frequency: {freq_total}")
+
+        psd = trace_stft.get_psd(time_window)
+        
+        # Find the peaks in the PSD satisfying the prominence threshold
+        idx_peaks, _ = find_peaks(psd, prominence = min_prom)
+        if len(idx_peaks) == 0:
+            quality_factors.append(nan)
+            continue
+
+        # Find the peak frequencies
+        freq_peaks = freqax[idx_peaks]
+        # print(f"Peak frequencies: {freq_peaks}")
+
+        # Determine if the peak frequency from the total PSD is within one frequency bin of any of the peak frequencies
+        idx = abs(freq_total - freq_peaks).argmin()
+        if abs(freq_total - freq_peaks[idx]) < freq_interval:
+            quality_factor, _ = get_quality_factor(freqax, psd, freq_total)
+            quality_factors.append(quality_factor)
+        else:
+            quality_factors.append(nan)
+
+    return quality_factors
+        
 # Inputs
 # Command-line arguments
 parser = ArgumentParser(description = "Extract the properties of one stationary resonance for all geophone stations.")
@@ -20,6 +56,8 @@ parser.add_argument("--min_prom", type = float, default = 15.0, help = "Minimum 
 parser.add_argument("--min_rbw", type = float, default = 3.0, help = "Minimum reverse bandwidth of a spectral peak.")
 parser.add_argument("--max_mean_db", type = float, default = 10.0, help = "Maximum mean dB value for excluding noise windows.")
 
+parser.add_argument("--freq_buffer", type = float, default = 0.1, help = "Frequency buffer in Hz for reading the spectrogram.")
+
 # Parse the arguments
 args = parser.parse_args()
 mode_name = args.mode_name
@@ -29,6 +67,7 @@ overlap = args.overlap
 min_prom = args.min_prom
 min_rbw = args.min_rbw
 max_mean_db = args.max_mean_db
+freq_buffer = args.freq_buffer
 
 # Print the inputs
 print(f"### Extracting the properties of a stationary resonance from the spectral peaks of the geophone spectrograms ###")
@@ -98,9 +137,28 @@ for station in stations:
     resonance_df = peak_df.merge(resonance_freq_time_df, on = ["time", "frequency"], how = "inner")
     print(f"Number of time windows with resonance detected: {len(resonance_df)}")
 
-    # Compute the quality factors
+    # Compute the quality factors for each component
     print("Computing the quality factors...")
-    resonance_df["quality_factor"] = resonance_df["frequency"] * resonance_df["reverse_bandwidth"]
+    min_freq = resonance_df["frequency"].min() - freq_buffer
+    max_freq = resonance_df["frequency"].max() + freq_buffer
+    for component in components:
+        print(f"Computing the quality factors for component {component}...")
+
+        # Read the spectrogram in the frequency range of the resonance
+        print(f"Reading the spectrogram...")
+        filename = f"whole_deployment_daily_geo_stft_{station}_{suffix_spec}.h5"
+        inpath = join(indir, filename)
+        stream_stft = read_geo_stft(inpath, components = component, min_freq = min_freq, max_freq = max_freq, psd_only = True)
+
+        # Compute the quality factors for each time window
+        trace_stft = stream_stft[0]
+        trace_stft.to_db()
+        quality_factors = get_component_quality_factor(trace_stft, resonance_df, min_prom)
+        resonance_df[f"quality_factor_{component.lower()}"] = quality_factors
+
+        # Print the number of non-NaN quality factors computed
+        num_non_nan = len(resonance_df[f"quality_factor_{component.lower()}"].dropna())
+        print(f"Number of non-NaN quality factors computed: {num_non_nan}")
     print("")
 
     all_station_dfs.append(resonance_df)
@@ -121,21 +179,21 @@ resonance_prof_df = resonance_prof_df[["time", "frequency", "count", "mean_power
 print("Saving the resonance properties of individual stations..")
 print("Saving the results to CSV...")
 outpath = join(indir, f"stationary_resonance_properties_geo_{mode_name}_{suffix_spec}_{suffix_peak}.csv")
-resonance_sta_df.to_csv(outpath)
+resonance_sta_df.to_csv(outpath, index = False, na_rep = "nan")
 print(f"Saved the results to {outpath}")
 
 print("Saving the results to HDF...")
 outpath = join(indir, f"stationary_resonance_properties_geo_{mode_name}_{suffix_spec}_{suffix_peak}.h5")
-resonance_sta_df.to_hdf(outpath, key = "properties", mode = "w")
+resonance_sta_df.to_hdf(outpath, key = "properties", mode = "w", index = False)
 print(f"Saved the results to {outpath}")
 
 print("Saving the profile of the resonance...")
 print("Saving the results to CSV...")
 outpath = join(indir, f"stationary_resonance_profile_geo_{mode_name}_{suffix_spec}_{suffix_peak}.csv")
-resonance_prof_df.to_csv(outpath)
+resonance_prof_df.to_csv(outpath, index = False, na_rep = "nan")
 print(f"Saved the results to {outpath}")
 
 print("Saving the results to HDF...")
 outpath = join(indir, f"stationary_resonance_profile_geo_{mode_name}_{suffix_spec}_{suffix_peak}.h5")
-resonance_prof_df.to_hdf(outpath, key = "profile", mode = "w")
+resonance_prof_df.to_hdf(outpath, key = "profile", mode = "w", index = False)
 print(f"Saved the results to {outpath}")

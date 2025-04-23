@@ -70,6 +70,9 @@ def read_and_process_day_long_geo_waveforms(day,
             print(f"Warning: Not all components read for {station}! The station is skipped.")
             continue
 
+    if len(stream_in) == 0:
+        return None
+
     # Process the waveforms
     print("Preprocessing the waveforms...")
     stream_proc = preprocess_geo_stream(stream_in, metadata, 
@@ -209,6 +212,9 @@ def read_and_process_windowed_geo_waveforms(starttime,
 
                 if "max_freq" not in kwargs:
                     raise ValueError("Error: max_freq must be specified if filter_type is 'butter'!")
+
+                if "corners" not in kwargs:
+                    raise ValueError("Error: corners must be specified if filter_type is 'butter'!")
             elif filter_type == "peak":
                 if "freq" not in kwargs:
                     raise ValueError("Error: freq must be specified if filter_type is 'peak'!")

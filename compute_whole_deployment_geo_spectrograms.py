@@ -4,7 +4,7 @@
 
 # Imports
 from os import makedirs
-from os.path import join
+from argparse import ArgumentParser
 from time import time
 
 from utils_basic import SPECTROGRAM_DIR as outdir, GEO_STATIONS as stations
@@ -15,6 +15,13 @@ from utils_torch import get_daily_geo_spectrograms
 
 
 # Inputs
+parser = ArgumentParser()
+parser.add_argument("--block_type", type=str, help="The type of block to compute the spectrograms", default="daily")
+parser.add_argument("--outdir", type=str, help="The output directory", default=outdir)
+parser.add_argument("--window_length", type=float, help="The window length", default=300.0)
+parser.add_argument("--overlap", type=float, help="The overlap", default=0.0)
+parser.add_argument("--downsample", type=bool, help="Whether to downsample", default=False)
+
 block_type = "daily"
 window_length = 300.0 # IN SECONDS
 overlap = 0.0

@@ -4,7 +4,7 @@
 
 ### Import necessary modules
 from numpy import angle, array, delete, exp, isrealobj, mean, newaxis, arctan2, pi, cos, sin, deg2rad, rad2deg
-from numpy import sqrt, sum, tile, var, where, zeros, vstack
+from numpy import amax, sqrt, sum, tile, var, where, zeros, vstack
 from numpy.linalg import norm, inv
 from scipy.fft import fft, fftfreq
 from scipy.stats import beta, chi2
@@ -13,7 +13,7 @@ from scipy.signal.windows import dpss
 
 from matplotlib.pyplot import subplots, plot
 
-from utils_basic import get_angle_diff, get_angle_mean
+from utils_basic import get_angles_diff, get_angles_mean, power2db
 
 TOLERANCE = 1e-3
 ALPHA = 0.05 # The significance level for the uncertainties
@@ -71,7 +71,7 @@ def mt_autospec(signal, taper_mat, ratio_vec, sampling_rate, verbose = True, nor
         Whether to normalize each time series by its standard deviation. Default is False.
 
     physical_unit : bool, optional
-        Whether to return the auto-spectrum in the physical unit (i.e., m^2 s^-2 Hz^-1 for geophones). Default is True.
+        Whether to return the auto-spectrum in the physical unit (i.e., nm^2 s^-2 Hz^-1 for geophones). Default is True.
 
     Returns
     -------
@@ -112,10 +112,10 @@ def mt_autospec(signal, taper_mat, ratio_vec, sampling_rate, verbose = True, nor
     eig_dft_mat = fft(eig_sig, axis=1) 
 
     # Select only the positive frequencies
-    eig_dft_mat = eig_dft_mat[:, :num_pts//2]
+    eig_dft_mat = eig_dft_mat[:, :num_pts//2 + 1]
 
     freqax = fftfreq(num_pts, 1/sampling_rate)
-    freqax = freqax[:num_pts//2]
+    freqax = freqax[:num_pts//2 + 1]
 
     num_pts = len(freqax)
 
@@ -125,12 +125,22 @@ def mt_autospec(signal, taper_mat, ratio_vec, sampling_rate, verbose = True, nor
     # Compute the eigen-auto-spectra of the input time series
     eig_aspec_mat = abs(eig_dft_mat)**2
 
+    # for i in range(eig_aspec_mat.shape[0]):
+    #     print(amax(eig_aspec_mat[i, :]))
+
+    # Normalize the tapered eigen time series by the total power of the tapers
+    eig_aspec_mat = eig_aspec_mat / sum(taper_mat ** 2, axis=1, keepdims=True)
+
     # Compute the adaptive weights following the method of Thomson (1982)
     weight_mat, mt_aspec = get_adapt_weights(signal, eig_aspec_mat, ratio_vec, verbose = verbose)
 
+    # print(amax(mt_aspec))
+
     # Convert the auto-spectra to the correct scale
-    mt_aspec = mt_aspec / len(signal)
+    # mt_aspec = mt_aspec / len(signal) # Scale factor is already included when scaled by the total power of the tapers
     mt_aspec[1:-1] *= 2
+
+    # print(amax(power2db(mt_aspec)))
     
     # Compute the uncertainties
     if verbose:
@@ -144,9 +154,9 @@ def mt_autospec(signal, taper_mat, ratio_vec, sampling_rate, verbose = True, nor
 
     # Check the difference between the variance of the input time series and the multitaper estimates
     if verbose:
-        print("Checking the difference between the variance of the input time series and the multitaper estimates...")
-        check = sum(mt_aspec) / var(signal)
-        print(f"Check: {check}")
+        print("Checking the validity of the Perseval Theorem for the MT auto-spectrum...")
+        check = sum(mt_aspec) / sum(signal ** 2)
+        print(f"Power ratio: {check}")
 
     # Convert the auto-spectra to the physical unit
     if physical_unit:
@@ -326,9 +336,9 @@ def mt_cspec(signal1, signal2, taper_mat, ratio_vec, sampling_rate, get_uncer = 
         mt_cohe_uncer = sqrt(mt_cohe_jk_var)
 
         # Compute the uncertainties for the phase difference while avoiding the wrap-around problem by using the vector mean
-        mt_phase_diff_jk_mean = get_angle_mean(mt_phase_diff_jks, axis=0)
+        mt_phase_diff_jk_mean = get_angles_mean(mt_phase_diff_jks, axis=0)
 
-        mt_phase_diff_var = (num_taper - 1) / num_taper * sum(get_angle_diff(mt_phase_diff_jk_mean, mt_phase_diff_jks) ** 2, axis=0)
+        mt_phase_diff_var = (num_taper - 1) / num_taper * sum(get_angles_diff(mt_phase_diff_jk_mean, mt_phase_diff_jks) ** 2, axis=0)
         mt_phase_diff_uncer = sqrt(mt_phase_diff_var)
 
         # Convert the auto-spectra uncertainties to the correct scale
@@ -503,12 +513,19 @@ def get_avg_phase_diff(freq_range, freqax, phase_diffs, phase_diff_uncers, coher
         if verbose:
             print("No phase difference meets the criteria!")
 
-        return None, None
+        if return_samples:
+            return None, None, None
+        else:
+            return None, None
+        
     elif len(phase_diffs) == 1:
         if verbose:
             print("Only one phase difference meets the critieria!")
 
-        return phase_diffs[0], phase_diff_uncers[0]
+        if return_samples:
+            return phase_diffs[0], phase_diff_uncers[0], freq_inds[0]
+        else:
+            return phase_diffs[0], phase_diff_uncers[0]
 
     # Get the independent phase differences
     phase_diffs_indep, phase_diff_uncers_indep, freq_inds_indep = get_indep_phase_diffs(phase_diffs, phase_diff_uncers, freq_inds, nw)
@@ -519,7 +536,10 @@ def get_avg_phase_diff(freq_range, freqax, phase_diffs, phase_diff_uncers, coher
 
     # Compute the weighted average of the phase differences and estimate the uncertainty
     if num_indep == 1:
-        return phase_diffs_indep[0], phase_diff_uncers_indep[0]
+        if return_samples:
+            return phase_diffs_indep[0], phase_diff_uncers_indep[0], freq_inds_indep[0]
+        else:
+            return phase_diffs_indep[0], phase_diff_uncers_indep[0]
 
     # Compute the weighted average of the phase differences and estimate the uncertainty
     avg_phase_diff_uncer = sqrt( 1 / sum(1 / phase_diff_uncers_indep ** 2) )
@@ -682,79 +702,4 @@ def get_indep_freq_inds(freq_inds, nw):
     return freq_inds_out
         
 
-# Get the apparent velocity for a station triad using the phase differences of two station pairs
-# The phase differences are in radians
-def get_triad_app_vel(phase_diff_12, phase_diff_23, dist_mat_inv, freq):
-    """
-    Get the apparent velocity for a station triad using the phase differences of two station pairs
 
-    Parameters
-    ----------
-    phase_diff_12 : array_like
-        The phase difference between the first and second station
-    phase_diff_23 : array_like
-        The phase difference between the second and third station
-    dist_mat_inv : array_like
-        The inverse of the distance matrix
-    freq : float
-
-    Returns
-    -------
-    vel_app : float
-        The apparent velocity
-    back_azi : float
-        The back azimuth in radians
-    vel_app_east : float
-        The apparent velocity component in the east direction
-    vel_app_north : float
-        The apparent velocity component in the north direction
-    """
-
-    # Convert the phase differences to time differences
-    time_diff_12 = phase_diff_12 / freq / 2 / pi
-    time_diff_23 = phase_diff_23 / freq / 2 / pi
-
-    # Compute the slowness vector
-    slow_vec = dist_mat_inv @ array([time_diff_12, time_diff_23])
-    slow_vec = slow_vec.flatten()
-
-    # Compute the apparent velocity
-    vel_app = 1 / norm(slow_vec)
-
-    # Compute the back azimuth
-    back_azi = arctan2(slow_vec[0], slow_vec[1])
-
-    # Compute the apparent velocity components
-    vel_app_east = vel_app * sin(back_azi)
-    vel_app_north = vel_app * cos(back_azi)
-
-    return vel_app, back_azi, vel_app_east, vel_app_north
-
-# Get the inverse of the distance matrix
-def get_dist_mat_inv(east1, north1, east2, north2, east3, north3):
-    """
-    Get the inverse of the distance matrix
-
-    Parameters
-    ----------
-    east1 : float
-        The east coordinate of the first station
-    north1 : float
-        The north coordinate of the first station
-    east2 : float
-        The east coordinate of the second station
-    north2 : float
-        The north coordinate of the second station
-    east3 : float
-        The east coordinate of the third station
-    north3 : float
-        The north coordinate of the third station
-    """
-
-    dist_vec_12 = array([east2 - east1, north2 - north1])
-    dist_vec_23 = array([east3 - east2, north3 - north2])
-    dist_mat = vstack([dist_vec_12, dist_vec_23])
-
-    dist_mat_inv = inv(dist_mat)
-
-    return dist_mat_inv

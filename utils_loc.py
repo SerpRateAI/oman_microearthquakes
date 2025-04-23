@@ -1,5 +1,5 @@
-from numpy import sqrt, zeros, array, linspace, mean, argmin, unravel_index
-from numpy.linalg import norm
+from numpy import sqrt, zeros, array, linspace, mean, argmin, unravel_index, arctan2, sin, cos, vstack
+from numpy.linalg import norm, inv
 from time import time
 from obspy import UTCDateTime
 
@@ -164,3 +164,75 @@ def plot_rms(rmsvol, evdpind, evnoind, eveaind, depgrid, northgrid, eastgrid, st
 
     return fig, ax1, ax2, ax3
     #return fig, ax1, ax2
+
+# Get the apparent velocity for a station triad using the phase differences of two station pairs
+# The phase differences are in radians
+def get_triad_app_vel(time_diff_12, time_diff_23, dist_mat_inv):
+    """
+    Get the apparent velocity for a station triad using the phase differences of two station pairs
+
+    Parameters
+    ----------
+    time_diff_12 : array_like
+        The time difference between the first and second station
+    time_diff_23 : array_like
+        The time difference between the second and third station
+    dist_mat_inv : array_like
+        The inverse of the distance matrix
+
+    Returns
+    -------
+    vel_app : float
+        The apparent velocity
+    back_azi : float
+        The back azimuth in radians
+    vel_app_east : float
+        The apparent velocity component in the east direction
+    vel_app_north : float
+        The apparent velocity component in the north direction
+    """
+
+    # Compute the slowness vector
+    slow_vec = dist_mat_inv @ array([time_diff_12, time_diff_23])
+    slow_vec = slow_vec.flatten()
+
+    # Compute the apparent velocity
+    vel_app = 1 / norm(slow_vec)
+
+    # Compute the back azimuth
+    back_azi = arctan2(slow_vec[0], slow_vec[1])
+
+    # Compute the apparent velocity components
+    vel_app_east = vel_app * sin(back_azi)
+    vel_app_north = vel_app * cos(back_azi)
+
+    return vel_app, back_azi, vel_app_east, vel_app_north
+
+# Get the inverse of the distance matrix
+def get_dist_mat_inv(east1, north1, east2, north2, east3, north3):
+    """
+    Get the inverse of the distance matrix
+
+    Parameters
+    ----------
+    east1 : float
+        The east coordinate of the first station
+    north1 : float
+        The north coordinate of the first station
+    east2 : float
+        The east coordinate of the second station
+    north2 : float
+        The north coordinate of the second station
+    east3 : float
+        The east coordinate of the third station
+    north3 : float
+        The north coordinate of the third station
+    """
+
+    dist_vec_12 = array([east2 - east1, north2 - north1])
+    dist_vec_23 = array([east3 - east2, north3 - north2])
+    dist_mat = vstack([dist_vec_12, dist_vec_23])
+
+    dist_mat_inv = inv(dist_mat)
+
+    return dist_mat_inv

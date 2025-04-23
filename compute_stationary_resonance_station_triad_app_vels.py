@@ -5,16 +5,13 @@ Compute the apparent velocities of a stationary resonance on a delaunay station 
 ### Imports ###
 from os.path import join
 from argparse import ArgumentParser
-from numpy import arctan2, array, nan, isnan, intersect1d, pi, setdiff1d, var, vstack, zeros, sum, sqrt, mean, rad2deg
+from numpy import array, nan, intersect1d, sqrt, mean, rad2deg, zeros
 from numpy.linalg import inv
 from json import dumps, loads
-from pandas import DataFrame, Timedelta
+from pandas import DataFrame
 from pandas import merge, read_csv
-from scipy.signal.windows import dpss
-from matplotlib.pyplot import subplots
-from time import time
 
-from utils_basic import SPECTROGRAM_DIR as dirname_spec, MT_DIR as dirname_mt, GEO_COMPONENTS as components
+from utils_basic import MT_DIR as dirname_mt, GEO_COMPONENTS as components
 from utils_basic import get_geophone_coords, get_angle_diff, get_angle_mean
 from utils_mt import get_indep_freq_inds, get_triad_app_vel, get_dist_mat_inv
 
@@ -230,7 +227,7 @@ result_df["back_azi_uncer_2"] = result_df["back_azi_uncer_2"].apply(lambda x: ra
 
 ### Save the results ###
 print("Saving the results...")
-filename = f"stationary_resonance_station_triad_app_vels_{station1}_{station2}_{station3}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
+filename = f"stationary_resonance_station_triad_app_vels_{mode_name}_{station1}_{station2}_{station3}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
 filepath = join(dirname_mt, filename)
 result_df.to_csv(filepath, na_rep="nan", index=False)
 print(f"Results saved to {filepath}")

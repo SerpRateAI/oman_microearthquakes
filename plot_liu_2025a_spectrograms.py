@@ -22,7 +22,7 @@ from utils_basic import STARTTIME_HYDRO as starttime_hydro, ENDTIME_HYDRO as end
 from utils_basic import str2timestamp
 from utils_spec import get_spectrogram_file_suffix, read_geo_stft, read_hydro_stft
 from utils_plot import HYDRO_PSD_LABEL as hydro_psd_label, GEO_PSD_LABEL as geo_psd_label
-from utils_plot import add_colorbar, add_horizontal_scalebar, format_datetime_xlabels, format_freq_ylabels, save_figure
+from utils_plot import format_datetime_xlabels, format_freq_ylabels, save_figure
 
 # Functions for connecting the boxes in the overview and the corners of the zoom-in views
 def connect_bbox(bbox1, bbox2,
@@ -87,6 +87,9 @@ parser.add_argument("--max_hydro_db", type = float, default = 10.0, help = "Maxi
 parser.add_argument("--min_geo_db", type = float, default = -10.0, help = "Minimum geophone dB")
 parser.add_argument("--max_geo_db", type = float, default = 10.0, help = "Maximum geophone dB")
 
+parser.add_argument("--colormap_name", type = str, default = "plasma", help = "Name of the colormap")
+parser.add_argument("--color_ref", type = str, default = "limegreen", help = "Color of the reference line")
+
 # Parse the arguments
 args = parser.parse_args()
 location1 = args.location1
@@ -99,6 +102,9 @@ min_hydro_db = args.min_hydro_db
 max_hydro_db = args.max_hydro_db
 min_geo_db = args.min_geo_db
 max_geo_db = args.max_geo_db
+
+colormap_name = args.colormap_name
+color_ref = args.color_ref
 
 # Constants
 station_hydro = "A00"
@@ -143,7 +149,6 @@ num_minor_time_ticks_short = 10
 major_freq_spacing = 0.5
 num_minor_freq_ticks = 5
 
-color_ref = "deepskyblue"
 linewidth_time = 3.0
 linewidth_box = 2.0
 linewidth_arrow = 1.5
@@ -191,7 +196,7 @@ print(f"Overlap: {overlap}")
 print("Generating the figure...")
 fig = figure(figsize = (figwidth, figheight))
 
-cmap = colormaps["inferno"].copy()
+cmap = colormaps[colormap_name].copy()
 cmap.set_bad(color='darkgray')
 
 
@@ -317,17 +322,17 @@ ax.set_title(f"Mode {mode1_num}", fontsize = title_fontsize, fontweight = "bold"
 
 ax_long = ax
 
-# Plot the arrow pointing to the break
-freq = (max_mode1_hydro_freq + min_mode1_hydro_freq) / 2
-ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
-            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-            fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
-            ha = "center", va = "top")      
+# # Plot the arrow pointing to the break
+# freq = (max_mode1_hydro_freq + min_mode1_hydro_freq) / 2
+# ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
+#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+#             fontsize = annoatation_size, fontweight = "bold", color = color_ref,
+#             ha = "center", va = "top")      
 
-ax.annotate("Freq. increase", xy = (time_jump, freq), xytext = (time_jump, freq - arrow_length_jumping),
-            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-            fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
-            ha = "center", va = "top")
+# ax.annotate("Freq. increase", xy = (time_jump, freq), xytext = (time_jump, freq - arrow_length_jumping),
+#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+#             fontsize = annoatation_size, fontweight = "bold", color = color_ref,
+#             ha = "center", va = "top")
 
 # # Plot the arrows at the frequencies of the instrument noise
 # noise_freqs = noise_freq1_df["frequency"].values
@@ -491,19 +496,19 @@ ax.set_title(f"Mode {mode2_num}", fontsize = title_fontsize, fontweight = "bold"
 
 ax_long = ax
 
-# Plot the arrow pointing to the jump
-freq = (max_mode2_hydro_freq + min_mode2_hydro_freq) / 2
-ax.annotate("Freq. increase", xy = (time_jump, freq), xytext = (time_jump, freq - arrow_length_jumping),
-            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-            fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
-            ha = "center", va = "top")
+# # Plot the arrow pointing to the jump
+# freq = (max_mode2_hydro_freq + min_mode2_hydro_freq) / 2
+# ax.annotate("Freq. increase", xy = (time_jump, freq), xytext = (time_jump, freq - arrow_length_jumping),
+#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+#             fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
+#             ha = "center", va = "top")
 
-# Plot the arrow pointing to the break
-freq = (max_mode2_hydro_freq + min_mode2_hydro_freq) / 2
-ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
-            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-            fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
-            ha = "center", va = "top")
+# # Plot the arrow pointing to the break
+# freq = (max_mode2_hydro_freq + min_mode2_hydro_freq) / 2
+# ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
+#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+#             fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
+#             ha = "center", va = "top")
 
 # Plot the subplot label
 bbox = ax.get_position()
