@@ -23,9 +23,11 @@ from utils_plot import format_datetime_xlabels, format_freq_ylabels, save_figure
 # Command-line arguments
 parser = ArgumentParser(description="Plot the whole-day spectrograms for a few example geophone stations")
 
-parser.add_argument("--stations", type=str, help="Station list")
+parser.add_argument("--stations", type=str, nargs="+", help="Station list")
 parser.add_argument("--day", type=str, help="Day of the data to plot")
 parser.add_argument("--time_to_mark", type=str, help="Time window to mark")
+parser.add_argument("--min_db", type=float, help="Minimum decibel value", default=-10.0)
+parser.add_argument("--max_db", type=float, help="Maximum decibel value", default=10.0)
 
 parser.add_argument("--window_length", type=float, help="Window length in seconds", default=300.0)
 parser.add_argument("--overlap", type=float, help="Overlap percentage", default=0.0)
@@ -33,19 +35,17 @@ parser.add_argument("--overlap", type=float, help="Overlap percentage", default=
 # Parse the command line inputs
 args = parser.parse_args()
 
-stations = loads(args.stations)
+stations = args.stations
 day = args.day
 time_to_mark = str2timestamp(args.time_to_mark) 
-
+min_db = args.min_db
+max_db = args.max_db
 window_length = args.window_length
 overlap = args.overlap
 
 # Constants
 min_freq = 0.0
 max_freq = 200.0
-
-min_db = -20.0
-max_db = 10.0
 
 figwidth = 10.0
 panelheight = 5.0

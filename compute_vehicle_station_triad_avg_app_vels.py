@@ -13,6 +13,7 @@ from pandas import DataFrame
 from pandas import read_csv
 
 from utils_basic import MT_DIR as dirname_mt, LOC_DIR as dirname_loc,  GEO_COMPONENTS as components
+from utils_basic import get_geophone_triads
 
 ###
 # Define the input arguments
@@ -33,9 +34,7 @@ max_back_azi_std = args.max_back_azi_std
 # Load the data
 ###
 # List of station triads
-filename = "delaunay_station_triads.csv"
-filepath = join(dirname_mt, filename)
-triad_df = read_csv(filepath)
+triad_df = get_geophone_triads()
 
 ###
 # Compute the average apparent velocities of the vehicle signal for each station triad
@@ -73,7 +72,7 @@ for _, row in triad_df.iterrows():
             result_dict[f"avg_back_azi_{component.lower()}"] = nan
             result_dict[f"avg_app_vel_east_{component.lower()}"] = nan
             result_dict[f"avg_app_vel_north_{component.lower()}"] = nan
-            result_dict[f"vel_app_cov_mat_{component.lower()}"] = array([])
+            result_dict[f"app_vel_cov_mat_{component.lower()}"] = array([])
             continue
 
         # Compute the average apparent velocity
@@ -90,7 +89,7 @@ for _, row in triad_df.iterrows():
         result_dict[f"avg_back_azi_{component.lower()}"] = avg_back_azi
         result_dict[f"avg_app_vel_east_{component.lower()}"] = avg_app_vel_east
         result_dict[f"avg_app_vel_north_{component.lower()}"] = avg_app_vel_north
-        result_dict[f"vel_app_cov_mat_{component.lower()}"] = cov_mat
+        result_dict[f"app_vel_cov_mat_{component.lower()}"] = cov_mat
 
     # Store the results
     result_dicts.append(result_dict)
@@ -100,7 +99,7 @@ result_df = DataFrame(result_dicts)
 
 # Convert the covariance matrices to JSON strings
 for component in components:
-    result_df[f"vel_app_cov_mat_{component.lower()}"] = result_df[f"vel_app_cov_mat_{component.lower()}"].apply(lambda x: dumps(x.tolist()))
+    result_df[f"app_vel_cov_mat_{component.lower()}"] = result_df[f"app_vel_cov_mat_{component.lower()}"].apply(lambda x: dumps(x.tolist()))
 
 ###
 # Save the results

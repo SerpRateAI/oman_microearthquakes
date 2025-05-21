@@ -22,56 +22,7 @@ from utils_basic import STARTTIME_HYDRO as starttime_hydro, ENDTIME_HYDRO as end
 from utils_basic import str2timestamp
 from utils_spec import get_spectrogram_file_suffix, read_geo_stft, read_hydro_stft
 from utils_plot import HYDRO_PSD_LABEL as hydro_psd_label, GEO_PSD_LABEL as geo_psd_label
-from utils_plot import format_datetime_xlabels, format_freq_ylabels, save_figure
-
-# Functions for connecting the boxes in the overview and the corners of the zoom-in views
-def connect_bbox(bbox1, bbox2,
-                 loc1a, loc2a, loc1b, loc2b,
-                 prop_lines, prop_patches):
-
-    c1 = BboxConnector(
-        bbox1, bbox2, loc1=loc1a, loc2=loc2a, clip_on=False, **prop_lines)
-    c2 = BboxConnector(
-        bbox1, bbox2, loc1=loc1b, loc2=loc2b, clip_on=False, **prop_lines)
-
-    bbox_patch1 = BboxPatch(bbox1, **prop_patches)
-    bbox_patch2 = BboxPatch(bbox2, **prop_patches)
-
-    return c1, c2, bbox_patch1, bbox_patch2
-
-def add_zoom_effect(ax1, ax2, xmin, xmax, prop_lines, prop_patches):
-    """
-    Connect *ax1* and *ax2*. The *xmin*-to-*xmax* range in both Axes will
-    be marked.
-
-    Parameters
-    ----------
-    ax1
-        The main Axes.
-    ax2
-        The zoomed Axes.
-    xmin, xmax
-        The limits of the colored area in both plot Axes.
-    **kwargs
-        Arguments passed to the patch constructor.
-    """
-
-    bbox = Bbox.from_extents(xmin, 0, xmax, 1)
-
-    mybbox1 = TransformedBbox(bbox, ax1.get_xaxis_transform())
-    mybbox2 = TransformedBbox(bbox, ax2.get_xaxis_transform())
-
-    c1, c2, bbox_patch1, bbox_patch2 = connect_bbox(
-        mybbox1, mybbox2,
-        loc1a=3, loc2a=2, loc1b=4, loc2b=1,
-        prop_lines=prop_lines, prop_patches=prop_patches)
-
-    ax1.add_patch(bbox_patch1)
-    ax2.add_patch(bbox_patch2)
-    ax2.add_patch(c1)
-    ax2.add_patch(c2)
-
-    return c1, c2, bbox_patch1, bbox_patch2
+from utils_plot import add_zoom_effect, format_datetime_xlabels, format_freq_ylabels, save_figure
 
 # Inputs
 # Parse the arguments
@@ -322,12 +273,12 @@ ax.set_title(f"Mode {mode1_num}", fontsize = title_fontsize, fontweight = "bold"
 
 ax_long = ax
 
-# # Plot the arrow pointing to the break
-# freq = (max_mode1_hydro_freq + min_mode1_hydro_freq) / 2
-# ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
-#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-#             fontsize = annoatation_size, fontweight = "bold", color = color_ref,
-#             ha = "center", va = "top")      
+# Plot the arrow pointing to the break
+freq = (max_mode1_hydro_freq + min_mode1_hydro_freq) / 2
+ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
+            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+            fontsize = annoatation_size, fontweight = "bold", color = color_ref,
+            ha = "center", va = "top")      
 
 # ax.annotate("Freq. increase", xy = (time_jump, freq), xytext = (time_jump, freq - arrow_length_jumping),
 #             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
@@ -503,12 +454,12 @@ ax_long = ax
 #             fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
 #             ha = "center", va = "top")
 
-# # Plot the arrow pointing to the break
-# freq = (max_mode2_hydro_freq + min_mode2_hydro_freq) / 2
-# ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
-#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-#             fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
-#             ha = "center", va = "top")
+# Plot the arrow pointing to the break
+freq = (max_mode2_hydro_freq + min_mode2_hydro_freq) / 2
+ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
+            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+            fontsize = annoatation_size, fontweight = "bold", color = color_ref, 
+            ha = "center", va = "top")
 
 # Plot the subplot label
 bbox = ax.get_position()

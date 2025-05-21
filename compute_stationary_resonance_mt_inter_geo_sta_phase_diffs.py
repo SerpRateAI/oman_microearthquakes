@@ -82,7 +82,7 @@ if test:
 ###
 
 # Read the data
-filename = f"multitaper_time_windows_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_stft_win{window_length_stft:.0f}s.csv"
+filename = f"stationary_resonance_mt_time_windows_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_stft_win{window_length_stft:.0f}s.csv"
 filepath = join(dirname_mt, filename)
 time_win_df = read_csv(filepath, parse_dates = ["start", "end"])
 
@@ -146,86 +146,80 @@ for component in components:
             
         print("Processing each time window of the day...")
         for _, row in group.iterrows():
-                clock1 = time()
+            clock1 = time()
 
-                # Slice the data
-                starttime = row["start"]
-                endtime = row["end"]
+            # Slice the data
+            starttime = row["start"]
+            endtime = row["end"]
 
-                centertime = starttime + (endtime -  starttime) / 2
-                centertimes.append(centertime)
+            centertime = starttime + (endtime -  starttime) / 2
+            centertimes.append(centertime)
 
-                print(f"Processing the time window {starttime}-{endtime}..")
+            print(f"Processing the time window {starttime}-{endtime}..")
 
-                starttime = timestamp_to_utcdatetime(starttime)
-                endtime = timestamp_to_utcdatetime(endtime)
+            starttime = timestamp_to_utcdatetime(starttime)
+            endtime = timestamp_to_utcdatetime(endtime)
 
-                stream1_win = stream1.slice(starttime = starttime, endtime = endtime)
-                stream2_win = stream2.slice(starttime = starttime, endtime = endtime)
+            stream1_win = stream1.slice(starttime = starttime, endtime = endtime)
+            stream2_win = stream2.slice(starttime = starttime, endtime = endtime)
 
-                signal1 = stream1_win[0].data
-                signal2 = stream2_win[0].data
+            signal1 = stream1_win[0].data
+            signal2 = stream2_win[0].data
 
-                if any(isnan(signal1)) or any(isnan(signal2)):
-                    print("The input signals contain NaNs! Skipping...")
-                    phase_diffs.append(nan)
-                    phase_diff_uncers.append(nan)
-                    
-                    continue
+            if any(isnan(signal1)) or any(isnan(signal2)):
+                print("The input signals contain NaNs! Skipping...")
+                phase_diffs.append(nan)
+                phase_diff_uncers.append(nan)
+                
+                continue
 
-                num_pts = len(signal1)
-                sampling_rate = 1 / stream1[0].stats.delta
+            num_pts = len(signal1)
+            sampling_rate = 1 / stream1[0].stats.delta
 
-                # Get the DPSS windows
-                print("Calculating the DPSS windows...")
-                dpss_mat, ratio_vec = dpss(num_pts, nw, num_taper, return_ratios=True)
+            # Get the DPSS windows
+            print("Calculating the DPSS windows...")
+            dpss_mat, ratio_vec = dpss(num_pts, nw, num_taper, return_ratios=True)
 
-                # Perform multitaper cross-spectral analysis
-                print("Performing multitaper cross-spectral analysis...")
-                mt_cspec_params = mt_cspec(signal1, signal2, dpss_mat, ratio_vec, sampling_rate, verbose = False, return_jk = True)
+            # Perform multitaper cross-spectral analysis
+            print("Performing multitaper cross-spectral analysis...")
+            mt_cspec_params = mt_cspec(signal1, signal2, dpss_mat, ratio_vec, sampling_rate, verbose = False, return_jk = True)
 
-                # Unpack the multitaper cross-spectral analysis results
-                freqax = mt_cspec_params.freqax
-                mt_phase_diff = mt_cspec_params.phase_diff
-                mt_phase_diff_uncer = mt_cspec_params.phase_diff_uncer
-                mt_cohe = mt_cspec_params.cohe
-                mt_phase_diff_jk = mt_cspec_params.phase_diff_jk # The jackknifed phase differences
-            
-                # Extract the average phase difference and its uncertainty
-                print("Computing the average phase difference and its uncertainty...")
-                min_freq_reson = row["mean_freq"] - bandwidth / 2
-                max_freq_reson = row["mean_freq"] + bandwidth / 2
-                freq_range = (min_freq_reson, max_freq_reson)
-                avg_phase_diff, avg_phase_diff_uncer = get_avg_phase_diff(freq_range, freqax, mt_phase_diff, mt_phase_diff_uncer, mt_cohe, min_cohe = min_cohe)
+            # Unpack the multitaper cross-spectral analysis results
+            freqax = mt_cspec_params.freqax
+            mt_phase_diff = mt_cspec_params.phase_diff
+            mt_phase_diff_uncer = mt_cspec_params.phase_diff_uncer
+            mt_cohe = mt_cspec_params.cohe
+            mt_phase_diff_jk = mt_cspec_params.phase_diff_jk # The jackknifed phase differences
+        
+            # Extract the average phase difference and its uncertainty
+            print("Computing the average phase difference and its uncertainty...")
+            min_freq_reson = row["mean_freq"] - bandwidth / 2
+            max_freq_reson = row["mean_freq"] + bandwidth / 2
+            freq_range = (min_freq_reson, max_freq_reson)
+            avg_phase_diff, avg_phase_diff_uncer, freq_inds_indep, freq_inds_cohe = get_avg_phase_diff(freq_range, freqax, mt_phase_diff, mt_phase_diff_uncer, mt_cohe, 
+                                                                                                        nw = nw, min_cohe = min_cohe, return_samples = True)
 
-                if avg_phase_diff is not None:
-                    print(f"Phase difference is {avg_phase_diff} +/- {avg_phase_diff_uncer}")
+            if avg_phase_diff is None:
+                print("The time wnidow produces no phase difference")
 
-                    phase_diffs.append(avg_phase_diff)                     
-                    phase_diff_uncers.append(avg_phase_diff_uncer)
-                else:
-                    print("The time wnidow produces no phase difference")
+                phase_diffs.append(nan)
+                phase_diff_uncers.append(nan)
+                phase_diff_jks.append(dumps([]))
+                freq_inds.append(dumps([]))
+            else:
+                print(f"The time window produces a phase difference of {avg_phase_diff} +/- {avg_phase_diff_uncer}")
+                
+                mt_phase_diff_jk = mt_phase_diff_jk[: , freq_inds_cohe]
 
-                    phase_diffs.append(nan)
-                    phase_diff_uncers.append(nan)
+                print(f"The shape of the jackknifed phase differences is {mt_phase_diff_jk.shape}")
 
-                # Select the jackknifed phase differences in the resonant frequency band and with coherence greater than min_cohe
-                print("Windowing the jackknifed phase differences in the resonant frequency band...")
+                phase_diffs.append(avg_phase_diff)
+                phase_diff_uncers.append(avg_phase_diff_uncer)
+                phase_diff_jks.append(dumps(mt_phase_diff_jk.tolist()))
+                freq_inds.append(dumps(freq_inds_cohe.tolist()))
 
-                mt_phase_diff_jk_win = mt_phase_diff_jk[: , (freqax >= min_freq_reson) & (freqax <= max_freq_reson) & (mt_cohe >= min_cohe)]
-                print(f"The shape of the jackknifed phase differences is {mt_phase_diff_jk_win.shape}")
-                freq_inds_win = where((freqax >= min_freq_reson) & (freqax <= max_freq_reson) & (mt_cohe >= min_cohe))[0]
-
-                if len(freq_inds_win) > 0:
-                    phase_diff_jks.append(dumps(mt_phase_diff_jk_win.tolist()))
-                    freq_inds.append(dumps(freq_inds_win.tolist()))
-                else:
-                    print("The jackknifed phase differences are empty!")
-                    phase_diff_jks.append(dumps([]))
-                    freq_inds.append(dumps([]))
-
-                clock2 = time()
-                print(f"Elapsed time: {clock2 - clock1} s")
+            clock2 = time()
+            print(f"Elapsed time: {clock2 - clock1} s")
 
         print("Finished processing the date.")
         print("")
@@ -254,10 +248,10 @@ result_df.reset_index(drop=True, inplace=True)
 columns_order = ['time', 'frequency'] + [col for col in result_df.columns if col not in ['time', 'frequency']]
 result_df = result_df[columns_order]
 
-filename = f"multitaper_inter_sta_phase_diffs_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
+filename = f"stationary_resonance_mt_inter_geo_sta_phase_diffs_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
 filepath = join(dirname_mt, filename)
 
-result_df.to_csv(filepath, na_rep="nan")
+result_df.to_csv(filepath, na_rep="nan", index=False)
 
 print(f"Results are saved to {filepath}")
 

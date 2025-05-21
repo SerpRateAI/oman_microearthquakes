@@ -106,7 +106,7 @@ stream_stft = read_hydro_stft(inpath,
 
 # Read the spectral peaks
 print("Reading the spectral peaks...")
-filename = f"stationary_resonance_properties_hydro_{mode_name}_{suffix_spec}_{suffix_peak}.h5"
+filename = f"stationary_resonance_properties_hydro_smooth_filter_{mode_name}_{suffix_spec}_{suffix_peak}.h5"
 inpath = join(indir, filename)
 
 peaks_df = read_hdf(inpath, key = "properties")

@@ -1,6 +1,5 @@
 """
-Find time windows for multitaper cross-spectral analysis between all delaunay station pairs
-
+Find time windows for multitaper cross-spectral analysis of a stationary resonance between all delaunay station pairs
 The script rank the multitaper windows by the number of STFT time windows in them in descending order
 """
 
@@ -11,19 +10,22 @@ from numpy import arange
 from pandas import DataFrame, read_csv, read_hdf, date_range
 
 from utils_basic import SPECTROGRAM_DIR as dirname_spec, MT_DIR as dirname_mt, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime
+from utils_basic import get_geophone_pairs
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
+
+
 ### Inputs ###
 # Command-line arguments
 parser = ArgumentParser(description = "Find time windows for multitaper analysis.")
 parser.add_argument("--mode_name", type = str, help = "Mode name.")
 
-parser.add_argument("--window_length_mt", type = float, default = 3600.0, help = "Window length in seconds for multitaper analysis.")
+parser.add_argument("--window_length_mt", type = float, default = 900.0, help = "Window length in seconds for multitaper analysis.")
 parser.add_argument("--window_length_stft", type = float, default = 300.0, help = "Window length in seconds for computing the STFT.")
 
 parser.add_argument("--overlap", type = float, default = 0.0, help = "Overlap between consecutive windows for computing the STFT.")
 parser.add_argument("--min_prom", type = float, default = 15.0, help = "Minimum prominence of a spectral peak.")
 parser.add_argument("--min_rbw", type = float, default = 15.0, help = "Minimum reverse bandwidth of a spectral peak.")
-parser.add_argument("--max_mean_db", type = float, default = 10.0, help = "Maximum mean dB value for excluding noise windows.")
+parser.add_argument("--max_mean_db", type = float, default = 15.0, help = "Maximum mean dB value for excluding noise windows.")
 
 # Parse the arguments
 args = parser.parse_args()
@@ -53,9 +55,7 @@ filepath = join(dirname_spec, filename)
 resonance_df = read_hdf(filepath)
 
 ### Read the list of delaunay station pairs
-filepath = join(dirname_mt, "delaunay_station_pairs.csv")
-pair_df = read_csv(filepath)
-
+pair_df = get_geophone_pairs()
 
 ### Find the time windows for each station pair ###
 # Divide the time range between starttime and endtime into windows of length window_length_mt
@@ -103,7 +103,7 @@ for _, row in pair_df.iterrows():
 
     ### Save the time windows for multitaper analysis ###
     print("Saving the time windows for multitaper analysis...")
-    filename_out = f"multitaper_time_windows_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_stft_win{window_length_stft:.0f}s.csv"
+    filename_out = f"stationary_resonance_mt_time_windows_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_stft_win{window_length_stft:.0f}s.csv"
     filepath = join(dirname_mt, filename_out)
-    num_win_df.to_csv(filepath, index = True)
+    num_win_df.to_csv(filepath, index = False)
     print(f"Time windows saved to {filepath}.")

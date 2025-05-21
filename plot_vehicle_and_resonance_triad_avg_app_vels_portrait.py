@@ -21,7 +21,7 @@ from matplotlib import colormaps
 from utils_basic import IMAGE_DIR as dirname_img, MT_DIR as dirname_mt, LOC_DIR as dirname_loc
 from utils_basic import GEO_COMPONENTS as components, INNER_STATIONS as inner_stations, MIDDLE_STATIONS as middle_stations, OUTER_STATIONS as outer_stations
 from utils_basic import EASTMIN_WHOLE as min_east, EASTMAX_WHOLE as max_east, NORTHMIN_WHOLE as min_north, NORTHMAX_WHOLE as max_north
-from utils_basic import get_geophone_coords, str2timestamp
+from utils_basic import get_geophone_coords, get_geophone_triads    
 from utils_basic import get_mode_order
 from utils_plot import APPARENT_VELOCITY_LABEL as cbar_label
 from utils_plot import add_colorbar, save_figure, format_east_xlabels, format_north_ylabels, plot_station_triads, component2label   
@@ -58,7 +58,7 @@ parser.add_argument("--component_label_x", type=float, help="The x coordinate of
 parser.add_argument("--component_label_y", type=float, help="The y coordinate of the component label", default=0.98)
 
 parser.add_argument("--min_vel_app", type=float, help="The minimum velocity of the apparent velocities", default=0.0)
-parser.add_argument("--max_vel_app", type=float, help="The maximum velocity of the apparent velocities", default=3000.0)
+parser.add_argument("--max_vel_app", type=float, help="The maximum velocity of the apparent velocities", default=4000.0)
 
 parser.add_argument("--fontsize_title", type=float, help="The fontsize of the title", default=14)
 parser.add_argument("--fontsize_component", type=float, help="The fontsize of the component label", default=12)
@@ -127,7 +127,7 @@ sta_df = get_geophone_coords()
 
 # Load the station triad information
 print("Loading the station triad information...")
-triad_df = read_csv(join(dirname_mt, "delaunay_station_triads.csv"))
+triad_df = get_geophone_triads()
 
 # Keep only the triads consisting of inner, middle, and outer stations
 stations_to_plot = inner_stations + middle_stations + outer_stations
@@ -299,9 +299,9 @@ for i, component in enumerate(components):
     print("Plotting the apparent velocities of the resonance...")
     triads_to_plot_dicts = []
     for _, row in vel_reson_df.iterrows():
-        vel_app = row[f"avg_vel_app_{component.lower()}"]
-        vel_app_east = row[f"avg_vel_app_east_{component.lower()}"]
-        vel_app_north = row[f"avg_vel_app_north_{component.lower()}"]
+        vel_app = row[f"avg_app_vel_{component.lower()}"]
+        vel_app_east = row[f"avg_app_vel_east_{component.lower()}"]
+        vel_app_north = row[f"avg_app_vel_north_{component.lower()}"]
         back_azi = row[f"avg_back_azi_{component.lower()}"]
         station1 = row["station1"]
         station2 = row["station2"]
@@ -365,4 +365,4 @@ for i, component in enumerate(components):
 
 # Save the figure
 print("Saving the figure...")
-save_figure(fig, f"vehicle_and_resonance_triad_app_vels_{occurrence}_{mode_name}.png")
+save_figure(fig, f"vehicle_and_resonance_triad_app_vels_{occurrence}_{mode_name}_portrait.png")

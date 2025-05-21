@@ -35,14 +35,14 @@ from utils_plot import format_east_xlabels, format_db_ylabels, format_freq_xlabe
 ### Inputs ###
 # Command line arguments
 parser = ArgumentParser(description="Input parameters for plotting the station maps, hydrophone depth profiles, and 3C spectra of a geophone station for Liu et al. (2025a).")
-parser.add_argument("--stations_highlight", type=str, help="List of highlighted geophone stations.")
+parser.add_argument("--stations_highlight", type=str, nargs="+", help="List of highlighted geophone stations.")
 parser.add_argument("--station_spec", type=str, help="Station whose 3C spectra will be plotted.")
 parser.add_argument("--time_window", type=str, help="Time window for the 3C spectra.")
 parser.add_argument("--window_length_stft", type=float, default=300.0, help="Window length in seconds for computing the STFT.")
 parser.add_argument("--overlap", type=float, default=0.0, help="Overlap between consecutive windows for computing the STFT.")
 parser.add_argument("--min_prom", type=float, default=15.0, help="Minimum prominence of a spectral peak.")
 parser.add_argument("--min_rbw", type=float, default=15.0, help="Minimum reverse bandwidth of a spectral peak.")
-parser.add_argument("--max_mean_db", type=float, default=10.0, help="Maximum mean dB value for excluding noise windows.")
+parser.add_argument("--max_mean_db", type=float, default=15.0, help="Maximum mean dB value for excluding noise windows.")
 
 parser.add_argument("--station_size", type=float, default=150.0, help="Size of the geophone markers.")
 parser.add_argument("--borehole_size", type=float, default=150.0, help="Size of the borehole markers.")
@@ -77,15 +77,15 @@ parser.add_argument("--color_highlight", type=str, default="crimson", help="Colo
 parser.add_argument("--color_missing", type=str, default="gray", help="Color of the missing resonance frequencies.")
 parser.add_argument("--color_water", type=str, default="deepskyblue", help="Color of the water.")
 
-parser.add_argument("--subarray_a_label_x", type=float, default=-75.0, help="X-coordinate of the subarray A label.")
-parser.add_argument("--subarray_a_label_y", type=float, default=75.0, help="Y-coordinate of the subarray A label.")
-parser.add_argument("--subarray_b_label_x", type=float, default=-5.0, help="X-coordinate of the subarray B label.")
-parser.add_argument("--subarray_b_label_y", type=float, default=-45.0, help="Y-coordinate of the subarray B label.")
+parser.add_argument("--subarray_a_label_x", type=float, default=-5.0, help="X-coordinate of the subarray A label.")
+parser.add_argument("--subarray_a_label_y", type=float, default=-40.0, help="Y-coordinate of the subarray A label.")
+parser.add_argument("--subarray_b_label_x", type=float, default=-60.0, help="X-coordinate of the subarray B label.")
+parser.add_argument("--subarray_b_label_y", type=float, default=70.0, help="Y-coordinate of the subarray B label.")
 
 # Parse the command line arguments
 args = parser.parse_args()
 
-stations_highlight = loads(args.stations_highlight)
+stations_highlight = args.stations_highlight
 station_spec = args.station_spec
 time_window = args.time_window
 window_length_stft = args.window_length_stft

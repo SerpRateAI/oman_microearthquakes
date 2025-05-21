@@ -119,11 +119,11 @@ for _, row in time_window_df.iterrows():
         max_freq = freq_target + nw * freq_interval
 
         print(f"Computing the average phase difference for {station1}-{station2}...")
-        avg_phase_diff_12, avg_phase_diff_uncer_12, freq_inds_12 = get_avg_phase_diff((min_freq, max_freq), freqax, phase_diffs_12, phase_diff_uncers_12, cohes_12, 
+        avg_phase_diff_12, avg_phase_diff_uncer_12, freq_inds_12, _ = get_avg_phase_diff((min_freq, max_freq), freqax, phase_diffs_12, phase_diff_uncers_12, cohes_12, 
                                                                                     min_cohe = min_cohe, nw = nw, return_samples = True)
         
         print(f"Computing the average phase difference for {station2}-{station3}...")
-        avg_phase_diff_23, avg_phase_diff_uncer_23, freq_inds_23 = get_avg_phase_diff((min_freq, max_freq), freqax, phase_diffs_23, phase_diff_uncers_23, cohes_23, 
+        avg_phase_diff_23, avg_phase_diff_uncer_23, freq_inds_23, _ = get_avg_phase_diff((min_freq, max_freq), freqax, phase_diffs_23, phase_diff_uncers_23, cohes_23, 
                                                                                     min_cohe = min_cohe, nw = nw, return_samples = True)
         
         if avg_phase_diff_12 is None or avg_phase_diff_23 is None:

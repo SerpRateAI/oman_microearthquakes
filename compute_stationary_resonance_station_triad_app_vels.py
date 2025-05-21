@@ -5,15 +5,17 @@ Compute the apparent velocities of a stationary resonance on a delaunay station 
 ### Imports ###
 from os.path import join
 from argparse import ArgumentParser
-from numpy import array, nan, intersect1d, sqrt, mean, rad2deg, zeros
+from numpy import array, nan, intersect1d, sqrt, mean, rad2deg, zeros, pi
 from numpy.linalg import inv
 from json import dumps, loads
 from pandas import DataFrame
 from pandas import merge, read_csv
 
-from utils_basic import MT_DIR as dirname_mt, GEO_COMPONENTS as components
-from utils_basic import get_geophone_coords, get_angle_diff, get_angle_mean
-from utils_mt import get_indep_freq_inds, get_triad_app_vel, get_dist_mat_inv
+from utils_basic import MT_DIR as dirpath_mt, GEO_COMPONENTS as components
+from utils_basic import LOC_DIR as dirpath_loc
+from utils_basic import get_geophone_coords, get_angles_diff, get_angles_mean
+from utils_mt import get_indep_freq_inds
+from utils_loc import get_triad_app_vel, get_dist_mat_inv
 
 ### Inputs ###
 
@@ -57,16 +59,16 @@ dist_mat_inv = get_dist_mat_inv(east1, north1, east2, north2, east3, north3)
 print("Reading the phase differences...")
 
 print(f"Reading the phase differences for {station1}-{station2}...")
-filename = f"multitaper_inter_sta_phase_diffs_PR02549_{station1}_{station2}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
-phase_diff_12_df = read_csv(join(dirname_mt, filename))
+filename = f"stationary_resonance_mt_inter_geo_sta_phase_diffs_{mode_name}_{station1}_{station2}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
+phase_diff_12_df = read_csv(join(dirpath_mt, filename))
 
 for col in phase_diff_12_df.columns:
     if col.startswith("freq_inds") or col.startswith("phase_diff_jks_"):
         phase_diff_12_df[col] = phase_diff_12_df[col].apply(lambda x: array(loads(x)))
 
 print(f"Reading the phase differences for {station2}-{station3}...")
-filename = f"multitaper_inter_sta_phase_diffs_PR02549_{station2}_{station3}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
-phase_diff_23_df = read_csv(join(dirname_mt, filename))
+filename = f"stationary_resonance_mt_inter_geo_sta_phase_diffs_{mode_name}_{station2}_{station3}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
+phase_diff_23_df = read_csv(join(dirpath_mt, filename))
 
 for col in phase_diff_23_df.columns:
     if col.startswith("freq_inds") or col.startswith("phase_diff_jks_"):
@@ -98,46 +100,59 @@ for _, row in phase_diff_df.iterrows():
         freq_inds_23 = row[f"freq_inds_{component.lower()}_23"]
 
         if len(intersect1d(freq_inds_12, freq_inds_23)) == 0:
-            result_dict[f"vel_app_{component.lower()}"] = nan
-            result_dict[f"vel_app_uncer_{component.lower()}"] = nan
+            result_dict[f"app_vel_{component.lower()}"] = nan
+            result_dict[f"app_vel_uncer_{component.lower()}"] = nan
             result_dict[f"back_azi_{component.lower()}"] = nan
             result_dict[f"back_azi_uncer_{component.lower()}"] = nan
-            result_dict[f"vel_app_east_{component.lower()}"] = nan
-            result_dict[f"vel_app_north_{component.lower()}"] = nan
-            result_dict[f"vel_app_cov_mat_{component.lower()}"] = array([])
+            result_dict[f"app_vel_east_{component.lower()}"] = nan
+            result_dict[f"app_vel_north_{component.lower()}"] = nan
+            result_dict[f"app_vel_cov_mat_{component.lower()}"] = array([])
         
             print(f"No common frequency indices for Component {component}...Skipping.")
             continue
 
         # Compute the slowness vector estimate
         print(f"Computing the slowness vector estimate...")
-        vel_app, back_azi, vel_app_east, vel_app_north = get_triad_app_vel(row[f"phase_diff_{component.lower()}_12"], row[f"phase_diff_{component.lower()}_23"], dist_mat_inv, freq_reson)
+        phase_diff_12 = row[f"phase_diff_{component.lower()}_12"]
+        phase_diff_23 = row[f"phase_diff_{component.lower()}_23"]
+        time_diff_12 = phase_diff_12 / 2 / pi / freq_reson
+        time_diff_23 = phase_diff_23 / 2 / pi / freq_reson
+        app_vel, back_azi, app_vel_east, app_vel_north = get_triad_app_vel(time_diff_12, time_diff_23, dist_mat_inv)
 
-        result_dict[f"vel_app_{component.lower()}"] = vel_app
+        result_dict[f"app_vel_{component.lower()}"] = app_vel
         result_dict[f"back_azi_{component.lower()}"] = back_azi
-        result_dict[f"vel_app_east_{component.lower()}"] = vel_app_east
-        result_dict[f"vel_app_north_{component.lower()}"] = vel_app_north
+        result_dict[f"app_vel_east_{component.lower()}"] = app_vel_east
+        result_dict[f"app_vel_north_{component.lower()}"] = app_vel_north
 
         # Estimate the uncertainty using the jackknife method
         print(f"Estimating the uncertainty using the jackknife method...")
         phase_diff_jks_12 = row[f"phase_diff_jks_{component.lower()}_12"]
         phase_diff_jks_23 = row[f"phase_diff_jks_{component.lower()}_23"]
 
+        print(phase_diff_jks_12.shape)
+        print(phase_diff_jks_23.shape)
+
+        print(freq_inds_12)
+        print(freq_inds_23)
+
         # Find the indices of the common frequency indices
         freq_inds_common, inds_12, inds_23 = intersect1d(freq_inds_12, freq_inds_23, return_indices=True)
+
+        print(inds_12)
+        print(inds_23)
+
         phase_diff_jks_12 = phase_diff_jks_12[:, inds_12]
         phase_diff_jks_23 = phase_diff_jks_23[:, inds_23]
         num_common = len(freq_inds_common)
         print(f"Number of common frequency indices : {num_common}")
 
         # Find the independent phase differences
-        freq_inds_indep = get_indep_freq_inds(freq_inds_common, nw)
-        _, _, inds_common_indep = intersect1d(freq_inds_common, freq_inds_indep, return_indices=True)
+        _, inds_common_indep = get_indep_freq_inds(freq_inds_common, nw)
         
         phase_diff_jks_12 = phase_diff_jks_12[:, inds_common_indep]
         phase_diff_jks_23 = phase_diff_jks_23[:, inds_common_indep]
-        num_indep = len(freq_inds_indep)
-        print(f"Number of independent frequency indices: {num_indep}")
+        num_indep = len(inds_common_indep)
+        print(f"Number of independent frequency indices in the common set: {num_indep}")
 
         # Use the jackknife estimate the covariance matrix for each pair of independent phase differences
         vel_app_cov_mats = []
@@ -154,7 +169,10 @@ for _, row in phase_diff_df.iterrows():
                 phase_diff_12 = phase_diff_jks_12[j, i]
                 phase_diff_23 = phase_diff_jks_23[j, i]
 
-                vel_app, back_azi, vel_app_east, vel_app_north = get_triad_app_vel(phase_diff_12, phase_diff_23, dist_mat_inv, freq_reson)
+                time_diff_12 = phase_diff_12 / 2 / pi / freq_reson
+                time_diff_23 = phase_diff_23 / 2 / pi / freq_reson
+
+                vel_app, back_azi, vel_app_east, vel_app_north = get_triad_app_vel(time_diff_12, time_diff_23, dist_mat_inv)
 
                 vel_app_jk[j] = vel_app
                 back_azi_jk[j] = back_azi
@@ -166,8 +184,8 @@ for _, row in phase_diff_df.iterrows():
             vel_app_north_var = (num_jk - 1) / num_jk * sum((vel_app_jk_north - mean(vel_app_jk_north)) ** 2)
             vel_app_cov = (num_jk - 1) / num_jk * sum((vel_app_jk_east - mean(vel_app_jk_east)) * (vel_app_jk_north - mean(vel_app_jk_north)))
 
-            back_azi_mean = get_angle_mean(back_azi_jk)
-            back_azi_var = (num_jk - 1) / num_jk * sum((get_angle_diff(back_azi_jk, back_azi_mean) ** 2))
+            back_azi_mean = get_angles_mean(back_azi_jk)
+            back_azi_var = (num_jk - 1) / num_jk * sum((get_angles_diff(back_azi_jk, back_azi_mean) ** 2))
 
             vel_app_cov_mats.append(array([[vel_app_east_var, vel_app_cov], [vel_app_cov, vel_app_north_var]]))
             vel_app_vars.append(vel_app_var)
@@ -185,8 +203,8 @@ for _, row in phase_diff_df.iterrows():
 
         print(vel_app_cov_mat)
 
-        result_dict[f"vel_app_cov_mat_{component.lower()}"] = vel_app_cov_mat
-        result_dict[f"vel_app_uncer_{component.lower()}"] = sqrt(vel_app_var)
+        result_dict[f"app_vel_cov_mat_{component.lower()}"] = vel_app_cov_mat
+        result_dict[f"app_vel_uncer_{component.lower()}"] = sqrt(vel_app_var)
         result_dict[f"back_azi_uncer_{component.lower()}"] = sqrt(back_azi_var)
 
         print(f"Done with Component {component}.")
@@ -200,18 +218,18 @@ result_df = DataFrame(result_dicts)
 # Reorder the columns
 print("Reordering the columns...")
 result_df = result_df[["time", "freq_reson",
-                       "vel_app_z", "vel_app_uncer_z", "back_azi_z", "back_azi_uncer_z",
-                       "vel_app_east_z", "vel_app_north_z", "vel_app_cov_mat_z",
-                       "vel_app_1", "vel_app_uncer_1", "back_azi_1", "back_azi_uncer_1",
-                       "vel_app_east_1", "vel_app_north_1", "vel_app_cov_mat_1",
-                       "vel_app_2", "vel_app_uncer_2", "back_azi_2", "back_azi_uncer_2",
-                       "vel_app_east_2", "vel_app_north_2", "vel_app_cov_mat_2"]]
+                       "app_vel_z", "app_vel_uncer_z", "back_azi_z", "back_azi_uncer_z",
+                       "app_vel_east_z", "app_vel_north_z", "app_vel_cov_mat_z",
+                       "app_vel_1", "app_vel_uncer_1", "back_azi_1", "back_azi_uncer_1",
+                       "app_vel_east_1", "app_vel_north_1", "app_vel_cov_mat_1",
+                       "app_vel_2", "app_vel_uncer_2", "back_azi_2", "back_azi_uncer_2",
+                       "app_vel_east_2", "app_vel_north_2", "app_vel_cov_mat_2"]]
 
 # Convert the covariance matrices to JSON strings
 print("Converting the covariance matrices to JSON strings...")
-result_df["vel_app_cov_mat_z"] = result_df["vel_app_cov_mat_z"].apply(lambda x: dumps(x.tolist()))
-result_df["vel_app_cov_mat_1"] = result_df["vel_app_cov_mat_1"].apply(lambda x: dumps(x.tolist()))
-result_df["vel_app_cov_mat_2"] = result_df["vel_app_cov_mat_2"].apply(lambda x: dumps(x.tolist()))
+result_df["app_vel_cov_mat_z"] = result_df["app_vel_cov_mat_z"].apply(lambda x: dumps(x.tolist()))
+result_df["app_vel_cov_mat_1"] = result_df["app_vel_cov_mat_1"].apply(lambda x: dumps(x.tolist()))
+result_df["app_vel_cov_mat_2"] = result_df["app_vel_cov_mat_2"].apply(lambda x: dumps(x.tolist()))
 
 # Convert the back azimuths to degrees
 print("Converting the back azimuths to degrees...")
@@ -228,7 +246,7 @@ result_df["back_azi_uncer_2"] = result_df["back_azi_uncer_2"].apply(lambda x: ra
 ### Save the results ###
 print("Saving the results...")
 filename = f"stationary_resonance_station_triad_app_vels_{mode_name}_{station1}_{station2}_{station3}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
-filepath = join(dirname_mt, filename)
+filepath = join(dirpath_loc, filename)
 result_df.to_csv(filepath, na_rep="nan", index=False)
 print(f"Results saved to {filepath}")
 

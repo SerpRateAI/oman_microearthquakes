@@ -21,7 +21,7 @@ parser.add_argument("--min_prom", type=float, default=15.0, help="Prominence thr
 parser.add_argument("--min_rbw", type=float, default=15.0, help="Reverse bandwidth threshold for peak detection")
 parser.add_argument("--min_freq", type=float, default=0.0, help="Minimum frequency in Hz for peak detection")
 parser.add_argument("--max_freq", type=float, default=200.0, help="Maximum frequency in Hz for peak detection")
-parser.add_argument("--max_mean_db", type=float, default=0.0, help="Maximum mean dB for excluding noisy windows")
+parser.add_argument("--max_mean_db", type=float, default=-15.0, help="Maximum mean dB for excluding noisy windows")
 
 parser.add_argument("--time_label_to_plot", type=str, default="day_20191201", help="Time label to plot")
 
@@ -77,7 +77,7 @@ for station, locations in location_dict.items():
 
     # Save the block timing data
     print("Saving the block timing data...")
-    filename_out = f"hydro_spectral_peak_array_detections_{station}_{suffix_spec}_{suffix_peak}.h5"
+    filename_out = f"hydro_spectral_peak_array_counts_{station}_{suffix_spec}_{suffix_peak}.h5"
     outpath = join(indir, filename_out)
     block_timing_df.to_hdf(outpath, key = "block_timing", mode = "w")
 

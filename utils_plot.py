@@ -16,13 +16,14 @@ from matplotlib.colors import LogNorm, Normalize, LinearSegmentedColormap
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FuncFormatter, MaxNLocator
 from matplotlib.patches import Rectangle
 from matplotlib.cm import ScalarMappable
-from matplotlib.colors import ListedColormap
+from matplotlib.transforms import Bbox, TransformedBbox
+from mpl_toolkits.axes_grid1.inset_locator import BboxConnector, BboxPatch
 
 import colorcet as cc
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
 from utils_basic import EASTMIN_WHOLE , EASTMAX_WHOLE, NORTHMIN_WHOLE, NORTHMAX_WHOLE, HYDRO_DEPTHS
-from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_geophone_triads, get_datetime_axis_from_trace, get_geo_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, str2timestamp, sec2day
+from utils_basic import days_to_timestamps, get_borehole_coords, get_geophone_coords, get_geophone_triads, get_datetime_axis_from_trace, get_sunrise_sunset_times, get_unique_stations, hour2sec, timestamp_to_utcdatetime, str2timestamp, sec2day
 # from utils_wavelet import mask_cross_phase
 
 HYDRO_COLOR = "tab:purple"
@@ -2788,6 +2789,57 @@ def plot_all_geo_fft_psd_n_maps(stream_fft, coord_df, min_freq, max_freq,
 
     return fig, [ax_psd_z, ax_psd_1, ax_psd_2, ax_map]
 
+###### Functions for plotting connectors between subplots ######
+# Functions for connecting the boxes in the overview and the corners of the zoom-in views
+def connect_bbox(bbox1, bbox2,
+                 loc1a, loc2a, loc1b, loc2b,
+                 prop_lines, prop_patches):
+
+    c1 = BboxConnector(
+        bbox1, bbox2, loc1=loc1a, loc2=loc2a, clip_on=False, **prop_lines)
+    c2 = BboxConnector(
+        bbox1, bbox2, loc1=loc1b, loc2=loc2b, clip_on=False, **prop_lines)
+
+    bbox_patch1 = BboxPatch(bbox1, **prop_patches)
+    bbox_patch2 = BboxPatch(bbox2, **prop_patches)
+
+    return c1, c2, bbox_patch1, bbox_patch2
+
+def add_zoom_effect(ax1, ax2, xmin, xmax, prop_lines, prop_patches):
+    """
+    Connect *ax1* and *ax2*. The *xmin*-to-*xmax* range in both Axes will
+    be marked.
+
+    Parameters
+    ----------
+    ax1
+        The main Axes.
+    ax2
+        The zoomed Axes.
+    xmin, xmax
+        The limits of the colored area in both plot Axes.
+    **kwargs
+        Arguments passed to the patch constructor.
+    """
+
+    bbox = Bbox.from_extents(xmin, 0, xmax, 1)
+
+    mybbox1 = TransformedBbox(bbox, ax1.get_xaxis_transform())
+    mybbox2 = TransformedBbox(bbox, ax2.get_xaxis_transform())
+
+    c1, c2, bbox_patch1, bbox_patch2 = connect_bbox(
+        mybbox1, mybbox2,
+        loc1a=3, loc2a=2, loc1b=4, loc2b=1,
+        prop_lines=prop_lines, prop_patches=prop_patches)
+
+    ax1.add_patch(bbox_patch1)
+    # ax2.add_patch(bbox_patch2)
+    ax2.add_patch(c1)
+    ax2.add_patch(c2)
+
+    return c1, c2, bbox_patch1, bbox_patch2
+
+
 ###### Functions for plotting maps ######
 # Plot the station triads while ensuring that each edge is plotted only once
 def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color = "crimson", zorder = 1, **kwargs):
@@ -2838,27 +2890,48 @@ def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color
 ###### Functions for adding elements to the plots ######
 
 # Add day-night shading to the plot
-def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray"):
+def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray", alpha = 0.5):
+    # Get the sunrise and sunset times
     if sun_df is None:
-        sun_df = get_geo_sunrise_sunset_times()
+        sun_df = get_sunrise_sunset_times()
 
-    for i in range(len(sun_df) - 1):
+    # Get the axis limits
+    xlim = ax.get_xlim()
+    xmin = Timestamp(num2date(xlim[0]))
+    xmax = Timestamp(num2date(xlim[1]))
+
+    # Find the index of the first row where the sunset or sunrise time is greater than the xmin
+    i_start = sun_df[ (sun_df["sunset"] > xmin) | (sun_df["sunrise"] > xmin) ].index[0]
+    # print(i_start)
+
+    # Find the index of the last row where the sunset or sunrise time is less than the xmax
+    i_end = sun_df[ (sun_df["sunset"] < xmax) | (sun_df["sunrise"] < xmax) ].index[-1]
+    # print(i_end)
+    # Start from the first row where the sunset time is greater than the xmin
+    for i in range(i_start, i_end + 1):
         sunrise = sun_df.iloc[i]["sunrise"]
         sunset = sun_df.iloc[i]["sunset"]
+        sunrise_next = sun_df.iloc[i + 1]["sunrise"]
 
-        if i == 0:
-            day_handle = ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0, edgecolor=None, label="Day")
+        if i == i_start:
+            if sunrise > xmin:
+                ax.axvspan(xmin, sunrise, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+                ax.axvspan(sunrise, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
+                ax.axvspan(sunset, sunrise_next, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+            else:
+                ax.axvspan(xmin, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
+                ax.axvspan(sunset, sunrise_next, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+        elif i == i_end:
+            if sunset < xmax:
+                ax.axvspan(sunrise, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
+                ax.axvspan(sunset, xmax, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+            else:
+                ax.axvspan(sunrise, xmax, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
         else:
-            ax.axvspan(sunrise, sunset, color=day_color, alpha = 0.5, zorder=0, edgecolor=None)
-
-        surise_next = sun_df.iloc[i + 1]["sunrise"]
-
-        if i == 0:
-            night_handle = ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0, edgecolor=None, label="Night")
-        else:
-            ax.axvspan(sunset, surise_next, color=night_color, alpha = 0.5, zorder=0, edgecolor=None)
-
-    return ax, day_handle, night_handle
+            ax.axvspan(sunrise, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
+            ax.axvspan(sunset, sunrise_next, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+        
+    return ax
 
 # Add a station map to the plot
 # Make sure that the axis has the correct aspect ratio!

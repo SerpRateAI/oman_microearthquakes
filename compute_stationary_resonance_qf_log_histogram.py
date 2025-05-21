@@ -25,7 +25,7 @@ parser.add_argument("--window_length", type=float, help="Window length of the ST
 parser.add_argument("--overlap", type=float, help="Overlap of the STFT", default=0.0)
 parser.add_argument("--min_prom", type=float, help="Minimum prominence for detecting peaks in the power spectrum", default=15.0)
 parser.add_argument("--min_rbw", type=float, help="Minimum reversed bandwidth for detecting peaks in the power spectrum", default=15.0)
-parser.add_argument("--max_mean_db", type=float, help="Maximum mean power for excluding a time window in peak detection", default=10.0)
+parser.add_argument("--max_mean_db", type=float, help="Maximum mean power for excluding a time window in peak detection", default=15.0)
 
 # Parse the arguments
 args = parser.parse_args()

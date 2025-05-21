@@ -22,7 +22,7 @@ parser.add_argument("--min_prom", type = float, default = 15.0, help = "Minimum 
 parser.add_argument("--min_rbw", type = float, default = 15.0, help = "Minimum reverse bandwidth in 1/Hz")
 parser.add_argument("--min_freq", type = float, default = 0.0, help = "Minimum frequency in Hz")
 parser.add_argument("--max_freq", type = float, default = 200.0, help = "Maximum frequency in Hz")
-parser.add_argument("--max_mean_db", type = float, default = 0.0, help = "Maximum mean dB for excluding noisy windows")
+parser.add_argument("--max_mean_db", type = float, default = 10.0, help = "Maximum mean dB for excluding noisy windows")
 
 parser.add_argument("--window_length", type = float, help = "Window length in seconds")
 parser.add_argument("--overlap", type = float, default = 0.0, help = "Overlap in seconds")

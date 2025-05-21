@@ -34,7 +34,7 @@ parser.add_argument('--min_cohe_reson', type=float, default=0.85, help='The mini
 parser.add_argument('--min_num_obs_reson', type=int, default=100, help='The minimum number of observations to compute the standard deviation for the apparent velocities of the stationary resonance')
 
 parser.add_argument('--figwidth', type=float, default=10.0, help='The width of the figure')
-parser.add_argument('--figheight', type=float, default=10.0, help='The height of the figure')
+parser.add_argument('--figheight', type=float, default=7.0, help='The height of the figure')
 
 parser.add_argument('--markersize', type=float, default=120.0, help='The size of the markers')
 parser.add_argument('--linewidth_vehicle', type=float, default=1.0, help='The edge width of the markers for the apparent velocities of the approaching vehicle')
@@ -44,6 +44,8 @@ parser.add_argument('--cmap_name', type=str, default="Set2", help='The name of t
 parser.add_argument('--i_color_a', type=int, default=0, help='The index of the color for Subarray A')
 parser.add_argument('--i_color_b', type=int, default=1, help='The index of the color for Subarray B')
 
+parser.add_argument('--min_dist', type=float, default=0.0, help='The minimum distance to plot')
+parser.add_argument('--max_dist', type=float, default=650.0, help='The maximum distance to plot')
 parser.add_argument('--min_std', type=float, default=0.0, help='The minimum standard deviation to plot')
 parser.add_argument('--max_std', type=float, default=110.0, help='The maximum standard deviation to plot')
 
@@ -66,6 +68,9 @@ figheight = args.figheight
 cmap_name = args.cmap_name
 i_color_a = args.i_color_a
 i_color_b = args.i_color_b
+
+min_dist = args.min_dist
+max_dist = args.max_dist
 
 linewidth_vehicle = args.linewidth_vehicle
 linewidth_resonance = args.linewidth_resonance
@@ -103,6 +108,7 @@ color_a = cmap(i_color_a)
 color_b = cmap(i_color_b)
 
 # Plot the standard deviations of the back-azimuths of the vehicle
+# print(vehicle_std_df['distance_a'])
 ax.scatter(vehicle_std_df['distance_a'], vehicle_std_df['back_azi_std_a'], 
            color=color_a, marker='o', s=markersize, edgecolor="black", linewidth=linewidth_vehicle,
            label='A')
@@ -121,16 +127,19 @@ ax.axhline(back_azi_std_b, color=color_b, linewidth=linewidth_resonance)
 ax.set_xlabel('Vehicle distance to BA1A/BA1B (m)', fontsize=fontsize_axis_label)
 ax.set_ylabel('Propagation-direction standard deviation (deg)', fontsize=fontsize_axis_label)
 
+# Set the limits of the x-axis
+ax.set_xlim(min_dist, max_dist)
+
 # Set the limits of the y-axis
 ax.set_ylim(min_std, max_std)
 
 # Add the legend
-legend = ax.legend(fontsize=fontsize_legend, loc='lower left', framealpha=1.0)
+legend = ax.legend(fontsize=fontsize_legend, loc='lower left', framealpha=1.0, edgecolor="black", fancybox=False)
 legend.set_title('Subarray', prop={'size': fontsize_legend, 'weight': 'bold'})
 
 # Add the title
 mode_order = get_mode_order(mode_name)
-ax.set_title(f'{occurrence.capitalize()} vehicle vs Mode {mode_order}', fontsize=fontsize_title, fontweight='bold')
+ax.set_title(f'{occurrence.capitalize()} vehicle vs Mode {mode_order}, propagation-direction variability', fontsize=fontsize_title, fontweight='bold')
 
 ###
 # Save the figure

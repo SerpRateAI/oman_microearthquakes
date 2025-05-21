@@ -1,16 +1,15 @@
-# Compute sunrise and sunset times for the geophone deployment
-
+# Compute sunrise and sunset times for the hydrophone deployment
 # Imports
 from os.path import join
 from astral import LocationInfo
 from astral.sun import sun
 from pandas import Timestamp, DataFrame
 
-from utils_basic import CENTER_LONGITUDE as longitude, CENTER_LATITUDE as latitude, ROOTDIR_GEO as outdir
-from utils_basic import get_geophone_days
+from utils_basic import CENTER_LONGITUDE as longitude, CENTER_LATITUDE as latitude, TIME_DIR as outdir
+from utils_basic import get_hydrophone_days
 
 # Get the days of the geophone deployment
-days = get_geophone_days()
+days = get_hydrophone_days(timestamp = True)
 
 # Get the location information
 location = LocationInfo(longitude = longitude, latitude = latitude)

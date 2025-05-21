@@ -19,8 +19,8 @@ from utils_basic import LOC_DIR as dirpath
 ###
 parser = ArgumentParser()
 parser.add_argument("--velocity", type = float, help = "The velocity of the vehicle in km/h", default = 40.0)
-parser.add_argument("--final_x", type = float, help = "The final x-coordinate of the vehicle in m", default = 25.0)
-parser.add_argument("--final_y", type = float, help = "The final y-coordinate of the vehicle in m", default = -90.0)
+parser.add_argument("--final_x", type = float, help = "The final x-coordinate of the vehicle in m", default = 24.93)
+parser.add_argument("--final_y", type = float, help = "The final y-coordinate of the vehicle in m", default = -59.14)
 parser.add_argument("--occurrence", type = str, help = "The occurrence of the vehicle", default = "approaching")
 args = parser.parse_args()
 

@@ -11,11 +11,11 @@ from os.path import join
 from pandas import read_csv
 from matplotlib.pyplot import figure
 
-from utils_basic import MT_DIR as indir, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime, GEO_COMPONENTS as components
+from utils_basic import LOC_DIR as indir, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime, GEO_COMPONENTS as components
 from utils_basic import EASTMIN_WHOLE as min_east, EASTMAX_WHOLE as max_east, NORTHMIN_WHOLE as min_north, NORTHMAX_WHOLE as max_north
-from utils_basic import get_geophone_coords, get_mode_order
-from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
+from utils_basic import get_geophone_coords, get_geophone_triads, get_mode_order
 from utils_plot import add_day_night_shading, component2label, format_east_xlabels, format_north_ylabels, format_datetime_xlabels, format_app_vel_ylabels, format_back_azi_ylabels, save_figure, get_geo_component_color
+from utils_plot import plot_station_triads
 
 ### Inputs ###
 # Command line arguments
@@ -102,11 +102,7 @@ triad_label_x = args.triad_label_x
 triad_label_y = args.triad_label_y
 
 ### Read the station coordinates and station pair informations ###
-filename = "delaunay_station_triads.csv"
-filepath = join(indir, filename)
-
-triads_df = read_csv(filepath)
-
+triad_df = get_geophone_triads()
 coord_df = get_geophone_coords()
 
 ### Plotting ###
@@ -137,52 +133,13 @@ for i, triad in enumerate(triads):
     ax_map = fig.add_axes([margin_x, margin_y + i * (map_height + gap_y_major), map_width, map_height])
 
     # Read the apparent velocities
-    filename = f"stationary_resonance_station_triad_app_vels_{station1_vel}_{station2_vel}_{station3_vel}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
+    filename = f"stationary_resonance_station_triad_app_vels_{mode_name}_{station1_vel}_{station2_vel}_{station3_vel}_mt_win{window_length_mt:.0f}s_min_cohe{min_cohe:.2f}.csv"
     filepath = join(indir, filename)
     app_vel_df = read_csv(filepath, parse_dates=["time"])
 
     # Plot the edges of the highlighted triad first
-    east1 = coord_df.loc[station1_vel, "east"]
-    north1 = coord_df.loc[station1_vel, "north"]
-
-    east2 = coord_df.loc[station2_vel, "east"]
-    north2 = coord_df.loc[station2_vel, "north"]
-
-    east3 = coord_df.loc[station3_vel, "east"]
-    north3 = coord_df.loc[station3_vel, "north"]
-
-    ax_map.plot([east1, east2], [north1, north2], linewidth = linewidth_conn, color = "crimson", zorder = 1)
-    ax_map.plot([east2, east3], [north2, north3], linewidth = linewidth_conn, color = "crimson", zorder = 1)
-    ax_map.plot([east3, east1], [north3, north1], linewidth = linewidth_conn, color = "crimson", zorder = 1)
-
-    plotted_edges = set([tuple(sorted([station1_vel, station2_vel])), tuple(sorted([station2_vel, station3_vel])), tuple(sorted([station3_vel, station1_vel]))])
-
-    # Plot each station pair while highlighting the one whose phase differences are shown on the right
-    for _, row in triads_df.iterrows():
-        station1 = row["station1"]
-        station2 = row["station2"]
-        station3 = row["station3"]
-
-        east1 = coord_df.loc[station1, "east"]
-        north1 = coord_df.loc[station1, "north"]
-
-        east2 = coord_df.loc[station2, "east"]
-        north2 = coord_df.loc[station2, "north"]
-
-        east3 = coord_df.loc[station3, "east"]
-        north3 = coord_df.loc[station3, "north"]
-
-        edges = set([tuple(sorted([station1, station2])), tuple(sorted([station2, station3])), tuple(sorted([station3, station1]))])
-
-        for edge in edges:
-            if edge not in plotted_edges:
-                station1, station2 = edge
-                east1 = coord_df.loc[station1, "east"]
-                north1 = coord_df.loc[station1, "north"]
-                east2 = coord_df.loc[station2, "east"]
-                north2 = coord_df.loc[station2, "north"]
-                ax_map.plot([east1, east2], [north1, north2], linewidth = linewidth_conn, color = "lightgray", zorder = 1)
-                plotted_edges.add(edge)
+    triad_to_highlight_df = triad_df[ (triad_df["station1"] == station1_vel) & (triad_df["station2"] == station2_vel) | (triad_df["station1"] == station2_vel) & (triad_df["station2"] == station3_vel) | (triad_df["station1"] == station3_vel) & (triad_df["station2"] == station1_vel) ]
+    plot_station_triads(ax_map, triads_to_highlight = triad_to_highlight_df)
 
     # Set the map limits
     ax_map.set_xlim((min_east, max_east))
@@ -267,8 +224,8 @@ for i, triad in enumerate(triads):
     # Plot the apparent velocities
     for component in components:
         color = get_geo_component_color(component)
-        marker = ax_vel.errorbar(app_vel_df["time"], app_vel_df[f"vel_app_{component.lower()}"], 
-                        yerr = app_vel_df[f"vel_app_uncer_{component.lower()}"],
+        marker = ax_vel.errorbar(app_vel_df["time"], app_vel_df[f"app_vel_{component.lower()}"], 
+                        yerr = app_vel_df[f"app_vel_uncer_{component.lower()}"],
                         fmt = "o", markerfacecolor="none", markeredgecolor=color, label = component2label(component), markersize = markersize,
                         markeredgewidth = linewidth_vel, elinewidth = linewidth_vel, capsize=2, zorder=2)
     
@@ -293,7 +250,7 @@ for i, triad in enumerate(triads):
     
 # Add the super title
 mode_order = get_mode_order(mode_name)
-fig.suptitle(f"Mode {mode_order:d}, horizontal apparent velocities and back azimuths for example geophone triads", fontsize = fontsize_title, fontweight = "bold", x = 0.6, y = 1.04)
+fig.suptitle(f"Mode {mode_order:d}, horizontal apparent velocities and back azimuths for example geophone triads", fontsize = fontsize_title, fontweight = "bold", x = 0.6, y = 1.1)
 
 ### Save the figure ###
 figname = f"stationary_resonance_example_station_triad_app_vels_{mode_name}.png"

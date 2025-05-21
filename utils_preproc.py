@@ -101,6 +101,10 @@ def read_and_process_day_long_hydro_waveforms(day,
     # Check if both the location dictionary and stations are specified
     if loc_dict is not None and stations is not None:
         raise ValueError("Error: Only one of loc_dict and stations can be specified!")
+    
+    # Check if the location dictionary is specified
+    if loc_dict is None and stations is None:
+        loc_dict = HYDRO_LOCATIONS
 
     # Check if the decimation factor is specified
     if decimate:
@@ -831,7 +835,11 @@ def preprocess_geo_stream(stream_in, metadata,
         if filter_type == "butter":
             freqmin = kwargs["min_freq"]
             freqmax = kwargs["max_freq"]
-            corners = kwargs["corners"]
+            
+            if "corners" not in kwargs:
+                corners = 4
+            else:
+                corners = kwargs["corners"]
 
             if freqmin is not None and freqmax is not None:
                 stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
@@ -911,7 +919,11 @@ def preprocess_hydro_stream(stream_in,
         if filter_type == "butter":
             freqmin = kwargs["min_freq"]
             freqmax = kwargs["max_freq"]
-            corners = kwargs["corners"]
+            
+            if "corners" not in kwargs:
+                corners = 4
+            else:
+                corners = kwargs["corners"]
 
             if freqmin is not None and freqmax is not None:
                 stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
@@ -966,6 +978,8 @@ def correct_hydro_polarity(stream_in):
             trace.data = -1 * trace.data
 
     return stream_out
+
+# 
 
 ######
 # Signal processing

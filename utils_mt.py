@@ -4,7 +4,7 @@
 
 ### Import necessary modules
 from numpy import angle, array, delete, exp, isrealobj, mean, newaxis, arctan2, pi, cos, sin, deg2rad, rad2deg
-from numpy import amax, sqrt, sum, tile, var, where, zeros, vstack
+from numpy import amax, sqrt, sum, tile, var, where, zeros, vstack, argmin
 from numpy.linalg import norm, inv
 from scipy.fft import fft, fftfreq
 from scipy.stats import beta, chi2
@@ -112,10 +112,10 @@ def mt_autospec(signal, taper_mat, ratio_vec, sampling_rate, verbose = True, nor
     eig_dft_mat = fft(eig_sig, axis=1) 
 
     # Select only the positive frequencies
-    eig_dft_mat = eig_dft_mat[:, :num_pts//2 + 1]
+    eig_dft_mat = eig_dft_mat[:, :num_pts//2]
 
     freqax = fftfreq(num_pts, 1/sampling_rate)
-    freqax = freqax[:num_pts//2 + 1]
+    freqax = freqax[:num_pts//2]
 
     num_pts = len(freqax)
 
@@ -471,7 +471,7 @@ def get_mt_cspec(eig_dft_mat1, eig_dft_mat2):
 # Get the average phase difference in a given frequency range
 # The phase differences are weighted by their uncertainties before averaging
 # Only the phase differences with coherence greater than min_cohe are selected.
-# Only the phase differences more than nw bins aparts are treated as independent measurements and  included in the average
+# Only the phase differences more than nw bins aparts are treated as independent measurements and included in the average
 def get_avg_phase_diff(freq_range, freqax, phase_diffs, phase_diff_uncers, coherences, min_cohe = 0.95, nw = 3, return_samples = False, verbose = True):
     """
     Get the average phase difference in a given frequency range
@@ -504,40 +504,42 @@ def get_avg_phase_diff(freq_range, freqax, phase_diffs, phase_diff_uncers, coher
     coherences = coherences[freq_inds]
 
     # Select the phase differences with coherence greater than min_cohe
-    inds = coherences > min_cohe
+    inds = where(coherences > min_cohe)[0]
     phase_diffs = phase_diffs[inds]
     phase_diff_uncers = phase_diff_uncers[inds]
     coherences = coherences[inds]
-    freq_inds = freq_inds[inds]
+    freq_inds_cohe = freq_inds[inds]
     if len(phase_diffs) == 0:
         if verbose:
-            print("No phase difference meets the criteria!")
+            print("No phase difference meets the coherence criterion!")
 
         if return_samples:
-            return None, None, None
+            return None, None, None, None
         else:
             return None, None
         
     elif len(phase_diffs) == 1:
         if verbose:
-            print("Only one phase difference meets the critieria!")
+            print("Only one phase difference meets the coherence criterion!")
 
         if return_samples:
-            return phase_diffs[0], phase_diff_uncers[0], freq_inds[0]
+            return phase_diffs[0], phase_diff_uncers[0], freq_inds_cohe, freq_inds_cohe
         else:
             return phase_diffs[0], phase_diff_uncers[0]
 
     # Get the independent phase differences
-    phase_diffs_indep, phase_diff_uncers_indep, freq_inds_indep = get_indep_phase_diffs(phase_diffs, phase_diff_uncers, freq_inds, nw)
+    freq_inds_indep, inds_indep = get_indep_freq_inds(freq_inds_cohe, nw)
+    phase_diffs_indep = phase_diffs[inds_indep]
+    phase_diff_uncers_indep = phase_diff_uncers[inds_indep]
 
-    num_indep = len(phase_diffs_indep)
+    num_indep = len(inds_indep)
     if verbose:
         print(f"Number of independent phase differences contributing to the average: {num_indep}")
 
     # Compute the weighted average of the phase differences and estimate the uncertainty
     if num_indep == 1:
         if return_samples:
-            return phase_diffs_indep[0], phase_diff_uncers_indep[0], freq_inds_indep[0]
+            return phase_diffs_indep[0], phase_diff_uncers_indep[0], freq_inds_indep, freq_inds_cohe
         else:
             return phase_diffs_indep[0], phase_diff_uncers_indep[0]
 
@@ -546,7 +548,7 @@ def get_avg_phase_diff(freq_range, freqax, phase_diffs, phase_diff_uncers, coher
     avg_phase_diff = angle(sum(exp(1j * phase_diffs_indep) / phase_diff_uncers_indep ** 2) * avg_phase_diff_uncer ** 2)
 
     if return_samples:
-        return avg_phase_diff, avg_phase_diff_uncer, freq_inds_indep
+        return avg_phase_diff, avg_phase_diff_uncer, freq_inds_indep, freq_inds_cohe
     else:
         return avg_phase_diff, avg_phase_diff_uncer
 
@@ -576,130 +578,84 @@ def get_angle_vector_mean(phase_diffs, phase_diff_uncers):
 
     return vector_mean
 
-# Get independent phase differences using the greedy algorithm
-# Independent phase differences are defined as phase differences more than nw bins apart
-def get_indep_phase_diffs(phase_diffs_in, phase_diff_uncers_in, freq_inds, nw):
-    phase_diffs_in = list(phase_diffs_in)
-    phase_diff_uncers_in = list(phase_diff_uncers_in)
-    freq_inds = list(freq_inds)
+def get_indep_phase_diffs(phase_diffs, phase_diff_uncers, freq_inds, nw):
+    """
+    Select a subset of (phase, uncertainty, freq_index) triples such that every pair of
+    returned freq_indices differs by more than `nw` bins, using a greedy algorithm.
+    """
+    # bundle inputs so they stay in sync
+    items = list(zip(phase_diffs, phase_diff_uncers, freq_inds))
 
-    # Compute the distance matrix
-    num_freq = len(freq_inds)
-    dist_mat = zeros((num_freq, num_freq))
-    for i in range(num_freq):
-        for j in range(num_freq):
-            dist_mat[i, j] = abs(freq_inds[i] - freq_inds[j])
+    freq_arr = array(freq_inds)
+    dist_mat = abs(freq_arr[:, None] - freq_arr)        # pair-wise distances
 
-    # Find the phase difference with the least number of neighbors as the starting point
-    # Neighbors are defined as phase points that are less than or equal to nw bins apart
-    min_neighbors = num_freq
-    ind_init = 0
-    for ind in range(num_freq):
-        neighbors = sum(dist_mat[ind] <= nw)
-        if neighbors < min_neighbors:
-            min_neighbors = neighbors
-            ind_init = ind
+    chosen_mask = zeros(len(items), dtype=bool)
 
-    phase_diff_init = phase_diffs_in[ind_init]
-    phase_diff_uncer_init = phase_diff_uncers_in[ind_init]
-    freq_ind = freq_inds[ind_init]
+    while True:
+        if not chosen_mask.any():          # first pick: everyone is a candidate
+            candidates = where(~chosen_mask)[0]
+        else:
+            # candidate must be unchosen AND farther than nw from every chosen element
+            far_enough = (dist_mat[:, chosen_mask] > nw).all(axis=1)
+            candidates = where((~chosen_mask) & far_enough)[0]
 
-    phase_diffs_out = [phase_diff_init]
-    phase_diff_uncers_out = [phase_diff_uncer_init]
-    freq_inds_out = [freq_ind]
-    
-    phase_diffs_remain = phase_diffs_in.copy()
-    phase_diff_uncers_remain = phase_diff_uncers_in.copy()
-    freq_inds_remain = freq_inds.copy()
+        if len(candidates) == 0:
+            break
 
-    phase_diffs_remain.remove(phase_diff_init)
-    phase_diff_uncers_remain.remove(phase_diff_uncer_init)
-    freq_inds_remain.remove(freq_ind)
+        # pick candidate with the fewest neighbours (≤ nw) among remaining items
+        neigh_counts = (dist_mat[candidates][:, candidates] <= nw).sum(axis=1)
+        pick = candidates[argmin(neigh_counts)]
+        chosen_mask[pick] = True
 
-    # Remove the phase differences and their uncertainties that are less than nw bins apart from the initial phase difference
-    for phase_diff in phase_diffs_remain:
-        ind = phase_diffs_in.index(phase_diff)
-        phase_diff_uncer = phase_diff_uncers_in[ind]
-        freq_ind = freq_inds[ind]
-        if dist_mat[ind_init, ind] <= nw:
-            phase_diffs_remain.remove(phase_diff)
-            phase_diff_uncers_remain.remove(phase_diff_uncer)
-            freq_inds_remain.remove(freq_ind)
-
-    # Iterate through the remaining phase differences
-    while phase_diffs_remain:
-        phase_diff = phase_diffs_remain.pop(0) 
-        phase_diffs_out.append(phase_diff)
-
-        phase_diff_uncer = phase_diff_uncers_remain.pop(0)
-        phase_diff_uncers_out.append(phase_diff_uncer)
-
-        freq_ind = freq_inds_remain.pop(0)
-        freq_inds_out.append(freq_ind)
-        
-        ind1 = phase_diffs_in.index(phase_diff)
-        for phase_diff in phase_diffs_remain:
-            ind2 = phase_diffs_in.index(phase_diff)
-            phase_diff_uncer = phase_diff_uncers_in[ind2]
-            freq_ind = freq_inds[ind2]
-            if dist_mat[ind1, ind2] <= nw:
-                phase_diffs_remain.remove(phase_diff)
-                phase_diff_uncers_remain.remove(phase_diff_uncer)
-                freq_inds_remain.remove(freq_ind)
-
-    # Convert the lists to arrays
-    phase_diffs_out = array(phase_diffs_out)
-    phase_diff_uncers_out = array(phase_diff_uncers_out)
-    freq_inds_out = array(freq_inds_out)
+    # unpack the chosen subset
+    chosen = [items[i] for i in where(chosen_mask)[0]]
+    phase_diffs_out, phase_diff_uncers_out, freq_inds_out = map(array, zip(*chosen))
 
     return phase_diffs_out, phase_diff_uncers_out, freq_inds_out
 
-# Get frequency indices that are more than nw bins apart using the greedy algorithm
+# Get the indices of the independent frequency indices in a set of frequency indices
 def get_indep_freq_inds(freq_inds, nw):
     """
-    Get frequency indices that are more than nw bins apart
+    Select a subset of indices such that every pair differs by more than `nw`.
+    
+    Parameters
+    ----------
+    freq_inds : sequence of int
+        The original frequency‑bin indices.
+    nw : int
+        Minimum required separation (in bins) between any two chosen indices.
+    
+    Returns
+    -------
+    numpy.ndarray
+        The indices (into `freq_inds`) that satisfy the spacing criterion.
     """
+    # Convert to ndarray and build pair‑wise distance matrix |fi - fj|
+    freq_arr = array(freq_inds)
+    dist_mat = abs(freq_arr[:, None] - freq_arr)
     
-    # Convert the frequency indices to list if they are not already
-    freq_inds = list(freq_inds)
-
-    # Compute the distance matrix
-    num_freq = len(freq_inds)
-    dist_mat = zeros((num_freq, num_freq))
-    for i in range(num_freq):
-        for j in range(num_freq):
-            dist_mat[i, j] = abs(freq_inds[i] - freq_inds[j])
+    chosen_mask = zeros(len(freq_inds), dtype=bool)   # True where an index is kept
     
-    # Find the frequency index with the least number of neighbors as the starting point
-    min_neighbors = num_freq
-    ind_init = 0
-    for ind in range(num_freq):
-        neighbors = sum(dist_mat[ind] <= nw)
-        if neighbors < min_neighbors:
-            min_neighbors = neighbors
-            ind_init = ind
+    while True:
+        if not chosen_mask.any():                     # first pick → everyone eligible
+            candidates = where(~chosen_mask)[0]
+        else:
+            # Eligible = not yet chosen  AND  farther than `nw` from ALL chosen ones
+            far_enough = (dist_mat[:, chosen_mask] > nw).all(axis=1)
+            candidates = where((~chosen_mask) & far_enough)[0]
+        
+        if len(candidates) == 0:                      # no more eligible points
+            break
+        
+        # Greedy rule: pick the candidate with the fewest neighbours ≤ nw
+        neigh_counts = (dist_mat[candidates][:, candidates] <= nw).sum(axis=1)
+        pick = candidates[argmin(neigh_counts)]
+        chosen_mask[pick] = True
 
-    freq_ind_init = freq_inds[ind_init]
-
-    freq_inds_out = [freq_ind_init]
-    freq_inds_remain = freq_inds.copy()
-    freq_inds_remain.remove(freq_ind_init)
-
-    # Remove the frequency indices that are less than nw bins apart from the initial frequency index
-    for freq_ind in freq_inds_remain:
-        ind = freq_inds.index(freq_ind)
-        if dist_mat[ind_init, ind] <= nw:
-            freq_inds_remain.remove(freq_ind)
-
-    # Iterate through the remaining frequency indices
-    while freq_inds_remain:
-        freq_ind = freq_inds_remain.pop(0)
-        freq_inds_out.append(freq_ind)
-
-    # Convert the list to an array
-    freq_inds_out = array(freq_inds_out)
-
-    return freq_inds_out
+    inds_out = where(chosen_mask)[0]
+    freq_inds_out = freq_arr[inds_out]
+    
+    return freq_inds_out, inds_out
         
 
 

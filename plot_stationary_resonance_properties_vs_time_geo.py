@@ -25,6 +25,12 @@ parser.add_argument("--min_power", type = float, default = -10.0, help = "Maximu
 parser.add_argument("--base_mode_name", type = str, default = "PR02549", help = "Base mode name.")
 parser.add_argument("--base_mode_order", type = int, default = 2, help = "Base mode order.")
 
+parser.add_argument("--window_length", type = float, default = 300.0, help = "Window length in seconds.")
+parser.add_argument("--overlap", type = float, default = 0.0, help = "Overlap in seconds.")
+parser.add_argument("--min_prom", type = float, default = 15.0, help = "Minimum prominence for plotting the power variation.")
+parser.add_argument("--min_rbw", type = float, default = 15.0, help = "Minimum relative bandwidth for plotting the power variation.")
+parser.add_argument("--max_mean_db", type = float, default = 15.0, help = "Maximum mean power for plotting the power variation.")
+
 # Parse the arguments
 args = parser.parse_args()
 mode_name = args.mode_name
@@ -32,6 +38,11 @@ min_power = args.min_power
 max_power = args.max_power
 base_mode_name = args.base_mode_name
 base_mode_order = args.base_mode_order
+window_length = args.window_length
+overlap = args.overlap
+min_prom = args.min_prom
+min_rbw = args.min_rbw
+max_mean_db = args.max_mean_db
 
 # Constants
 axis_label_size = 8.0
@@ -55,7 +66,10 @@ sun_df = get_geo_sunrise_sunset_times()
 
 # Read the stationary resonance properties
 print("Reading the stationary resonance properties...")
-filename_in = f"stationary_resonance_properties_{mode_name}_geo.h5"
+suffix_spec = get_spectrogram_file_suffix(window_length, overlap)
+suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db)
+
+filename_in = f"stationary_resonance_properties_geo_{mode_name}_{suffix_spec}_{suffix_peak}.h5"
 inpath = join(indir, filename_in)
 resonance_df = read_hdf(inpath, key = "properties")
 
@@ -85,16 +99,5 @@ fig_power, ax_power, cbar_power = plot_stationary_resonance_properties_vs_time("
 print("Saving the figure...")
 figname = f"stationary_resonance_power_vs_time_{mode_name}_geo.png"
 save_figure(fig_power, figname, dpi = 600)
-
-# Plot the quality factor variation
-print("Plotting the quality factor variation...")
-fig_qf, ax_qf, cbar_qf = plot_stationary_resonance_properties_vs_time("quality_factor", resonance_df,
-                                                                     title = f"Mode {mode_order}, quality factor vs time",
-                                                                     axis_label_size = axis_label_size, tick_label_size = tick_label_size)
-
-# Save the figure
-print("Saving the figure...")
-figname = f"stationary_resonance_qf_vs_time_{mode_name}_geo.png"
-save_figure(fig_qf, figname, dpi = 600)
 
 

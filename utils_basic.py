@@ -8,13 +8,14 @@ from scipy.stats import gmean
 from scipy.signal import hilbert
 from pandas import Timestamp, Timedelta, DatetimeIndex
 from pandas import Series
-from pandas import date_range, to_datetime, read_csv, read_excel
+from pandas import date_range, to_datetime, read_csv, read_excel, to_timedelta
 from obspy import UTCDateTime, read_inventory
 
 ## Constants
 
 POWER_FLOOR = 1e-50
 NUM_SEONCDS_IN_DAY = 86400
+BAR = 1e5 # Average barometric pressure
 
 ROOTDIR_OTHER = "/proj/mazu/tianze.liu/oman/other_observables"
 ROOTDIR_GEO = "/proj/mazu/tianze.liu/oman/geophones"
@@ -34,7 +35,7 @@ MT_DIR = "/proj/mazu/tianze.liu/oman/multitaper"
 PHYS_DIR = "/proj/mazu/tianze.liu/oman/physical_models"
 VEL_MODEL_DIR = "/proj/mazu/tianze.liu/oman/velocity_models"
 LOC_DIR = "/proj/mazu/tianze.liu/oman/locations"
-
+TIME_DIR = "/proj/mazu/tianze.liu/oman/times"
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 PATH_BROADBAND_METADATA = join(ROOTDIR_BROADBAND, "station_metadata.xml")
@@ -112,7 +113,7 @@ SAMPLING_RATE = 1000.0
 
 # DAYS_PATH = join(ROOTDIR_GEO, "days.csv")
 # NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")get_broadband_metadata
-SUNRISE_SUNSET_PATH = join(ROOTDIR_GEO, "sunrise_sunset_times.csv")
+SUNRISE_SUNSET_PATH = join(TIME_DIR, "sunrise_sunset_times.csv")
 STATIONS_PATH = join(ROOTDIR_GEO, "stations.csv")
 
 WINDOW_LENGTH_GEO = 3600 # in seconds
@@ -234,14 +235,14 @@ def get_geophone_coords():
 
 # Get the delaunay geophone pairs
 def get_geophone_pairs():
-    inpath = join(MT_DIR, "delaunay_station_pairs.csv")
+    inpath = join(LOC_DIR, "delaunay_station_pairs.csv")
     pair_df = read_csv(inpath)
 
     return pair_df
 
 # Get the delaunay geophone triads
 def get_geophone_triads():
-    inpath = join(MT_DIR, "delaunay_station_triads.csv")
+    inpath = join(LOC_DIR, "delaunay_station_triads.csv")
     triad_df = read_csv(inpath)
 
     return triad_df
@@ -286,15 +287,10 @@ def get_hydrophone_days(timestamp = False):
 
     return days
 
-# Function to get the sunrise and sunset times for the geophone deployment
-def get_geo_sunrise_sunset_times():
+# Function to get the sunrise and sunset times for the hydrophone deployment
+def get_sunrise_sunset_times():
     inpath = SUNRISE_SUNSET_PATH
-    times_df = read_csv(inpath, index_col=0)
-
-    # Convert the time columns to Pandas Timestamp objects
-    times_df.index = to_datetime(times_df.index, utc=True)
-    times_df["sunrise"] = to_datetime(times_df["sunrise"], utc=True)
-    times_df["sunset"] = to_datetime(times_df["sunset"], utc=True)
+    times_df = read_csv(inpath, parse_dates=["day", "sunrise", "sunset"])
 
     return times_df
 
@@ -444,7 +440,7 @@ def int2datetime(ints):
     return datetimes
 
 # Convert an array of relative times in seconds to a Pandas DatetimeIndex objects using a given start time
-def reltimes_to_timestamps(reltimes, starttime):
+def reltimes_to_datetimes(reltimes, starttime):
     if not isinstance(starttime, Timestamp):
         try:
             starttime = Timestamp(starttime, tz="UTC")
@@ -452,10 +448,9 @@ def reltimes_to_timestamps(reltimes, starttime):
         except:
             raise ValueError("Invalid start time format!")
         
-    timestamps = [starttime + Timedelta(seconds=reltime) for reltime in reltimes]
-    timestamps = DatetimeIndex(timestamps)
+    datetimes = starttime + to_timedelta(reltimes, unit = "s")
 
-    return timestamps
+    return datetimes
 
 # Assemble a time axis of DateTimeIndex type from integers representing nanoseconds since the Unix epoch
 def assemble_timeax_from_ints(starttime, num_time, time_step):

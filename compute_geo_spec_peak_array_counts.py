@@ -19,7 +19,7 @@ parser.add_argument("--window_length", type = float, default = 60.0, help = "Win
 parser.add_argument("--overlap", type = float, default = 0.0, help = "Overlap in seconds")
 parser.add_argument("--min_prom", type = float, default = 15.0, help = "Minimum prominence in dB")
 parser.add_argument("--min_rbw", type = float, default = 15.0, help = "Minimum reverse bandwidth in 1/Hz")
-parser.add_argument("--max_mean_db", type = float, default = 0.0, help = "Maximum mean dB for excluding noisy windows")
+parser.add_argument("--max_mean_db", type = float, default = 10.0, help = "Maximum mean dB for excluding noisy windows")
 
 parser.add_argument("--min_count", type = int, default = 9, help = "Minimum count of peaks in a group")
 parser.add_argument("--plot_results", action = "store_true", help = "Plot the results")

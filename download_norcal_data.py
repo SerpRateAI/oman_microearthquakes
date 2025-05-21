@@ -68,7 +68,7 @@ for i, date in enumerate(dates):
     for trace in stream:
         outpath = join(outdir_date, f"{trace.id}.mseed")
         trace.write(outpath, format = "MSEED")
-        print(f"Data saveed to {outpath}.")
+        print(f"Data saved to {outpath}.")
 
     clock2 = time()
     print(f"Data acquisition for {date} completed in {clock2 - clock1} seconds.")

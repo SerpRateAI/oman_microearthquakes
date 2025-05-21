@@ -17,9 +17,10 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from utils_basic import SPECTROGRAM_DIR as dirname_spec, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime, PHYS_DIR as dirname_phys, IMAGE_DIR as dirname_img
 from utils_basic import GEO_COMPONENTS as components, MT_DIR as dirname_mt, LOC_DIR as dirname_loc, INNER_STATIONS as inner_stations, MIDDLE_STATIONS as middle_stations, OUTER_STATIONS as outer_stations, GEO_STATIONS_A as stations_a, GEO_STATIONS_B as stations_b
 from utils_basic import EASTMIN_WHOLE as min_east, EASTMAX_WHOLE as max_east, NORTHMIN_WHOLE as min_north, NORTHMAX_WHOLE as max_north
-from utils_basic import GEO_COMPONENTS as components
+from utils_basic import GEO_COMPONENTS as components, CORE_STATIONS as stations_to_plot
 from utils_basic import get_geophone_coords, get_borehole_coords, get_geophone_triads
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
+from utils_satellite import load_maxar_image        
 from utils_plot import add_colorbar, save_figure, format_east_xlabels, format_north_ylabels, plot_station_triads
 
 ### Inputs ###
@@ -167,8 +168,6 @@ qf_obs_anno_text_y = args.qf_obs_anno_text_y
 qf_sat_label_x = args.qf_sat_label_x
 qf_sat_label_y = args.qf_sat_label_y
 
-
-
 # Constants
 hspace = 0.05
 margin_x = 0.03
@@ -227,24 +226,14 @@ filepath = join(dirname_loc, filename)
 vel_df = read_csv(filepath)
 
 for component in components:
-    vel_df[f"vel_app_cov_mat_{component.lower()}"] = vel_df[f"vel_app_cov_mat_{component.lower()}"].apply(lambda x: array(loads(x)))
+    vel_df[f"app_vel_cov_mat_{component.lower()}"] = vel_df[f"app_vel_cov_mat_{component.lower()}"].apply(lambda x: array(loads(x)))
 
 # Filter the station triads
-stations_to_plot = inner_stations + middle_stations + outer_stations
 triad_df = triad_df[triad_df["station1"].isin(stations_to_plot) & triad_df["station2"].isin(stations_to_plot) & triad_df["station3"].isin(stations_to_plot)]
 vel_df = vel_df[vel_df["station1"].isin(stations_to_plot) & vel_df["station2"].isin(stations_to_plot) & vel_df["station3"].isin(stations_to_plot)]
 
 # Load the satellite image
-inpath = join(dirname_img, filename_image)
-with open(inpath) as src:
-    # Read the image in RGB format
-    rgb_band = src.read([1, 2, 3])
-
-    # Reshape the image
-    rgb_image = reshape_as_image(rgb_band)
-
-    # Extract the extent of the image
-    extent_img = [src.bounds.left, src.bounds.right, src.bounds.bottom, src.bounds.top]
+image, extent = load_maxar_image()
 
 # Create the subplot
 ax_loc = fig.add_axes([margin_x, margin_y, 1 - 2 * margin_x, 1 - 2 * margin_y])
@@ -254,7 +243,7 @@ norm = Normalize(vmin = min_vel_app, vmax = max_vel_app)
 cmap = colormaps[colormap_name_vel]
 
 # Plot the satellite image
-ax_loc.imshow(rgb_image, extent = extent_img, alpha = image_alpha)
+ax_loc.imshow(image, extent = extent, alpha = image_alpha)
 
 # Plot the station triads and vectors
 back_azis_to_plot_dicts = []
@@ -266,14 +255,13 @@ for _, row in vel_df.iterrows():
 
     print(f"Plotting the vectors for the station triad {station1}-{station2}-{station3}.")
 
-    # Find the component with the smallest apparent velocity variance
-    flag = False
-    for i, component in enumerate(components):
-        vel_app_east = row[f"avg_vel_app_east_{component.lower()}"]
-        vel_app_north = row[f"avg_vel_app_north_{component.lower()}"]
-        vel_app = row[f"avg_vel_app_{component.lower()}"]
+    # Find the horizontal component with the smallest apparent velocity variance
+    for i, component in enumerate(["1", "2"]):
+        vel_app_east = row[f"avg_app_vel_east_{component.lower()}"]
+        vel_app_north = row[f"avg_app_vel_north_{component.lower()}"]
+        vel_app = row[f"avg_app_vel_{component.lower()}"]
         back_azi = row[f"avg_back_azi_{component.lower()}"]
-        cov_mat = row[f"vel_app_cov_mat_{component.lower()}"]
+        cov_mat = row[f"app_vel_cov_mat_{component.lower()}"]
         
         if isnan(vel_app_east):
             continue
@@ -287,14 +275,13 @@ for _, row in vel_df.iterrows():
         # Calculate apparent velocity variance from covariance matrix
         app_vel_var = cov_mat[0,0] + cov_mat[1,1]
 
-        if not flag:
+        if i == 0:
             min_app_vel_var = app_vel_var
             vec_east = vel_app_east / vel_app
             vec_north = vel_app_north / vel_app
             vec_amp = vel_app
             back_azi_plot = back_azi
             component_plot = component
-            flag = True
         else:
             if app_vel_var < min_app_vel_var:
                 min_app_vel_var = app_vel_var
@@ -304,9 +291,6 @@ for _, row in vel_df.iterrows():
                 back_azi_plot = back_azi
                 component_plot = component
 
-    if not flag:
-        print(f"No valid vector found for the station triad {station1}-{station2}-{station3}. The station triad is skipped.")
-        continue
     
     back_azis_to_plot_dicts.append({"station1": station1, "station2": station2, "station3": station3, "back_azi": back_azi_plot})
 
