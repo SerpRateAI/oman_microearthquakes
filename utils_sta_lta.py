@@ -2,13 +2,17 @@
 
 
 ## Import libraries
-from numpy import sqrt, mean, square, amin, argmin
+from pathlib import Path    
+from numpy import sqrt, mean, square, amin, argmin, asarray, fromiter, zeros, array, float32, int32, int64, issubdtype, integer, ndarray   
 from obspy.signal.trigger import coincidence_trigger
-from pandas import DataFrame, Timestamp, Grouper, concat, read_csv
+from obspy.core.utcdatetime import UTCDateTime
+from pandas import DataFrame, Timestamp, Grouper, Timedelta, Series, date_range, cut
 from matplotlib.pyplot import subplots
 from matplotlib.dates import DayLocator, DateFormatter
-
-from utils_basic import INNER_STATIONS, DAYS_PATH, NIGHTS_PATH, STARTTIME, ENDTIME
+from h5py import File
+from uuid import uuid4
+from utils_basic import INNER_STATIONS, GEO_COMPONENTS as components
+from utils_basic import NETWORK 
 
 ## Class for storing the information of an event claimed by associating the detections
 class AssociatedEvent:
@@ -76,89 +80,352 @@ class AssociatedEvent:
 
         fp.write("\n")
 
-## Class for storing a list of AssociatedEvent objects  
-class Events:
-    def __init__(self, min_num_det, max_delta, min_snr=None):
-        self.num_event = 0
-        self.min_num_det = min_num_det
-        self.max_delta = max_delta
-        self.min_snr = min_snr
-        self.events = []
+# ## Class for storing a list of AssociatedEvent objects  
+# class Events:
+#     def __init__(self, min_num_det, max_delta, min_snr=None):
+#         self.num_event = 0
+#         self.min_num_det = min_num_det
+#         self.max_delta = max_delta
+#         self.min_snr = min_snr
+#         self.events = []
 
-    def __len__(self):
-        return len(self.events)
+#     def __len__(self):
+#         return len(self.events)
 
-    def __getitem__(self, index):
-        return self.events[index]
+#     def __getitem__(self, index):
+#         return self.events[index]
 
-    def __setitem__(self, index, event):
-        if not isinstance(event, AssociatedEvent):
-            raise ValueError("Only objects of AssociatedEvent type can be added to the list.")
-        self.events[index] = event
+#     def __setitem__(self, index, event):
+#         if not isinstance(event, AssociatedEvent):
+#             raise ValueError("Only objects of AssociatedEvent type can be added to the list.")
+#         self.events[index] = event
 
-    def __delitem__(self, index):
-        del self.events[index]
+#     def __delitem__(self, index):
+#         del self.events[index]
 
-    def append(self, event):
-        if not isinstance(event, AssociatedEvent):
-            raise ValueError("Only objects of AssociatedEvent type can be added to the list.")
-        self.events.append(event)
-        self.num_event += 1
+#     def append(self, event):
+#         if not isinstance(event, AssociatedEvent):
+#             raise ValueError("Only objects of AssociatedEvent type can be added to the list.")
+#         self.events.append(event)
+#         self.num_event += 1
 
-    def remove(self, event):
-        self.events.remove(event)
-        self.num_event -= 1
+#     def remove(self, event):
+#         self.events.remove(event)
+#         self.num_event -= 1
 
-    def clear(self):
-        self.events.clear()
-        self.num_event = 0
+#     def clear(self):
+#         self.events.clear()
+#         self.num_event = 0
+
+#     def __str__(self):
+#         return f"Number of events: {len(self.events)}"
+
+#     def __repr__(self):
+#         return self.__str__()
+    
+#     def get_first_trigger_times(self):
+#         trigger_times = []
+#         for event in self.events:
+#             trigger_times.append(event.first_trigger_time)
+#         return trigger_times
+    
+#     def get_events_in_interval(self, starttime, endtime):
+#         ### Determine if the interval is valid
+#         if type(starttime) is not Timestamp or type(endtime) is not Timestamp:
+#             raise TypeError("The inputs must be of type pandas.Timestamp!")
+        
+#         if starttime >= endtime:
+#             raise ValueError("The start time must be earlier than the end time!")
+        
+     
+#         ### Get the events in the interval
+#         events_in_interval = Events(self.min_num_det, self.max_delta, self.min_snr)
+#         for event in self.events:
+#             if event.first_trigger_time >= starttime and event.first_trigger_time <= endtime:
+#                 events_in_interval.append(event)
+
+#         return events_in_interval
+    
+#     def write_to_file(self, path):
+#         with open(path, "w") as fp:
+#             fp.write("#\n")
+#             fp.write("Parameters\n")
+#             fp.write("\n")
+#             fp.write("num_of_events min_num_of_detections max_delta min_snr\n")
+
+#             if self.min_snr is None:
+#                 fp.write(f"{self.num_event:d} {self.min_num_det:d} {self.max_delta:.3f} None\n")
+#             else:
+#                 fp.write(f"{self.num_event:d} {self.min_num_det:d} {self.max_delta:.3f} {self.min_snr:.1f}\n")
+
+#             fp.write("\n")
+
+#             for event in self.events:
+#                 event.append_to_file(fp)
+        
+#         print(f"Events are written to {path}")
+
+class Snippet:
+    """Lightweight wrapper around the 3-component waveform snippets in a window (fixed length)."""
+    """ Waveforms are stored as numpy arrays of float32 to save memory."""
+
+    # -------------------------------------------------------------------------
+    # Attributes
+    # -------------------------------------------------------------------------
+
+    # Slots are used to speed up attribute access and reduce memory usage.
+    __slots__ = ("starttime", "num_pts", "waveform", "id")
+
+    def __init__(
+        self,
+        starttime: Timestamp | UTCDateTime,
+        num_pts: int,
+        waveform: dict[str, ndarray],
+        id: str | None = None):
+
+        # Convert the starttime to a pandas Timestamp object
+        if not isinstance(starttime, Timestamp):
+            try:    
+                # If it's ObsPy UTCDateTime, use its .datetime attribute
+                starttime = Timestamp(starttime.datetime, tz = 'UTC')
+            except AttributeError:
+                # If it's str, int, or datetime-like
+                starttime = Timestamp(starttime, tz = 'UTC')
+
+        self.starttime = starttime
+        self.num_pts = int(num_pts)
+
+        self.waveform: dict[str, ndarray] = {comp: waveform[comp].astype(float32) for comp in components}
+
+        self.id = id or str(uuid4())
+
+    # -------------------------------------------------------------------------
+    # Methods
+    # -------------------------------------------------------------------------
 
     def __str__(self):
-        return f"Number of events: {len(self.events)}"
+        return f"{self.id} – {self.starttime} – {self.num_pts} pts"
 
     def __repr__(self):
         return self.__str__()
+
+    def __len__(self):
+        return self.num_pts
+
+    def __getitem__(self, idx):
+        if isinstance(idx, int):
+            return self.waveform[components[idx]]
+
+    def __setitem__(self, idx, value):
+        if isinstance(idx, int):
+            self.waveform[components[idx]] = value
+
+    def __delitem__(self, idx):
+        del self.waveform[components[idx]]
+
+
+class Snippets:
+    """Container for many :class:`Snippet` instances.
+
+    I/O is done with *zero-padding* to a common length **without** chunking by
+    default, because the typical workflow streams the whole array in a single
+    read/write.  If you need compression or incremental appends, enable the
+    *chunked* flag in :pymeth:`to_hdf`.
+    """
+
+    def __init__(self, station: str):
+        self.station = station
+        self.snippets: list[Snippet] = []
+
+    def append(self, snippet: Snippet):
+        self.snippets.append(snippet)
+
+    def extend(self, other: "Snippets"):
+        if self.station != other.station:
+            raise ValueError("Input snippets must share station!")
+        self.snippets.extend(other.snippets)
+
+    def clear(self):
+        self.snippets.clear()
+
+    def __len__(self):
+        return len(self.snippets)
+
+    def __getitem__(self, idx):
+
+
+        if isinstance(idx, int):
+            return self.snippets[idx]
+        if isinstance(idx, slice):
+            return self.snippets[idx]
+
+        idx_arr = asarray(idx)
+        if idx_arr.ndim != 1:
+            raise IndexError("Index array must be 1‑D")
+
+        if idx_arr.dtype == bool:
+            if len(idx_arr) != len(self):
+                raise IndexError("Boolean index length mismatch")
+            selected = [sn for sn, flag in zip(self.snippets, idx_arr) if flag]
+        elif issubdtype(idx_arr.dtype, integer):
+            selected = [self.snippets[i] for i in idx_arr]
+        else:
+            raise TypeError("Index array must be boolean or integer type")
+
+        subset = Snippets(self.station)
+        subset.snippets = selected
+        return subset
+
+    def __iter__(self):
+        return iter(self.snippets)
+
+    def __str__(self):
+        return f"{len(self.snippets)} snippets – {self.station}"
+
+    def get_by_id(self, id_: str) -> Snippet | None:
+        return next((sn for sn in self.snippets if sn.id == id_), None)
     
-    def get_first_trigger_times(self):
-        trigger_times = []
-        for event in self.events:
-            trigger_times.append(event.first_trigger_time)
-        return trigger_times
+    def get_starttimes(self) -> list[Timestamp]:
+        return [sn.starttime for sn in self.snippets]
     
-    def get_events_in_interval(self, starttime, endtime):
-        ### Determine if the interval is valid
-        if type(starttime) is not Timestamp or type(endtime) is not Timestamp:
-            raise TypeError("The inputs must be of type pandas.Timestamp!")
-        
-        if starttime >= endtime:
-            raise ValueError("The start time must be earlier than the end time!")
-        
-        ### Get the events in the interval
-        events_in_interval = Events(self.min_num_det, self.max_delta, self.min_snr)
-        for event in self.events:
-            if event.first_trigger_time >= starttime and event.first_trigger_time <= endtime:
-                events_in_interval.append(event)
 
-        return events_in_interval
+    def set_sequential_ids(self):
+        count = len(self.snippets)
+        width = len(str(count)) if count else 1
+        for i, sn in enumerate(self.snippets, 1):
+            sn.id = f"{i:0{width}d}"
+
+    @classmethod
+    def from_hdf(cls, path: str | Path, trim_pad: bool = False) -> "Snippets":
+        """Load a container previously saved via `to_hdf` (zero-padding by default)."""
+        with File(path, "r") as file:
+            station = file.attrs["station"].decode() if isinstance(file.attrs["station"], bytes) else file.attrs["station"]
+            obj = cls(station)
+
+            starts = file['starttime'][:]
+            ids = [x.decode() for x in file['id'][:]]
+            #   max_length = int(file.attrs['max_length'])
+            lengths = file['length'][:]
+
+            dataset = {comp: file[f"waveform_{comp.lower()}"] for comp in components}
+        
+            for i, sid in enumerate(ids):
+                length = int(lengths[i])
+                if trim_pad:
+                    waveform_dict = {comp: dataset[comp][i, :length].astype(float32) for comp in components}
+                else:
+                    waveform_dict = {comp: dataset[comp][i, :].astype(float32) for comp in components}
+
+                sn = Snippet(
+                    starttime=Timestamp(starts[i], tz = 'UTC'),
+                    num_pts=len(waveform_dict['Z']),
+                    waveform=waveform_dict,
+                    id=sid,
+                )
+                obj.append(sn)
+        return obj
     
-    def write_to_file(self, path):
-        with open(path, "w") as fp:
-            fp.write("#\n")
-            fp.write("Parameters\n")
-            fp.write("\n")
-            fp.write("num_of_events min_num_of_detections max_delta min_snr\n")
+    @classmethod
+    def from_triggers(cls, triggers, stream, buffer_start, buffer_end):
+        snippets = cls(stream[0].stats.station)
+        for trigger in triggers:
+            starttime = trigger['time'] - buffer_start
+            endtime = trigger['time'] + trigger['duration'] + buffer_end
+            stream_window = stream.slice(starttime, endtime)
 
-            if self.min_snr is None:
-                fp.write(f"{self.num_event:d} {self.min_num_det:d} {self.max_delta:.3f} None\n")
-            else:
-                fp.write(f"{self.num_event:d} {self.min_num_det:d} {self.max_delta:.3f} {self.min_snr:.1f}\n")
+            waveform_dict = {}
+            for comp in components:
+                waveform_dict[comp] = stream_window.select(component=comp)[0].data
 
-            fp.write("\n")
+            snippets.append(Snippet(
+                starttime,
+                len(waveform_dict['Z']),
+                waveform_dict,
+            ))
 
-            for event in self.events:
-                event.append_to_file(fp)
+        snippets.set_sequential_ids()
+
+        return snippets
+    
+    # -------------------------------------------------------------------------
+    # Persistence
+    # -------------------------------------------------------------------------
+
+    def to_hdf(
+        self,
+        path,
+        *,
+        chunked: bool = False,
+        compression: str | None = None,
+        chunk_rows: int = 256,
+    ):
+        from numpy import full
+
+        num = len(self.snippets)
+        if num == 0:
+            raise RuntimeError("No snippets to save.")
+
+        lengths = fromiter((sn.num_pts for sn in self.snippets), dtype=int32, count=num)
+        max_len = int(lengths.max())
+
+        mats = {comp: zeros((num, max_len), dtype=float32) for comp in components}
+        for i, sn in enumerate(self.snippets):
+            for comp in components:
+                mats[comp][i, :sn.num_pts] = sn.waveform[comp]
+        print(f"Padding the snippets to {max_len} points")
+
+        starts = fromiter((sn.starttime.value for sn in self.snippets), dtype=int64, count=num)
+        max_id = max(len(sn.id) for sn in self.snippets)
+        ids = array([sn.id.encode() for sn in self.snippets], dtype=f"S{max_id}")
+
+        with File(path, "w") as f:
+            f.attrs['station'] = self.station
+            f.attrs['num_snip'] = num
+            f.attrs['max_length'] = max_len
+
+            for comp in components:
+                dset_name = f"waveform_{comp.lower()}"
+                if chunked:
+                    f.create_dataset(
+                        dset_name,
+                        data=mats[comp],
+                        maxshape=(None, max_len),
+                        chunks=(min(chunk_rows, num), max_len),
+                        compression=compression,
+                    )
+                else:
+                    f.create_dataset(dset_name, data=mats[comp])
+            f.create_dataset('starttime', data=starts)
+            f.create_dataset('id', data=ids)
+            f.create_dataset('length', data=lengths)
+
+        layout = 'chunked' if chunked else 'contiguous'
+        print(f"Snippets written to {path} ({layout} layout)")
+
+    # -------------------------------------------------------------------------
+    # Post-processing
+    # -------------------------------------------------------------------------
+
+    # Bin snippets by hour
+    def bin_by_hour(self, starttime_bin : Timestamp, endtime_bin : Timestamp):
+        """Bin the snippets by hour."""
+        # Get the start times of the snippets
+        starttimes = Series(self.get_starttimes())
+
+        # Create the time range of the bin
+        bin_edges = date_range(starttime_bin, endtime_bin, freq="1h")
+        bin_centers = bin_edges[:-1] + (bin_edges[1] - bin_edges[0]) / 2
         
-        print(f"Events are written to {path}")
+        # Bin the snippets by hour
+        starttimes_binned = cut(starttimes, bins=bin_edges, labels=bin_centers)
+
+        # Compute the bin counts
+        bin_counts = starttimes_binned.value_counts(sort=False).reindex(bin_centers, fill_value=1) # Fill the missing bins with 1 beause the results will be plotted in log scale
+
+        # Store the bin counts in a DataFrame
+        bin_count_df = DataFrame({"bin_center": bin_centers, "bin_count": bin_counts})
+
+        return bin_count_df
 
 ### Run the STA/LTA method on the 3C waveforms of a given station at a given time window
 def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigger_type='classicstalta'):
@@ -170,22 +437,22 @@ def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigge
     #### Run the STA/LTA method
     triggers = coincidence_trigger(trigger_type=trigger_type, thr_on=thr_on, thr_off=thr_off, stream=stream, thr_coincidence_sum=thr_coincidence_sum, sta=sta, lta=lta)
 
-    #### Eliminate repeating detections (Why do they exist? Bug reported on Github, 2023-10-17.)
+    #### Eliminate repeating snippets (Why do they exist? Bug reported on Github, 2023-10-17.)
     triggers, numrep = remove_repeating_triggers(triggers)
 
     numdet = len(triggers)
     print("Finished.")
-    print(f"Number of detections: {numdet}. Number of repeating detections removed: {numrep}.")
+    print(f"Number of snippets: {numdet}. Number of repeating snippets removed: {numrep}.")
 
     return triggers
 
 
-### Eliminate repeating STA/LTA detections (Why do they exist? Bug reported on Github, 2023-10-17.)
+### Eliminate repeating STA/LTA snippets (Why do they exist? Bug reported on Github, 2023-10-17.)
 def remove_repeating_triggers(triggers):
 
     numrep = 0
     i = 0
-    print("Eliminating repeating events...")
+    print("Eliminating repeating snippets...")
     while i < len(triggers)-1:
         trigtime1 = triggers[i]['time']
         dur = triggers[i]['duration'] 
@@ -199,14 +466,30 @@ def remove_repeating_triggers(triggers):
     
     return triggers, numrep
 
-### Get the SNR of a given detection
-def get_snr(trigger, stream, snrwin):
+### Generate the lines in a Snuffler pick file from an STA-LTA snippet object
+def snippets_to_snuffler_picks(snippets, seed_id, buffer_start=0.0, buffer_end=0.0):
+    lines = ['# Snuffler Markers File Version 0.2\n']
 
-    starttime_noi = trigger['time'] - snrwin
-    endtime_noi = trigger['time']
+    for snippet in snippets:
+        starttime = snippet['time'] - buffer_start
+        duration = snippet['duration']
+        endtime = starttime + duration + buffer_start + buffer_end
 
-    starttime_sig = trigger['time']
-    endtime_sig = trigger['time'] + snrwin
+        starttime_str = starttime.strftime('%Y-%m-%d %H:%M:%S.%f')
+        endtime_str = endtime.strftime('%Y-%m-%d %H:%M:%S.%f')
+
+        lines.append(f'{starttime_str} {endtime_str} {duration} 0 {seed_id}\n')
+
+    return lines
+
+### Get the SNR of a given snippet
+def get_snr(snippet, stream, snrwin):
+
+    starttime_noi = snippet['time'] - snrwin
+    endtime_noi = snippet['time']
+
+    starttime_sig = snippet['time']
+    endtime_sig = snippet['time'] + snrwin
         
     trace_z = stream.select(channel='GHZ')[0]
     trace_1 = stream.select(channel='GH1')[0]
@@ -246,9 +529,9 @@ def get_snr(trigger, stream, snrwin):
 
     return snr
 
-## Merge the detections from different stations into a single dataframe
+## Merge the snippets from different stations into a single dataframe
 ## separate: if True, each subarray will have its own dataframe
-def merge_station_detections(stadet_dict, separate=True):
+def merge_station_snippets(stadet_dict, separate=True):
     
     if separate:
         detdfs_a = []
@@ -519,76 +802,76 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
 
     return fig, axes
 
-## Read the asscoiated events from a file
-def read_associated_events(path):
-    with open(path, "r") as fp:
-        ### Read the parameters
-        line = fp.readline()
-        if not line[0].startswith("#"):
-            raise ValueError("Error: the format of the parameter information is incorrect!")      
+# ## Read the asscoiated events from a file
+# def read_associated_events(path):
+#     with open(path, "r") as fp:
+#         ### Read the parameters
+#         line = fp.readline()
+#         if not line[0].startswith("#"):
+#             raise ValueError("Error: the format of the parameter information is incorrect!")      
 
-        fp.readline()
-        fp.readline()
-        fp.readline()
+#         fp.readline()
+#         fp.readline()
+#         fp.readline()
 
-        line = fp.readline()
-        params = line.split()
-        numev = int(params[0])
-        numdet_min = int(params[1])
-        delta_max = float(params[2])
+#         line = fp.readline()
+#         params = line.split()
+#         numev = int(params[0])
+#         numdet_min = int(params[1])
+#         delta_max = float(params[2])
         
-        if params[3] == "None":
-            min_snr = None
-        else:
-            min_snr = float(params[3])
+#         if params[3] == "None":
+#             min_snr = None
+#         else:
+#             min_snr = float(params[3])
 
-        fp.readline()
+#         fp.readline()
 
-        ### Read the events
-        events = Events(numdet_min, delta_max, min_snr=min_snr)
+#         ### Read the events
+#         events = Events(numdet_min, delta_max, min_snr=min_snr)
 
-        for _ in range(numev):
-            line = fp.readline()
-            if not line.startswith("##"):
-                raise ValueError("Error: the format of the event information is incorrect!")
+#         for _ in range(numev):
+#             line = fp.readline()
+#             if not line.startswith("##"):
+#                 raise ValueError("Error: the format of the event information is incorrect!")
             
-            line = fp.readline()
-            evname = line.strip()
-            #print(evname)
+#             line = fp.readline()
+#             evname = line.strip()
+#             #print(evname)
 
-            fp.readline()
-            fp.readline()
+#             fp.readline()
+#             fp.readline()
 
-            line = fp.readline()
-            info = line.split()
-            numst = int(info[2])
+#             line = fp.readline()
+#             info = line.split()
+#             numst = int(info[2])
 
-            if info[3] == "None":
-                snrs = None
-            else:
-                snrs = []
+#             if info[3] == "None":
+#                 snrs = None
+#             else:
+#                 snrs = []
 
-            fp.readline()
-            fp.readline()
+#             fp.readline()
+#             fp.readline()
 
-            stations = []
-            trigger_times = []
-            detrigger_times = []
-            for _ in range(numst):
-                line = fp.readline()
-                info = line.split()
-                stations.append(info[0])
-                trigger_times.append(Timestamp(info[1]))
-                detrigger_times.append(Timestamp(info[2]))
+#             stations = []
+#             trigger_times = []
+#             detrigger_times = []
+#             for _ in range(numst):
+#                 line = fp.readline()
+#                 info = line.split()
+#                 stations.append(info[0])
+#                 trigger_times.append(Timestamp(info[1]))
+#                 detrigger_times.append(Timestamp(info[2]))
 
-                if snrs is not None:
-                    snrs.append(float(info[3]))
+#                 if snrs is not None:
+#                     snrs.append(float(info[3]))
 
-            event = AssociatedEvent(evname, stations, trigger_times, detrigger_times, snrs)
-            events.append(event)
+#             event = AssociatedEvent(evname, stations, trigger_times, detrigger_times, snrs)
+#             events.append(event)
 
-            fp.readline()
+#             fp.readline()
 
-    return events
+#     return events
         
 

@@ -14,6 +14,18 @@ def read_normal_markers(inpath):
     
     return pick_df
 
+# Read a list of time windows from a Snuffler picker file
+def read_time_windows(inpath):
+    pick_df = read_csv(inpath, sep=" ", skiprows=1, skipinitialspace=True, header=None)
+    pick_df.drop([5], axis=1, inplace=True)
+    pick_df.columns = ["date_begin", "time_begin", "date_end", "time_end", "duration", "seed_id"]
+    pick_df["starttime"] = to_datetime(pick_df["date_begin"] + " " + pick_df["time_begin"])
+    pick_df["endtime"] = to_datetime(pick_df["date_end"] + " " + pick_df["time_end"])
+    pick_df["station"] = pick_df["seed_id"].str[3:6]
+    pick_df.drop(["date_begin", "date_end", "seed_id"], axis=1, inplace=True)
+    
+    return pick_df
+
 # Parse the picks into different hammer shots
 def parse_hammer_picks(inpath, max_gap_time: float = 1.0):
     pick_df = read_normal_markers(inpath)

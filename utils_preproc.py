@@ -9,7 +9,7 @@ from obspy import read, read_inventory, UTCDateTime, Stream
 from obspy.signal.cross_correlation import correlate_template
 from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 
-from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
+# from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
 from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_BROADBAND, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, BROADBAND_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
 from utils_basic import NUM_SEONCDS_IN_DAY
 from utils_basic import get_broadband_metadata, get_geo_metadata, timestamp_to_utcdatetime, str2list, str2timestamp
@@ -19,6 +19,7 @@ def read_and_process_day_long_geo_waveforms(day,
                                             metadata = None, stations = None, components = None, 
                                             filter = False, zerophase=False, normalize=False,
                                             decimate = False,
+                                            trim_to_day = True,
                                             **kwargs):
     # Check if the decimation factor is specified
     if decimate:
@@ -80,14 +81,15 @@ def read_and_process_day_long_geo_waveforms(day,
                                         decimate = decimate, **kwargs)
 
     # Trim the waveforms to the begin and end of the day
-    sampling_rate = stream_proc[0].stats.sampling_rate
-    starttime = UTCDateTime(day)
-    endtime = starttime + NUM_SEONCDS_IN_DAY - 1 / sampling_rate
-    stream_proc.trim(starttime, endtime, pad = True, fill_value = nan)
+    if trim_to_day:
+        sampling_rate = stream_proc[0].stats.sampling_rate
+        starttime = UTCDateTime(day)
+        endtime = starttime + NUM_SEONCDS_IN_DAY - 1 / sampling_rate
+        stream_proc.trim(starttime, endtime, pad = True, fill_value = nan)
 
-    for trace in stream_proc:
-        if trace.stats.starttime != starttime:
-            trace.stats.starttime = starttime
+        for trace in stream_proc:
+            if trace.stats.starttime != starttime:
+                trace.stats.starttime = starttime
         
     return stream_proc
 
@@ -216,9 +218,7 @@ def read_and_process_windowed_geo_waveforms(starttime,
 
                 if "max_freq" not in kwargs:
                     raise ValueError("Error: max_freq must be specified if filter_type is 'butter'!")
-
-                if "corners" not in kwargs:
-                    raise ValueError("Error: corners must be specified if filter_type is 'butter'!")
+                
             elif filter_type == "peak":
                 if "freq" not in kwargs:
                     raise ValueError("Error: freq must be specified if filter_type is 'peak'!")
@@ -728,6 +728,12 @@ def read_day_long_geo_waveforms(day, station, channel, rootdir=ROOTDIR_GEO):
             except Exception as e:
                 print(f"An error occurred: {e}")
                 return None
+            
+            # Handle the case where there is duplicate data
+            if len(stream) > 1:
+                print(f"Warning: {len(stream)} traces found for {station}.{channel} on {day}!")
+                print(f"Keeping the first trace and discarding the rest!")
+                stream = stream[0]
     
             return stream
 
@@ -817,6 +823,9 @@ def preprocess_geo_stream(stream_in, metadata,
     # Remove the sensitivity
     stream_out = stream_in
     stream_out.remove_sensitivity(inventory=metadata)
+
+    # Correct the channel code
+    stream_out = correct_geo_channel_code(stream_out)
 
     # Reverse the polarity of the vertical components
     stream_out = correct_geo_polarity(stream_out)
@@ -957,6 +966,17 @@ def correct_geo_polarity(stream_in):
             trace.data = -1 * trace.data
 
     return stream_out
+
+## Correct the channel code of a stream object consisting of geophone data
+## Correct the channel codes from "BH*" to "GH*"
+def correct_geo_channel_code(stream_in):
+    stream_out = stream_in
+
+    for trace in stream_out:
+        if trace.stats.channel[:2] == "BH":
+            trace.stats.channel = "GH" + trace.stats.channel[2:]
+
+    return stream_out
                         
 ## Remove the instrument response from a stream object consisting of hydrophone data using the instrument response information from Rob Sohn
 def remove_hydro_response(stream_in):
@@ -974,7 +994,9 @@ def correct_hydro_polarity(stream_in):
     stream_out = stream_in.copy()
 
     for trace in stream_out:
-        if trace.stats.station == "B00" and trace.stats.location == "04":
+        # THE POLARITY OF ALL HYDROPHONES EXCEPT FOR B00.04 APPEAR TO BE REVERSED, NEEDS TO BE CONFIRMED!
+        # 2025-05-21
+        if not (trace.stats.station == "B00" and trace.stats.location == "04"):
             trace.data = -1 * trace.data
 
     return stream_out

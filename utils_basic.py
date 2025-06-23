@@ -16,6 +16,7 @@ from obspy import UTCDateTime, read_inventory
 POWER_FLOOR = 1e-50
 NUM_SEONCDS_IN_DAY = 86400
 BAR = 1e5 # Average barometric pressure
+WATER_SOUND_SPEED = 1500.0 # m/s
 
 ROOTDIR_OTHER = "/proj/mazu/tianze.liu/oman/other_observables"
 ROOTDIR_GEO = "/proj/mazu/tianze.liu/oman/geophones"
@@ -36,6 +37,7 @@ PHYS_DIR = "/proj/mazu/tianze.liu/oman/physical_models"
 VEL_MODEL_DIR = "/proj/mazu/tianze.liu/oman/velocity_models"
 LOC_DIR = "/proj/mazu/tianze.liu/oman/locations"
 TIME_DIR = "/proj/mazu/tianze.liu/oman/times"
+DETECTION_DIR = "/proj/mazu/tianze.liu/oman/detections"
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 PATH_BROADBAND_METADATA = join(ROOTDIR_BROADBAND, "station_metadata.xml")
@@ -57,6 +59,7 @@ HYDRO_DEPTHS = {"01": 30.0, "02": 100.0, "03": 170.0, "04": 240.0, "05": 310.0, 
                 
 ALL_COMPONENTS = ["Z", "1", "2", "H"]
 GEO_COMPONENTS = ["Z", "1", "2"]
+GEO_CHANNELS = ["GHZ", "GH1", "GH2"]
 BROADBAND_COMPONENTS = ["Z", "N", "E"]
 #PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
 PHASE_DIFF_COMPONENT_PAIRS = [("1", "2"), ("1", "Z"), ("2", "Z")]
@@ -123,6 +126,7 @@ STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00", tz="UTC")
 ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59", tz="UTC")
 HAMMER_STARTTIME = Timestamp("2020-01-25T06:00:00", tz="UTC")
 HAMMER_ENDTIME = Timestamp("2020-01-25T15:00:00", tz="UTC")
+HAMMER_DAY = "2020-01-25"
 
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
 DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to microPascals
@@ -268,18 +272,18 @@ def get_borehole_coords():
 # Get the days of the geophone deployment
 def get_geophone_days(timestamp = False):
     inpath = join(ROOTDIR_GEO, "days.csv")
-    days_df = read_csv(inpath)
-    days = days_df["day"].values
-
     if timestamp:
+        days = read_csv(inpath, dtype={"day": "datetime64[D]"})["day"].values
         days = to_datetime(days, utc=True)
+    else:
+        days = read_csv(inpath)["day"].values
 
     return days
 
 # Get the days of the hydrophone deployment
 def get_hydrophone_days(timestamp = False):
     inpath = join(ROOTDIR_HYDRO, "hydrophone_days.csv")
-    days_df = read_csv(inpath)
+    days_df = read_csv(inpath, dtype={"day": "datetime64[D]"})
     days = days_df["day"].values
 
     if timestamp:
@@ -552,3 +556,15 @@ def get_angles_std(angles, axis = 0):
     angle_std = sqrt(mean(angles_diff ** 2, axis = axis))
 
     return angle_std
+
+# Function to convert a geopohone component to a geophone channel
+def geo_component2channel(component):
+    channel = f"GH{component}"
+
+    return channel
+
+# Function to convert a geophone channel to a geophone component
+def geo_channel2component(channel):
+    component = channel.replace("GH", "")
+
+    return component

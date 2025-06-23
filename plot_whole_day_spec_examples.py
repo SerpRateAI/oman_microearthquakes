@@ -32,6 +32,7 @@ parser.add_argument("--max_db", type=float, help="Maximum decibel value", defaul
 parser.add_argument("--window_length", type=float, help="Window length in seconds", default=300.0)
 parser.add_argument("--overlap", type=float, help="Overlap percentage", default=0.0)
 
+
 # Parse the command line inputs
 args = parser.parse_args()
 
