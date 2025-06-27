@@ -47,8 +47,8 @@ parser.add_argument("--max_freq_narrow", type=float, default=2.0, help="The maxi
 parser.add_argument("--freq_highlight", type=float, default=1.0, help="The frequency to highlight in the plots")
 parser.add_argument("--min_db", type=float, default=-10.0, help="The minimum power to plot in dB for the wide-band plot")
 parser.add_argument("--max_db", type=float, default=40.0, help="The maximum power to plot in dB for the wide-band plot")
-parser.add_argument("--freq_ticks_wide", type=int, nargs="+", default=[0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 4.0], help="The frequency ticks for the wide-band plot")
-parser.add_argument("--freq_ticks_narrow", type=int, nargs="+", default=[0.5, 1.0, 2.0], help="The frequency ticks for the narrow-band plot")
+parser.add_argument("--freq_ticks_wide", type=float, nargs="+", default=[0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 4.0], help="The frequency ticks for the wide-band plot")
+parser.add_argument("--freq_ticks_narrow", type=float, nargs="+", default=[0.5, 1.0, 2.0], help="The frequency ticks for the narrow-band plot")
 
 parser.add_argument("--freq_color", type=str, default="tab:orange", help="The color for the frequency")
 parser.add_argument("--temp_color", type=str, default="tab:blue", help="The color for the temperature")
@@ -215,7 +215,7 @@ ax_auto = fig.add_axes([ax_x, ax_y, width_frac, height_frac])
 ax_auto.plot(freqax, aspec_freq, color = freq_color, label = "Frequency", linewidth = linewidth_var)
 ax_auto.plot(freqax, aspec_temp, color = temp_color, label = "Temperature", linewidth = linewidth_var)
 
-legend = ax_auto.legend(loc = "lower left", frameon = True, framealpha = 1.0, fontsize = legend_fontsize, edgecolor = "black")
+legend = ax_auto.legend(loc = "lower left", frameon = True, framealpha = 1.0, fontsize = legend_fontsize)
 ax_auto.set_xscale("log")
 ax_auto.set_xlim(min_freq_wide, max_freq_wide)
 ax_auto.set_ylim(min_db, max_db)
@@ -308,7 +308,7 @@ ax_cohe_narrow.xaxis.set_major_formatter(FixedFormatter(freq_ticklabels_narrow))
 
 ax_cohe_narrow.xaxis.set_minor_locator(NullLocator())
 
-ax_cohe_narrow.set_ylabel("Coherence", fontsize = axis_label_fontsize)
+ax_cohe_narrow.set_ylabel("Squared coherence", fontsize = axis_label_fontsize)
 
 
 ###

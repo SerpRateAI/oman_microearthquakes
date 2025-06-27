@@ -2890,47 +2890,61 @@ def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color
 ###### Functions for adding elements to the plots ######
 
 # Add day-night shading to the plot
-def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray", alpha = 0.5):
+def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray", alpha=0.5):
     # Get the sunrise and sunset times
     if sun_df is None:
         sun_df = get_sunrise_sunset_times()
 
-    # Get the axis limits
-    xlim = ax.get_xlim()
-    xmin = Timestamp(num2date(xlim[0]))
-    xmax = Timestamp(num2date(xlim[1]))
+    # Get the axis limits as Timestamps
+    x0, x1 = ax.get_xlim()
+    xmin = Timestamp(num2date(x0))
+    xmax = Timestamp(num2date(x1))
 
-    # Find the index of the first row where the sunset or sunrise time is greater than the xmin
-    i_start = sun_df[ (sun_df["sunset"] > xmin) | (sun_df["sunrise"] > xmin) ].index[0]
-    # print(i_start)
+    # Precompute next-day’s sunrise
+    sun_df = sun_df.copy()
+    sun_df["sunrise_next"] = sun_df["sunrise"].shift(-1)
 
-    # Find the index of the last row where the sunset or sunrise time is less than the xmax
-    i_end = sun_df[ (sun_df["sunset"] < xmax) | (sun_df["sunrise"] < xmax) ].index[-1]
-    # print(i_end)
-    # Start from the first row where the sunset time is greater than the xmin
-    for i in range(i_start, i_end + 1):
-        sunrise = sun_df.iloc[i]["sunrise"]
-        sunset = sun_df.iloc[i]["sunset"]
-        sunrise_next = sun_df.iloc[i + 1]["sunrise"]
+    # Find the block of rows we actually need
+    mask_start = (sun_df["sunset"] > xmin) | (sun_df["sunrise"] > xmin)
+    mask_end   = (sun_df["sunset"] < xmax) | (sun_df["sunrise"] < xmax)
+    block = sun_df.loc[mask_start & mask_end]
 
-        if i == i_start:
+    if block.empty:
+        return ax
+
+    first_idx = block.index[0]
+    last_idx  = block.index[-1]
+
+    for idx, row in block.iterrows():
+        sunrise      = row["sunrise"]
+        sunset       = row["sunset"]
+        sunrise_next = row["sunrise_next"]
+
+        # FIRST day in range
+        if idx == first_idx:
             if sunrise > xmin:
-                ax.axvspan(xmin, sunrise, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
-                ax.axvspan(sunrise, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
-                ax.axvspan(sunset, sunrise_next, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+                # before first sunrise → night
+                ax.axvspan(xmin, sunrise,              color=night_color, alpha=alpha, zorder=0)
+                ax.axvspan(sunrise, sunset,            color=day_color,   alpha=alpha, zorder=0)
+                ax.axvspan(sunset, sunrise_next,       color=night_color, alpha=alpha, zorder=0)
             else:
-                ax.axvspan(xmin, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
-                ax.axvspan(sunset, sunrise_next, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
-        elif i == i_end:
+                # started during daytime
+                ax.axvspan(xmin, sunset,               color=day_color,   alpha=alpha, zorder=0)
+                ax.axvspan(sunset, sunrise_next,       color=night_color, alpha=alpha, zorder=0)
+
+        # LAST day in range
+        elif idx == last_idx:
             if sunset < xmax:
-                ax.axvspan(sunrise, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
-                ax.axvspan(sunset, xmax, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
+                ax.axvspan(sunrise, sunset,            color=day_color,   alpha=alpha, zorder=0)
+                ax.axvspan(sunset, xmax,               color=night_color, alpha=alpha, zorder=0)
             else:
-                ax.axvspan(sunrise, xmax, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
+                ax.axvspan(sunrise, xmax,               color=day_color,   alpha=alpha, zorder=0)
+
+        # INTERMEDIATE days
         else:
-            ax.axvspan(sunrise, sunset, color=day_color, alpha = alpha, zorder=0, edgecolor=None)
-            ax.axvspan(sunset, sunrise_next, color=night_color, alpha = alpha, zorder=0, edgecolor=None)
-        
+            ax.axvspan(sunrise, sunset,                color=day_color,   alpha=alpha, zorder=0)
+            ax.axvspan(sunset, sunrise_next,           color=night_color, alpha=alpha, zorder=0)
+
     return ax
 
 # Add a station map to the plot

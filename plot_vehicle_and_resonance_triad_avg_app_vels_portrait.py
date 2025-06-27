@@ -1,5 +1,6 @@
 """
 Plot the average apparent velocities of the vehicle and the resonance signals for each station triad in a portrait layout.
+Only the horizontal component with the smallest apparent velocity variance at each triad is plotted.
 """
 
 ###
@@ -8,30 +9,29 @@ Plot the average apparent velocities of the vehicle and the resonance signals fo
 
 from os.path import join
 from argparse import ArgumentParser
-from numpy import interp, nan, sin, cos, pi, linspace, histogram, deg2rad, isnan
-from pandas import DataFrame, Timedelta
-from pandas import read_csv, concat
+from json import loads
+from numpy import isnan, array, inf
+from pandas import DataFrame
+from pandas import read_csv
 from matplotlib.pyplot import figure
-from matplotlib.cm import ScalarMappable
-from rasterio import open
-from rasterio.plot import reshape_as_image
 from matplotlib.colors import Normalize
 from matplotlib import colormaps
 
-from utils_basic import IMAGE_DIR as dirname_img, MT_DIR as dirname_mt, LOC_DIR as dirname_loc
+from utils_basic import IMAGE_DIR as dirname_img, LOC_DIR as dirname_loc
 from utils_basic import GEO_COMPONENTS as components, INNER_STATIONS as inner_stations, MIDDLE_STATIONS as middle_stations, OUTER_STATIONS as outer_stations
 from utils_basic import EASTMIN_WHOLE as min_east, EASTMAX_WHOLE as max_east, NORTHMIN_WHOLE as min_north, NORTHMAX_WHOLE as max_north
 from utils_basic import get_geophone_coords, get_geophone_triads    
 from utils_basic import get_mode_order
+from utils_satellite import load_maxar_image
 from utils_plot import APPARENT_VELOCITY_LABEL as cbar_label
-from utils_plot import add_colorbar, save_figure, format_east_xlabels, format_north_ylabels, plot_station_triads, component2label   
+from utils_plot import add_colorbar, save_figure, format_east_xlabels, format_north_ylabels, plot_station_triads   
 
 ### Inputs ###
 # Command-line arguments
 parser = ArgumentParser(description = "Plot the apparent velocities of station triads of a hammer shot and a stationary resonance in a time window.")
 
 parser.add_argument("--occurrence", type=str, help="The occurrence of the vehicle signal", default="approaching")
-parser.add_argument("--mode_name", type=str, help="The name of the mode", default="fundamental")
+parser.add_argument("--mode_name", type=str, help="The name of the mode", default="PR02549")
 
 parser.add_argument("--window_length_reson", type=float, help="The length of the time window of the resonance signal in seconds", default=900.0)
 parser.add_argument("--min_num_obs_reson", type=int, help="The minimum number of observations of the resonance signal", default=100)
@@ -46,24 +46,16 @@ parser.add_argument("--quiver_head_length", type=float, help="The length of the 
 parser.add_argument("--quiver_linewidth", type=float, help="The linewidth of the quiver", default=0.5)
 
 parser.add_argument("--linewidth_triad", type=float, help="The linewidth of the station triads", default=1.0)
-parser.add_argument("--linewidth_loc", type=float, help="The linewidth of the hammer location", default=0.5)
-parser.add_argument("--markersize", type=float, help="The markersize of the hammer location", default=150.0)
 
 parser.add_argument("--figwidth", type=float, help="The width of the figure", default=10.0)
 parser.add_argument("--margin_x", type=float, help="The margin of the figure", default=0.02)
 parser.add_argument("--margin_y", type=float, help="The margin of the figure", default=0.02)
-parser.add_argument("--wspace", type=float, help="The width of the space between the subplots", default=0.03)
 parser.add_argument("--hspace", type=float, help="The height of the space between the subplots", default=0.02)
-parser.add_argument("--component_label_x", type=float, help="The x coordinate of the component label", default=0.02)
-parser.add_argument("--component_label_y", type=float, help="The y coordinate of the component label", default=0.98)
 
 parser.add_argument("--min_vel_app", type=float, help="The minimum velocity of the apparent velocities", default=0.0)
 parser.add_argument("--max_vel_app", type=float, help="The maximum velocity of the apparent velocities", default=4000.0)
 
 parser.add_argument("--fontsize_title", type=float, help="The fontsize of the title", default=14)
-parser.add_argument("--fontsize_component", type=float, help="The fontsize of the component label", default=12)
-parser.add_argument("--fontsize_suptitle", type=float, help="The fontsize of the suptitle", default=14)
-parser.add_argument("--suptitle_y", type=float, help="The y-coordinate of the suptitle", default=1.08)
 
 parser.add_argument("--cmap_name", type=str, help="The name of the colormap", default="plasma")
 parser.add_argument("--image_alpha", type=float, help="The alpha of the image", default=0.2)
@@ -72,6 +64,10 @@ parser.add_argument("--cbar_width", type=float, help="The width of the colorbar"
 parser.add_argument("--cbar_height", type=float, help="The height of the colorbar", default=0.1)
 parser.add_argument("--cbar_offset_x", type=float, help="The offset of the colorbar", default=0.02)
 parser.add_argument("--cbar_offset_y", type=float, help="The offset of the colorbar", default=0.01)
+
+parser.add_argument("--pannel_label_x", type=float, help="The x coordinate of the pannel label", default=-0.03)
+parser.add_argument("--pannel_label_y", type=float, help="The y coordinate of the pannel label", default=1.03)
+parser.add_argument("--pannel_label_fontsize", type=float, help="The fontsize of the pannel label", default=14)
 
 # Parse the arguments
 args = parser.parse_args()
@@ -86,11 +82,9 @@ max_back_azi_std_vehicle = args.max_back_azi_std_vehicle
 figwidth = args.figwidth
 margin_x = args.margin_x
 margin_y = args.margin_y
-wspace = args.wspace
 hspace = args.hspace
 fontsize_title = args.fontsize_title
-fontsize_suptitle = args.fontsize_suptitle
-suptitle_y = args.suptitle_y
+
 cmap_name = args.cmap_name
 scale_factor = args.scale_factor
 quiver_width = args.quiver_width
@@ -100,22 +94,19 @@ quiver_linewidth = args.quiver_linewidth
 min_vel_app = args.min_vel_app
 max_vel_app = args.max_vel_app
 linewidth_triad = args.linewidth_triad
-linewidth_loc = args.linewidth_loc
-markersize = args.markersize
-component_label_x = args.component_label_x
-component_label_y = args.component_label_y
-fontsize_component = args.fontsize_component
 image_alpha = args.image_alpha
 cbar_width = args.cbar_width
 cbar_height = args.cbar_height
 cbar_offset_x = args.cbar_offset_x
 cbar_offset_y = args.cbar_offset_y
 
+pannel_label_x = args.pannel_label_x
+pannel_label_y = args.pannel_label_y
+pannel_label_fontsize = args.pannel_label_fontsize
+
 ###
 # Constants
 ###
-
-filename_image = "maxar_2019-09-17_local.tif"
 
 ###
 # Read the input files
@@ -145,6 +136,9 @@ vel_vehicle_df = vel_vehicle_df[vel_vehicle_df["station1"].isin(stations_to_plot
                               vel_vehicle_df["station2"].isin(stations_to_plot) &
                               vel_vehicle_df["station3"].isin(stations_to_plot)]
 
+for component in components:
+    vel_vehicle_df[f"app_vel_cov_mat_{component.lower()}"] = vel_vehicle_df[f"app_vel_cov_mat_{component.lower()}"].apply(lambda x: array(loads(x)))
+
 # Load the resonance apparent velocities
 print("Loading the resonance apparent velocities...")
 filename = f"stationary_resonance_station_triad_avg_app_vels_{mode_name}_mt_win{window_length_reson:.0f}s_min_cohe{min_cohe_reson:.2f}_min_num_obs{min_num_obs_reson:d}.csv"
@@ -155,17 +149,11 @@ vel_reson_df = vel_reson_df[vel_reson_df["station1"].isin(stations_to_plot) &
                             vel_reson_df["station2"].isin(stations_to_plot) &
                             vel_reson_df["station3"].isin(stations_to_plot)]
 
+for component in components:
+    vel_reson_df[f"app_vel_cov_mat_{component.lower()}"] = vel_reson_df[f"app_vel_cov_mat_{component.lower()}"].apply(lambda x: array(loads(x)))
+
 # Load the satellite image
-inpath = join(dirname_img, filename_image)
-with open(inpath) as src:
-    # Read the image in RGB format
-    rgb_band = src.read([1, 2, 3])
-
-    # Reshape the image
-    rgb_image = reshape_as_image(rgb_band)
-
-    # Extract the extent of the image
-    extent_img = [src.bounds.left, src.bounds.right, src.bounds.bottom, src.bounds.top]
+rgb_image, extent_img = load_maxar_image()
 
 ###
 # Generate the figure
@@ -174,10 +162,10 @@ with open(inpath) as src:
 # Compute the figure height
 print("Computing the figure height...")
 aspect_map = (max_north - min_north) / (max_east - min_east)
-figheight = figwidth * aspect_map * (1 - 2 * margin_x - wspace) * 3 / 2 / (1 - 2 * margin_y - 2 * hspace)
+figheight = figwidth * (1 - 2 * margin_x) * aspect_map * 2 / (1 - 2 * margin_y - hspace)
 
-map_width = (1 - 2 * margin_x - wspace) / 2
-map_height = (1 - 2 * margin_y - 2 * hspace) / 3
+frac_map_width = 1 - 2 * margin_x
+frac_map_height = (1 - 2 * margin_y - hspace) / 2
 
 # Create the figure
 print("Creating the figure...")
@@ -188,176 +176,194 @@ norm = Normalize(vmin = min_vel_app, vmax = max_vel_app)
 cmap = colormaps[cmap_name]
 
 ###
-# Plot the vehicle apparent velocities on the first column
+# Plot the vehicle apparent velocities on the bottom row
 ###
 
 # Plot the vehicle apparent velocities
 print("Plotting the vehicle apparent velocities...")
 
-for i, component in enumerate(components):
-    print(f"Plotting the {component} component...")
+left = margin_x
+bottom = margin_y
+width = frac_map_width
+height = frac_map_height
 
-    left = margin_x
-    bottom = 1 - margin_y - map_height - i * (map_height + hspace)
-    width = map_width
-    height = map_height
+ax = fig.add_axes([left, bottom, width, height])
 
-    ax = fig.add_axes([left, bottom, width, height])
+# Plot the satellite image
+ax.imshow(rgb_image, extent = extent_img, alpha = image_alpha)
 
-    # Plot the satellite image
-    ax.imshow(rgb_image, extent = extent_img, alpha = image_alpha)
+# Plot the vehicle apparent velocities
+triads_to_plot_dicts = []
+for _, row in vel_vehicle_df.iterrows():
+    station1 = row["station1"]
+    station2 = row["station2"]
+    station3 = row["station3"]
 
-    # Plot the vehicle apparent velocities
-    print("Plotting the vehicle apparent velocities...")
-    triads_to_plot_dicts = []
-    for _, row in vel_vehicle_df.iterrows():
-        station1 = row["station1"]
-        station2 = row["station2"]
-        station3 = row["station3"]
-
-        east = triad_df.loc[(triad_df["station1"] == station1) &
+    east = triad_df.loc[(triad_df["station1"] == station1) &
+                        (triad_df["station2"] == station2) &
+                        (triad_df["station3"] == station3), "east"].values[0]
+    north = triad_df.loc[(triad_df["station1"] == station1) &
                             (triad_df["station2"] == station2) &
-                            (triad_df["station3"] == station3), "east"].values[0]
-        north = triad_df.loc[(triad_df["station1"] == station1) &
-                             (triad_df["station2"] == station2) &
-                             (triad_df["station3"] == station3), "north"].values[0]
+                            (triad_df["station3"] == station3), "north"].values[0]
 
+    # Find the horizontal component with the smallest apparent velocity variance
+    for i, component in enumerate(["1", "2"]):
         vel_app = row[f"avg_app_vel_{component.lower()}"]
         vel_app_east = row[f"avg_app_vel_east_{component.lower()}"]
         vel_app_north = row[f"avg_app_vel_north_{component.lower()}"]
+        back_azi = row[f"avg_back_azi_{component.lower()}"]
+        cov_mat = row[f"app_vel_cov_mat_{component.lower()}"]
 
-        if isnan(vel_app):
+        if isnan(vel_app_east):
+            min_app_vel_var = inf
             continue
 
-        triads_to_plot_dicts.append(dict(station1 = row["station1"], station2 = row["station2"], station3 = row["station3"]))
+        # Calculate apparent velocity variance from covariance matrix
+        app_vel_var = cov_mat[0,0] + cov_mat[1,1]
 
-        vec_east = vel_app_east / vel_app
-        vec_north = vel_app_north / vel_app
-        ax.quiver(east, north, vec_east, vec_north, vel_app,
-                  cmap = cmap, norm = norm,
-                  scale = scale_factor, width = quiver_width,
-                  headwidth = quiver_head_width, headlength = quiver_head_length,
-                  linewidth = quiver_linewidth,
-                  zorder = 2)
-        
-    # Plot the station triads
-    print("Plotting the station triads...")
-    triads_to_plot_df = DataFrame(triads_to_plot_dicts)
-    plot_station_triads(ax, linewidth = linewidth_triad, linecolor = "gray", triads_to_plot = triads_to_plot_df, zorder = 1)
+        if i == 0:
+            min_app_vel_var = app_vel_var
+            vec_east = vel_app_east / vel_app
+            vec_north = vel_app_north / vel_app
+            vec_amp = vel_app
+            back_azi_plot = back_azi
+        else:
+            if app_vel_var < min_app_vel_var:
+                min_app_vel_var = app_vel_var
+                vec_east = vel_app_east / vel_app
+                vec_north = vel_app_north / vel_app
+                vec_amp = vel_app
+                back_azi_plot = back_azi
 
-    # Set the x and y limits
-    ax.set_xlim(min_east, max_east)
-    ax.set_ylim(min_north, max_north)
+    triads_to_plot_dicts.append({"station1": station1, "station2": station2, "station3": station3})
+
+    ax.quiver(east, north, vec_east, vec_north, vec_amp,
+                cmap = cmap, norm = norm,
+                scale = scale_factor, width = quiver_width,
+                headwidth = quiver_head_width, headlength = quiver_head_length,
+                linewidth = quiver_linewidth,
+                zorder = 2)
     
-    # Set the x and y labels
-    if i == 2:
-        format_east_xlabels(ax)
-    else:
-        format_east_xlabels(ax, plot_axis_label = False, plot_tick_label = False)
+# Plot the station triads
+print("Plotting the station triads...")
+triads_to_plot_df = DataFrame(triads_to_plot_dicts)
+plot_station_triads(ax, linewidth = linewidth_triad, linecolor = "gray", triads_to_plot = triads_to_plot_df, zorder = 1)
 
-    format_north_ylabels(ax)
+# Add the pannel label
+ax.text(pannel_label_x, pannel_label_y, "(b)",
+        transform = ax.transAxes,
+        fontsize = pannel_label_fontsize, fontweight = "bold", va = "top", ha = "right")
 
-    # Add the component label
-    label = component2label(component)
-    ax.text(component_label_x, component_label_y, label,
-            transform = ax.transAxes,
-            fontsize = fontsize_component, fontweight = "bold", va = "top", ha = "left", bbox = dict(facecolor = "white", alpha = 1.0))
+# Set the x and y limits
+ax.set_xlim(min_east, max_east)
+ax.set_ylim(min_north, max_north)
 
-    # Add the title
-    if i == 0:
-        title = f"{occurrence.capitalize()} vehicle"
-        ax.set_title(title, fontsize = fontsize_title, fontweight = "bold")
+# Set the x and y labels
+format_east_xlabels(ax)
+format_north_ylabels(ax)
 
-    # Add the colorbar to the bottom left corner
-    if i == 2:
-        bbox = ax.get_position()
-        pos = [bbox.x0 + cbar_offset_x, bbox.y0 + cbar_offset_y, cbar_width, cbar_height]
-        add_colorbar(fig, pos, cbar_label,
-                     cmap = cmap, norm = norm)
+# Add the title
+title = f"{occurrence.capitalize()} vehicle"
+ax.set_title(title, fontsize = fontsize_title, fontweight = "bold")
+
+# Add the colorbar to the bottom left corner
+bbox = ax.get_position()
+pos = [bbox.x0 + cbar_offset_x, bbox.y0 + cbar_offset_y, cbar_width, cbar_height]
+add_colorbar(fig, pos, cbar_label,
+                cmap = cmap, norm = norm)
 
 ###
-# Plot the resonance apparent velocities on the second column
+# Plot the resonance apparent velocities on the top row
 ###
 
 # Plot the apparent velocities of the resonance
 print("Plotting the apparent velocities of the resonance...")
 
-for i, component in enumerate(components):
-    print(f"Plotting the {component} component...")
+left = margin_x
+bottom = margin_y + frac_map_height + hspace
+width = frac_map_width
+height = frac_map_height
 
-    left = margin_x + map_width + wspace
-    bottom = 1 - margin_y - map_height - i * (map_height + hspace)
-    width = map_width
-    height = map_height
+ax = fig.add_axes([left, bottom, width, height])
 
-    ax = fig.add_axes([left, bottom, width, height])
+# Plot the satellite image
+ax.imshow(rgb_image, extent = extent_img, alpha = image_alpha)
 
-    # Plot the satellite image
-    ax.imshow(rgb_image, extent = extent_img, alpha = image_alpha)
+# Plot the apparent velocities of the resonance
+triads_to_plot_dicts = []
+for _, row in vel_reson_df.iterrows():
+    station1 = row["station1"]
+    station2 = row["station2"]
+    station3 = row["station3"]
 
-    # Plot the apparent velocities of the resonance
-    print("Plotting the apparent velocities of the resonance...")
-    triads_to_plot_dicts = []
-    for _, row in vel_reson_df.iterrows():
+    east = triad_df.loc[(triad_df["station1"] == station1) &
+                        (triad_df["station2"] == station2) &
+                        (triad_df["station3"] == station3), "east"].values[0]
+    north = triad_df.loc[(triad_df["station1"] == station1) &
+                            (triad_df["station2"] == station2) &
+                            (triad_df["station3"] == station3), "north"].values[0]
+    
+    # Find the horizontal component with the smallest apparent velocity variance
+    for i, component in enumerate(["1", "2"]):
         vel_app = row[f"avg_app_vel_{component.lower()}"]
         vel_app_east = row[f"avg_app_vel_east_{component.lower()}"]
         vel_app_north = row[f"avg_app_vel_north_{component.lower()}"]
         back_azi = row[f"avg_back_azi_{component.lower()}"]
-        station1 = row["station1"]
-        station2 = row["station2"]
-        station3 = row["station3"]
+        cov_mat = row[f"app_vel_cov_mat_{component.lower()}"]
 
-        if isnan(vel_app):  
+        if isnan(vel_app_east):
+            min_app_vel_var = inf
             continue
 
-        east = triad_df.loc[(triad_df["station1"] == station1) &
-                            (triad_df["station2"] == station2) &
-                            (triad_df["station3"] == station3), "east"].values[0]
-        north = triad_df.loc[(triad_df["station1"] == station1) &
-                             (triad_df["station2"] == station2) &
-                             (triad_df["station3"] == station3), "north"].values[0]
+        # Calculate apparent velocity variance from covariance matrix
+        app_vel_var = cov_mat[0,0] + cov_mat[1,1]
 
-        triads_to_plot_dicts.append(dict(station1 = station1, station2 = station2, station3 = station3))
+        if i == 0:
+            min_app_vel_var = app_vel_var
+            vec_east = vel_app_east / vel_app
+            vec_north = vel_app_north / vel_app
+            vec_amp = vel_app
+            back_azi_plot = back_azi
+        else:
+            if app_vel_var < min_app_vel_var:
+                min_app_vel_var = app_vel_var
+                vec_east = vel_app_east / vel_app
+                vec_north = vel_app_north / vel_app
+                vec_amp = vel_app
+                back_azi_plot = back_azi
 
-        vec_east = sin(deg2rad(back_azi))
-        vec_north = cos(deg2rad(back_azi))
+    triads_to_plot_dicts.append({"station1": station1, "station2": station2, "station3": station3})
 
-        # Plot the apparent velocity
-        ax.quiver(east, north, vec_east, vec_north, vel_app,
-                  cmap = cmap, norm = norm,
-                  scale = scale_factor, width = quiver_width,
-                  headwidth = quiver_head_width, headlength = quiver_head_length,
-                  linewidth = quiver_linewidth,
-                  zorder = 2)
+    # Plot the apparent velocity
+    ax.quiver(east, north, vec_east, vec_north, vec_amp,
+                cmap = cmap, norm = norm,
+                scale = scale_factor, width = quiver_width,
+                headwidth = quiver_head_width, headlength = quiver_head_length,
+                linewidth = quiver_linewidth,
+                zorder = 2)
 
-    # Plot the station triads
-    print("Plotting the station triads...")
-    triads_to_plot_df = DataFrame(triads_to_plot_dicts)
-    plot_station_triads(ax, linewidth = linewidth_triad, linecolor = "gray", triads_to_plot = triads_to_plot_df, zorder = 1)
+# Plot the station triads
+print("Plotting the station triads...")
+triads_to_plot_df = DataFrame(triads_to_plot_dicts)
+plot_station_triads(ax, linewidth = linewidth_triad, linecolor = "gray", triads_to_plot = triads_to_plot_df, zorder = 1)
 
-    # Set the x and y limits
-    ax.set_xlim(min_east, max_east)
-    ax.set_ylim(min_north, max_north)
-    
-    # Set the x and y labels
-    if i == 2:
-        format_east_xlabels(ax)
-    else:
-        format_east_xlabels(ax, plot_axis_label = False, plot_tick_label = False)
+# Add the pannel label
+ax.text(pannel_label_x, pannel_label_y, "(a)",
+        transform = ax.transAxes,
+        fontsize = pannel_label_fontsize, fontweight = "bold", va = "top", ha = "right")
 
-    format_north_ylabels(ax, plot_axis_label = False, plot_tick_label = False)
+# Set the x and y limits
+ax.set_xlim(min_east, max_east)
+ax.set_ylim(min_north, max_north)
 
-    # Add the component label
-    label = component2label(component)
-    ax.text(component_label_x, component_label_y, label,
-            transform = ax.transAxes,
-            fontsize = fontsize_component, fontweight = "bold", va = "top", ha = "left", bbox = dict(facecolor = "white", alpha = 1.0))
+# Set the x and y labels
+format_east_xlabels(ax, plot_axis_label = False, plot_tick_label = False)
+format_north_ylabels(ax)
 
-    # Add the title
-    if i == 0:
-        mode_order = get_mode_order(mode_name)
-        title = f"Mode {mode_order}"
-        ax.set_title(title, fontsize = fontsize_title, fontweight = "bold")
+# Add the title
+mode_order = get_mode_order(mode_name)
+title = f"Mode {mode_order}"
+ax.set_title(title, fontsize = fontsize_title, fontweight = "bold")
 
 ###
 # Save the figure

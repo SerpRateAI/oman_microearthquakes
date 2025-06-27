@@ -38,6 +38,7 @@ VEL_MODEL_DIR = "/proj/mazu/tianze.liu/oman/velocity_models"
 LOC_DIR = "/proj/mazu/tianze.liu/oman/locations"
 TIME_DIR = "/proj/mazu/tianze.liu/oman/times"
 DETECTION_DIR = "/proj/mazu/tianze.liu/oman/detections"
+PLOTTING_DIR = "/proj/mazu/tianze.liu/oman/plotting"
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 PATH_BROADBAND_METADATA = join(ROOTDIR_BROADBAND, "station_metadata.xml")

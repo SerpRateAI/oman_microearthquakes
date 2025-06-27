@@ -1840,8 +1840,8 @@ def read_geo_stft(inpath, time_labels = None, starttime = None, endtime = None, 
         else:
             # Option 2: Read the STFT of a specific time range
             # Convert the start and end times to Timestamp objects
-            starttime_to_read = str2timestamp(starttime)
-            endtime_to_read = str2timestamp(endtime)
+            starttime_to_read = Timestamp(starttime, tz = "UTC")
+            endtime_to_read = Timestamp(endtime, tz = "UTC")
 
             # Check the start time is greater than the end time
             if starttime_to_read > endtime_to_read:

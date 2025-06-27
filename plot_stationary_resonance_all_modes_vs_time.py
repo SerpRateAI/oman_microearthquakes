@@ -9,8 +9,7 @@ from pandas import read_csv, read_hdf
 from matplotlib.pyplot import subplots
 from matplotlib.colors import Normalize
 from matplotlib.cm import ScalarMappable
-
-import colorcet as cc
+from matplotlib import colormaps
 
 from utils_basic import SPECTROGRAM_DIR as indir, STARTTIME_GEO as starttime, ENDTIME_GEO as endtime
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix
@@ -38,7 +37,7 @@ min_rbw = args.min_rbw
 max_mean_db = args.max_mean_db
 
 # Constants
-cmap_name = "isolum"
+cmap_name = "bmy"
 min_mean_freq = 0.0
 max_mean_freq = 200.0
 
@@ -48,8 +47,8 @@ figheight = 15.0
 axis_label_size = 12
 tick_label_size = 10
 
-mode_label_x = 0.005
-mode_label_y = 0.95
+mode_label_x = 0.008
+mode_label_y = 0.90
 mode_label_size = 12
 
 marker_size = 3
@@ -78,7 +77,8 @@ print("Generating the subplots...")
 fig, axes = subplots(nrows = num_plot, ncols = 1, figsize = (figwidth, figheight), sharex = True)
 
 # Generate the color map
-cmap = cc.cm.isolum
+cmap_name = f"cet_{cmap_name}"
+cmap = colormaps[cmap_name]
 norm = Normalize(vmin = min_mean_freq, vmax = max_mean_freq)
 
 # Plot each mode
@@ -106,15 +106,22 @@ for i, row in harmo_df.iterrows():
     color = cmap(norm(mean_freq))
     ax.scatter(times, freqs, color = color, s = marker_size)
 
+    # Set the x-axis limits
+    ax.set_xlim(starttime, endtime)
+
     # Add the day-night shading
     print("Adding the day-night shading...")
-    add_day_night_shading(ax)
+    add_day_night_shading(ax, night_color = "gray")
 
     # Add the mode label
     if i == 0:
-        ax.text(mode_label_x, mode_label_y, f"Mode {mode_order}", transform = ax.transAxes, ha = "left", va = "top", fontsize = mode_label_size, fontweight = "bold")
+        ax.text(mode_label_x, mode_label_y, f"Mode {mode_order}", 
+                transform = ax.transAxes, ha = "left", va = "top", fontsize = mode_label_size, fontweight = "bold",
+                bbox = dict(facecolor = "white", alpha = 1.0, edgecolor = "black"))
     else:
-        ax.text(mode_label_x, mode_label_y, f"{mode_order}", transform = ax.transAxes, ha = "left", va = "top", fontsize = mode_label_size, fontweight = "bold")
+        ax.text(mode_label_x, mode_label_y, f"{mode_order}", 
+                transform = ax.transAxes, ha = "left", va = "top", fontsize = mode_label_size, fontweight = "bold",
+                bbox = dict(facecolor = "white", alpha = 1.0, edgecolor = "black"))
 
 # Set the axis limits
 # axes[num_plot - 1].set_xlim(starttime, endtime)

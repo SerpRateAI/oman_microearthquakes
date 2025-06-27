@@ -6,7 +6,7 @@ from pandas import date_range
 from pandas import Timedelta, Timestamp
 
 from utils_basic import SPECTROGRAM_DIR
-from utils_basic import power2db, reltimes_to_timestamps
+from utils_basic import power2db, reltimes_to_datetimes
 from utils_preproc import read_and_process_day_long_geo_waveforms
 from utils_spec import StreamSTFTPSD, TraceSTFTPSD, StreamSTFT, TraceSTFT
 from utils_spec import downsample_stft_stream_freq
@@ -111,27 +111,27 @@ from utils_spec import downsample_stft_stream_freq
 # Window length is in SECONDS!
 # The new version of the function returns a StreamSTFT object containing both the complex coefficients and the PSD, 2024-09-17
 # Downsample option is no longer available
-def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, resample_in_parallel = False, **kwargs):
+# def get_daily_geo_spectrograms(stream_day, window_length = 60.0, overlap = 0.0, cuda = False, resample_in_parallel = False, **kwargs):
 
-    if resample_in_parallel and "num_process_resample" not in kwargs:
-        raise ValueError("Error: Number of processes is not given!")
+#     if resample_in_parallel and "num_process_resample" not in kwargs:
+#         raise ValueError("Error: Number of processes is not given!")
     
-    # Compute the spectrograms
-    print(f"Computing the spectrograms...")
-    stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap = overlap, cuda = cuda)
+#     # Compute the spectrograms
+#     print(f"Computing the spectrograms...")
+#     stream_spec = get_stream_spectrograms(stream_day, window_length = window_length, overlap = overlap, cuda = cuda)
     
-    # Pad and resample the spectrograms to the begin and end of the day
-    print(f"Resampling the spectrograms to the begin and end of the day...")
-    if resample_in_parallel:
-        num_process = kwargs["num_process_resample"]
-        stream_spec.resample_to_day(parallel = True, num_process = num_process)
-    else:
-        stream_spec.resample_to_day(parallel = False)
+#     # Pad and resample the spectrograms to the begin and end of the day
+#     print(f"Resampling the spectrograms to the begin and end of the day...")
+#     if resample_in_parallel:
+#         num_process = kwargs["num_process_resample"]
+#         stream_spec.resample_to_day(parallel = True, num_process = num_process)
+#     else:
+#         stream_spec.resample_to_day(parallel = False)
 
-    # Set the time labels
-    stream_spec.set_time_labels(block_type = "daily")
+#     # Set the time labels
+#     stream_spec.set_time_labels(block_type = "daily")
 
-    return stream_spec
+#     return stream_spec
 
 # Compute the STFT with both power and phase information of a day-long stream object
 # Window length is in SECONDS!
@@ -240,7 +240,7 @@ def get_trace_stft(trace, window_length = 1.0, overlap = 0.0):
     num_time = psd_mat.shape[1]
     time_interval = hop_length / sampling_rate
     # timeax = linspace(0, (num_time - 1) * time_interval, num_time)
-    starttime_left = Timestamp(trace.stats.starttime.datetime)
+    starttime_left = Timestamp(starttime)
     starttime_center = starttime_left + Timedelta(seconds = window_length / 2)
     timeax = date_range(start = starttime_center, periods = num_time, freq = f"{time_interval}s")
 

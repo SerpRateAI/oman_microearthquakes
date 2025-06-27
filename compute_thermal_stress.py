@@ -59,10 +59,17 @@ parser.add_argument('--sigma', type=float, default=0.25, help='Poisson ratio')
 parser.add_argument('--vp', type=float, default=4000.0, help='The P-wave velocity in m/s')
 parser.add_argument('--rho', type=float, default=2500.0, help='The density in kg/m^3')
 parser.add_argument('--temp', type=float, default=10.0, help='The amplitude of surface temperature variation')
+
 parser.add_argument('--max_depth', type=float, default=1000.0, help='The maximum depth to consider')
 parser.add_argument('--num_depths', type=int, default=100, help='The number of depths to consider')
 parser.add_argument('--min_frac', type=float, default=1e-4, help='The minimum fractional change in pressure to consider')
 parser.add_argument('--max_frac', type=float, default=1, help='The maximum fractional change in pressure to consider')
+parser.add_argument('--min_frac_highlight', type=float, default=1e-3, help='The minimum fractional change in pressure to highlight')
+parser.add_argument('--max_frac_highlight', type=float, default=1e-2, help='The maximum fractional change in pressure to highlight')
+parser.add_argument('--min_depth_highlight', type=float, default=15.0, help='The minimum depth to highlight')
+parser.add_argument('--max_depth_highlight', type=float, default=150.0, help='The maximum depth to highlight')
+parser.add_argument('--color_highlight', type=str, default='crimson', help='The color of the highlight')
+parser.add_argument('--linewidth_highlight', type=float, default=2.0, help='The linewidth of the highlight')
 
 parser.add_argument('--figwidth', type=float, default=8.0, help='The width of the figure')
 parser.add_argument('--figheight', type=float, default=8.0, help='The height of the figure')
@@ -97,6 +104,12 @@ fontsize_axis_label = args.fontsize_axis_label
 fontsize_tick_label = args.fontsize_tick_label
 fontsize_legend = args.fontsize_legend
 fontsize_title = args.fontsize_title
+min_frac_highlight = args.min_frac_highlight
+max_frac_highlight = args.max_frac_highlight
+min_depth_highlight = args.min_depth_highlight
+max_depth_highlight = args.max_depth_highlight
+color_highlight = args.color_highlight
+linewidth_highlight = args.linewidth_highlight
 
 ###
 # Constants
@@ -176,7 +189,9 @@ for i, lamb in enumerate(lambs):
     # epsilons_yy = epsilons_yy_dict[lamb]
     epsilons_xx = epsilons_xx_simple_dict[lamb]
     epsilons_yy = epsilons_yy_simple_dict[lamb]
-    ax.plot(epsilons_xx, depths, color=color, linewidth=linewidth, linestyle='--', label=f'${lamb:.0f}$ m')
+
+    log_lamb = log10(lamb)
+    ax.plot(epsilons_xx, depths, color=color, linewidth=linewidth, linestyle='--', label=f'$10^{{{log_lamb:.0f}}}$')
     ax.plot(epsilons_yy, depths, color=color, linewidth=linewidth, linestyle=':')
 
 # Set the axes to log scale
@@ -226,13 +241,8 @@ for i, lamb in enumerate(lambs):
     # Plot the results
     fracs = frac_dict[lamb]
     fracs_simple = frac_simple_dict[lamb]
-    ax.plot(fracs, depths, color=color, linewidth=linewidth, label=f'${lamb:.0f}$ m')
-    # ax.plot(fracs_simple, depths, color=color, linewidth=linewidth, linestyle='--')
-
-    # # Plot the thermal boundary layer thickness
-    # h = abs(1 / gamma)
-    # patch = Rectangle((min_frac, min_depth), max_frac - min_frac, h, color='black', alpha=0.1)
-    # ax.add_patch(patch)
+    log_lamb = log10(lamb)
+    ax.plot(fracs, depths, color=color, linewidth=linewidth, label=f'$10^{{{log_lamb:.0f}}}$ m')
 
 # Set the axes to log scale
 ax.set_xscale('log')
@@ -258,8 +268,12 @@ legend = ax.legend(loc='lower right',
 legend.set_title('Wavelength', prop={'size': fontsize_legend, 'weight': 'bold'})
 
 # Set the title
-ax.set_title(f'Thermoelastic-stress induced pressure perturbations', 
+ax.set_title(f'Thermoelastic-stress-induced pressure perturbations', 
              fontsize=fontsize_title, fontweight='bold')
+
+# Add the highlight
+patch = Rectangle((min_frac_highlight, min_depth_highlight), max_frac_highlight - min_frac_highlight, max_depth_highlight - min_depth_highlight, edgecolor=color_highlight, facecolor="none", linewidth=linewidth_highlight, zorder=10)
+ax.add_patch(patch)
 
 # Save the figure
 figname = f'thermoelastic_pressure_perturbations.png'

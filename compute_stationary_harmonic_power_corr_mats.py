@@ -20,6 +20,8 @@ from utils_plot import add_colorbar, save_figure
 parser = ArgumentParser(description='Plot the average power correlation matrix of different stationary harmonic modes')
 parser.add_argument("--base_mode", type=str, default="PR02549", help="Base name of the harmonic series.")
 parser.add_argument("--base_order", type=int, default=2, help="Harmonic number of the base frequency.")
+parser.add_argument("--mode_orders_to_avg", type=int, default=[2, 3, 4, 6, 9, 10, 12, 13, 14, 15], nargs="+", help="Mode orders to average across all available stations.")
+
 parser.add_argument("--min_num_window", type=int, default=10, help="Minimum number of time windows for computing the correlation values.")
 parser.add_argument("--min_num_station", type=int, default=5, help="Minimum number of stations for computing the correlation values.")
 
@@ -46,6 +48,8 @@ order_label_offset = -0.3
 args = parser.parse_args()
 base_mode = args.base_mode
 base_order = args.base_order
+mode_orders_to_avg = args.mode_orders_to_avg
+
 min_num_window = args.min_num_window
 min_num_station = args.min_num_station
 
@@ -60,6 +64,7 @@ print("###")
 print("Plotting the average power correlation matrix of different stationary harmonic modes.")
 print(f"Base name of the harmonic series: {base_mode}.")
 print(f"Harmonic number of the base frequency: {base_order:d}.")
+print(f"Mode orders to average across all available stations: {mode_orders_to_avg}.")
 print(f"Minimum number of time windows for computing the correlation values: {min_num_window:d}.")
 
 ### Read the harmonic series ###
@@ -191,17 +196,14 @@ save_figure(fig, filename)
 print("Computing the average correlation matrix...")
 
 # Read the list of mode numbers whose power correlatios are to be averaged across all available stations
-filename = f"stationary_harmonic_avg_corr_mat_modes_{base_mode}_base{base_order}.csv"
-filepath = join(indir, filename)
-avg_corr_modes_df = read_csv(filepath)
-num_harmonics_to_avg = avg_corr_modes_df.shape[0]
+num_harmonics_to_avg = len(mode_orders_to_avg)
 
 avg_corr_mat = zeros((num_harmonics_to_avg, num_harmonics_to_avg))
 
 avg_corr_dicts = []
-for i, mode_i_order in enumerate(avg_corr_modes_df["mode_order"]):
-    for j in range(i + 1, len(avg_corr_modes_df)):
-        mode_j_order = avg_corr_modes_df["mode_order"][j]
+for i, mode_i_order in enumerate(mode_orders_to_avg):
+    for j in range(i + 1, len(mode_orders_to_avg)):
+        mode_j_order = mode_orders_to_avg[j]
 
         # Extract the correlation values
         corr_values = sta_corr_df[(sta_corr_df["mode_i_order"] == mode_i_order) & (sta_corr_df["mode_j_order"] == mode_j_order)]["correlation"].values
@@ -225,7 +227,7 @@ avg_corr_df = DataFrame(avg_corr_dicts)
 print("Saving the average correlation data frame...")
 filename = f"stationary_harmonic_avg_power_corr_{base_mode}_base{base_order}_{suffix_spec}_{suffix_peak}.csv"
 filepath = join(indir, filename)
-avg_corr_df.to_csv(filepath, na_rep="nan")
+avg_corr_df.to_csv(filepath, na_rep="nan", index=False)
 print(f"Average correlation data frame saved to {filepath}.")
 
 # Fill the lower triangular part
@@ -244,7 +246,7 @@ ax.set_yticklabels([])
 
 # Add the mode labels
 for i in range(num_harmonics_to_avg):
-    mode_order = avg_corr_modes_df["mode_order"][i]
+    mode_order = mode_orders_to_avg[i]
     ax.text(order_label_offset, i, f"Mode {mode_order:d}", ha="right", va="center", fontweight="bold", fontsize=10)
     
 # Add a colorbar
@@ -255,7 +257,7 @@ add_colorbar(fig, position, "Correlation",
 
 # Save the figure
 print("Saving the figure...")
-filename = f"stationary_harmonic_average_geo_corr_mat_{base_mode}_base{base_order}_{suffix_spec}_{suffix_peak}.png"
+filename = f"stationary_harmonic_avg_geo_corr_mat_{base_mode}_base{base_order}_{suffix_spec}_{suffix_peak}.png"
 save_figure(fig, filename)
 
 

@@ -1,6 +1,6 @@
 # Plot station maps, hydrophone depth profiles, and 3C spectra of a geophone station for Liu et al. (2025a)
 from os.path import join
-from numpy import cos, pi, linspace, isnan, nan
+from numpy import cos, pi, linspace, isnan, nan, amax
 
 
 from argparse import ArgumentParser
@@ -27,6 +27,7 @@ from utils_basic import CENTER_LONGITUDE as lon, CENTER_LATITUDE as lat
 from utils_basic import IMAGE_DIR as dir_img
 from utils_basic import get_geophone_coords, get_borehole_coords, str2timestamp
 from utils_basic import INNER_STATIONS as inner_stations, MIDDLE_STATIONS as middle_stations, OUTER_STATIONS as outer_stations
+from utils_basic import PLOTTING_DIR as dir_plot
 from utils_basic import power2db
 from utils_spec import get_spectrogram_file_suffix, get_spec_peak_file_suffix, read_time_slice_from_geo_stft
 from utils_satellite import load_maxar_image
@@ -60,9 +61,11 @@ parser.add_argument("--legend_size", type=float, default=12.0, help="Font size o
 parser.add_argument("--location_font_size", type=float, default=15.0, help="Font size of the location labels.")
 parser.add_argument("--arrow_gap", type=float, default=5.0, help="Gap between the arrow and the text.")
 parser.add_argument("--arrow_length", type=float, default=10.0, help="Length of the arrow.")
-parser.add_argument("--arrow_width", type=float, default=0.01, help="Width of the arrow.")
+parser.add_argument("--arrow_width_fancy", type=float, default=0.01, help="Width of the fancy arrow.")
+parser.add_argument("--arrow_width_simple", type=float, default=1.5, help="Width of the simple arrow.")
 parser.add_argument("--arrow_head_width", type=float, default=5.0, help="Width of the arrow head.")
 parser.add_argument("--arrow_head_length", type=float, default=5.0, help="Length of the arrow head.")
+parser.add_argument("--delta_f", type=float, default=12.75, help="Mode spacing in Hz.")
 
 parser.add_argument("--linewidth_marker", type=float, default=1.0, help="Line width of the markers.")
 parser.add_argument("--linewidth_highlight", type=float, default=2.0, help="Line width of the highlighted markers.")
@@ -110,9 +113,11 @@ legend_size = args.legend_size
 
 arrow_gap = args.arrow_gap
 arrow_length = args.arrow_length
-arrow_width = args.arrow_width
+arrow_width_fancy = args.arrow_width_fancy
+arrow_width_simple = args.arrow_width_simple
 arrow_head_width = args.arrow_head_width
 arrow_head_length = args.arrow_head_length
+delta_f = args.delta_f
 
 linewidth_marker = args.linewidth_marker
 linewidth_highlight = args.linewidth_highlight
@@ -133,6 +138,7 @@ subarray_a_label_x = args.subarray_a_label_x
 subarray_a_label_y = args.subarray_a_label_y
 subarray_b_label_x = args.subarray_b_label_x
 subarray_b_label_y = args.subarray_b_label_y
+
 
 # Constants
 fig_width = 15.0
@@ -439,27 +445,46 @@ for mode_order in mode_marker_df["mode_order"].unique():
     freq_resonance = mode_marker_df.loc[mode_marker_df["mode_order"] == mode_order, "frequency"].values[0]
 
     # Use interpolation to get the power at the resonance frequency
-    power = interp1d(freqax, spec_total)(freq_resonance)
+    power = amax(spec_total[(freqax >= freq_resonance - 0.5) & (freqax <= freq_resonance + 0.5)])
     power = max(power, min_arrow_db)
 
 
     if mode_name.startswith("MH"):
         ax_spec.annotate(f"?", xy=(freq_resonance, power + arrow_gap), xytext=(freq_resonance, power + arrow_gap + 2 * arrow_length),
                     color = color_missing, fontsize = freq_label_size, fontweight = "bold", va = "bottom", ha = "center",
-                    arrowprops=dict(facecolor=color_missing, edgecolor=color_missing, shrink=0.05, width=arrow_width, headwidth=arrow_head_width, headlength=arrow_head_length))
+                    arrowprops=dict(facecolor=color_missing, edgecolor=color_missing, shrink=0.05, width=arrow_width_fancy, headwidth=arrow_head_width, headlength=arrow_head_length))
     else:
         if not flag:
             ax_spec.annotate(f"Mode {mode_order}", xy=(freq_resonance, power + arrow_gap), xytext=(freq_resonance, power + arrow_gap + arrow_length),
                         color = color_highlight, fontsize = freq_label_size, fontweight = "bold", va = "bottom", ha = "center",
-                        arrowprops=dict(facecolor=color_highlight, edgecolor=color_highlight, shrink=0.05, width=arrow_width, headwidth=arrow_head_width, headlength=arrow_head_length))
+                        arrowprops=dict(facecolor=color_highlight, edgecolor=color_highlight, shrink=0.05, width=arrow_width_fancy, headwidth=arrow_head_width, headlength=arrow_head_length))
             flag = True
         else:
             ax_spec.annotate(f"{mode_order}", xy=(freq_resonance, power + arrow_gap), xytext=(freq_resonance, power + arrow_gap + arrow_length),
                         color = color_highlight, fontsize = freq_label_size, fontweight = "bold", va = "bottom", ha = "center",
-                        arrowprops=dict(facecolor=color_highlight, edgecolor=color_highlight, shrink=0.05, width=arrow_width, headwidth=arrow_head_width, headlength=arrow_head_length))
+                        arrowprops=dict(facecolor=color_highlight, edgecolor=color_highlight, shrink=0.05, width=arrow_width_fancy, headwidth=arrow_head_width, headlength=arrow_head_length))
    
+# Plot the mode spacing labels
+filename = "mode_spacing_labels.csv"
+filepath = join(dir_plot, filename)
 
-                    
+mode_spacing_df = read_csv(filepath)
+
+for i, row in mode_spacing_df.iterrows():
+    mode1 = row["mode1"]
+    mode2 = row["mode2"]
+    power = row["power"]
+
+    freq1 = mode_marker_df.loc[mode_marker_df["mode_order"] == mode1, "frequency"].values[0]
+    freq2 = mode_marker_df.loc[mode_marker_df["mode_order"] == mode2, "frequency"].values[0]
+
+    ax_spec.annotate("", xy=(freq1, power), xytext=(freq2, power),
+                     arrowprops=dict(arrowstyle='<->', color=color_highlight, linewidth=arrow_width_simple))
+
+    ax_spec.text((freq1 + freq2) / 2, power, r"$\boldsymbol{\Delta f}$", color = color_highlight, fontsize = freq_label_size, fontweight = "bold", va = "center", ha = "center", zorder = 10, bbox = dict(facecolor = "white", edgecolor = "none", alpha = 1.0))
+
+ax_spec.text(2.0, max_db - 2.0, rf"$\boldsymbol{{\Delta f}}$ = {delta_f:.2f} Hz", color = color_highlight, fontsize = freq_label_size, fontweight = "bold", va = "top", ha = "left")
+
 # Set the axis limits
 ax_spec.set_xlim(freq_min, freq_max)
 ax_spec.set_ylim(min_db, max_db)
