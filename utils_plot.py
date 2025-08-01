@@ -3269,6 +3269,31 @@ def format_depth_ylabels(ax,
 
     return ax
 
+# Format the x labels in normalized time lag
+def format_norm_time_lag_xlabels(ax, 
+                                 plot_axis_label=True, plot_tick_label=True,
+                                 major_tick_spacing=5e-3, num_minor_ticks=5,
+                                 axis_label_size=12, tick_label_size=10,
+                                 major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+    if plot_axis_label:
+        ax.set_xlabel("Normalized time lag (s)", fontsize=axis_label_size)
+
+    ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    if plot_tick_label:
+        for label in ax.get_xticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('top')
+            label.set_horizontalalignment('center')
+    else:
+        ax.set_xticklabels([])
+        
+    ax.tick_params(axis='x', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='x', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
 ## Function to format the y labels in frequency
 def format_freq_ylabels(ax, 
                         plot_axis_label=True, plot_tick_label=True,

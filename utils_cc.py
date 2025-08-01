@@ -22,7 +22,7 @@ from utils_basic import (
     geo_channel2component
 )
 
-from utils_plot import component2label, get_geo_component_color
+from utils_plot import component2label, get_geo_component_color, format_norm_time_lag_xlabels
 
 # -----------------------------------------------------------------------------
 # Data‑holding structures (brought inline from utils_cc.py)
@@ -43,7 +43,7 @@ class Template:
     # ---------------------------------------------------------------------
 
     def __post_init__(self) -> None:
-        required = set(channels)
+        required = set(components)
         if set(self.waveform) != required:
             raise ValueError(f"`waveform` must have keys {required}.")
         for comp, data in self.waveform.items():
@@ -68,7 +68,7 @@ class Match:
     waveform: Dict[str, ndarray[float32]]
 
     def __post_init__(self) -> None:
-        required = set(channels)
+        required = set(components)
         if set(self.waveform) != required:
             raise ValueError(f"`waveform` must have keys {required}.")
         lengths = {c: len(a) for c, a in self.waveform.items()}
@@ -163,7 +163,7 @@ class TemplateMatches:
         path = Path(path)
         n_matches = len(self.matches)
         num_pts = self.template.num_pts
-        dtype = self.matches[0].waveform[channels[0]].dtype
+        dtype = self.matches[0].waveform[components[0]].dtype
 
         # Collect match arrays -------------------------------------------------
         comp_z = empty((n_matches, num_pts), dtype=dtype)
@@ -173,9 +173,9 @@ class TemplateMatches:
         coeffs = empty(n_matches, dtype="float32")
 
         for i, m in enumerate(self.matches):
-            comp_z[i] = m.waveform[channels[0]]
-            comp_1[i] = m.waveform[channels[1]]
-            comp_2[i] = m.waveform[channels[2]]
+            comp_z[i] = m.waveform[components[0]]
+            comp_1[i] = m.waveform[components[1]]
+            comp_2[i] = m.waveform[components[2]]
             starttimes[i] = m.starttime.value
             coeffs[i] = m.coeff
 
@@ -201,10 +201,10 @@ class TemplateMatches:
                     "num_pts": self.template.num_pts,
                 }
             )
-            for i, channel in enumerate(channels):
+            for i, component in enumerate(components):
                 gt.create_dataset(
-                    f"{channel}",
-                    data=self.template.waveform[channel],
+                    f"{component}",
+                    data=self.template.waveform[component],
                     compression=compression,
                 )
 
@@ -212,8 +212,8 @@ class TemplateMatches:
             gm = st_grp.create_group("matches")
             gm.create_dataset("starttime", data=starttimes)
             gm.create_dataset("coeff", data=coeffs)
-            for i, channel in enumerate(channels):
-                gm.create_dataset(channel, data=comp_z, compression=compression)
+            for i, component in enumerate(components):
+                gm.create_dataset(component, data=comp_z, compression=compression)
 
     # ------------------------------------------------------------------
     # Reading back
@@ -246,7 +246,7 @@ class TemplateMatches:
                     # -------- template part
                     gt = st_grp["template"]
                     tpl_waveforms = {
-                        channel: asarray(gt[channel]) for channel in channels
+                        component: asarray(gt[component]) for component in components
                     }
                     tpl = Template(
                         id=str(gt.attrs["id"]),
@@ -260,8 +260,8 @@ class TemplateMatches:
                     gm = st_grp["matches"]
                     sts = gm["starttime"][...]
                     cs = gm["coeff"][...]
-                    for i, channel in enumerate(channels):
-                        cz = gm[channel]
+                    for i, component in enumerate(components):
+                        cz = gm[component]
 
                     match_list: List[Match] = []
                     for i in range(sts.shape[0]):
@@ -270,7 +270,7 @@ class TemplateMatches:
                                 starttime=Timestamp(sts[i], unit="ns", tz="UTC"),
                                 coeff=cs[i],
                                 waveform={
-                                    channel: asarray(cz[i]) for channel in channels
+                                    component: asarray(cz[i]) for component in components
                                 },
                             )
                         )
@@ -297,88 +297,225 @@ class TemplateMatches:
         
 # -----------------------------------------------------------------------------
 # Associate matched events
-#  -----------------------------------------------------------------------------
-def associate_matched_events(tm_dict: Dict[str, TemplateMatches], min_num_sta: int, window_length: float = 0.1) -> DataFrame:
-    window_length = Timedelta(seconds=window_length)  # coincidence window
-    i_left = 0                      # left edge of window
-    match_time_dicts = []                # list to accumulate events
+# -----------------------------------------------------------------------------
 
-    # Track the active window’s station counts
-    active_counts: dict[str, int] = defaultdict(int)
-    unique_stations = 0
+def associate_matched_events(
+    tm_dict: Dict[str, "TemplateMatches"],
+    min_num_sta: int,
+    window_length: float = 0.1,
+) -> DataFrame:
+    """Identify coincidence events across multiple stations.
 
-    # Create the data frame for the start times
+    An event is declared when picks from *min_num_sta* distinct stations fall
+    within a sliding window of length *window_length* seconds.  All picks that
+    participate in that satisfied window are grouped into the same event.
+    The search continues until the window can no longer satisfy the criterion,
+    ensuring no qualifying pick is missed.
+    """
+
+    # ---------------------------------------------------------------------
+    # Prepare the picks table
+    # ---------------------------------------------------------------------
+    window_length = Timedelta(seconds=window_length)
+
+    match_time_dicts = []
     for station, tm in tm_dict.items():
-        starttimes = tm.get_match_starttimes()
-        for starttime in starttimes:
-            # print(starttime)
+        for starttime in tm.get_match_starttimes():
             match_time_dicts.append({"station": station, "time": starttime})
 
-    match_time_df = DataFrame(match_time_dicts).sort_values("time").reset_index(drop=True)
+    match_time_df = (
+        DataFrame(match_time_dicts).sort_values("time").reset_index(drop=True)
+    )
+
+    first_template_starttime = min(
+        tm.template.starttime for tm in tm_dict.values()
+    )
+
+    # ---------------------------------------------------------------------
+    # Sliding‑window coincidence detection
+    # ---------------------------------------------------------------------
+    active_counts: dict[str, int] = defaultdict(int)  # active picks per station
+    unique_stations = 0                              # # distinct stations now
+    i_left = 0                                       # left edge of window
+
+    event_open = False        # True while window satisfies coincidence rule
+    event_start_idx = None    # fixed left index of that open window
+    last_good_right = None    # last i_right that still satisfied rule
 
     event_dicts = []
+
     for i_right, row in match_time_df.iterrows():
-        # ---------- expand window to include new pick ----------
+        # ----------------------------------------------------------
+        # 1. expand: add the new pick at i_right
+        # ----------------------------------------------------------
         sta = row["station"]
         if active_counts[sta] == 0:
             unique_stations += 1
         active_counts[sta] += 1
 
-        # ---------- shrink window from the left if too wide ----
-        while match_time_df.loc[i_right, "time"] - match_time_df.loc[i_left, "time"] > window_length:
-            station_left = match_time_df.loc[i_left, "station"]
-            active_counts[station_left] -= 1
-            if active_counts[station_left] == 0:
+        # ----------------------------------------------------------
+        # 2. shrink: move i_left to keep window <= window_length
+        # ----------------------------------------------------------
+        while (
+            match_time_df.loc[i_right, "time"]
+            - match_time_df.loc[i_left, "time"]
+            > window_length
+        ):
+            sta_left = match_time_df.loc[i_left, "station"]
+            active_counts[sta_left] -= 1
+            if active_counts[sta_left] == 0:
                 unique_stations -= 1
             i_left += 1
 
-        # ---------- check coincidence condition ----------------
+        # ----------------------------------------------------------
+        # 3. coincidence logic
+        # ----------------------------------------------------------
         if unique_stations >= min_num_sta:
-            # Record an event: pick the mid-window time as origin
-            window = match_time_df.iloc[i_left : i_right + 1]
-            print(window)
-            time_event = window.time.min()          # or mean/min/… as you prefer
-            stations_event = window.station.to_list()
+            # window currently satisfies the rule → keep it open / extend
+            if not event_open:
+                event_open = True
+                event_start_idx = i_left  # freeze left edge the first time
+            last_good_right = i_right      # extend right edge each iteration
+        else:
+            # coincidence just broke → close previous event if we had one
+            if event_open:
+                window = match_time_df.iloc[event_start_idx : last_good_right + 1]
+                time_event = window.time.min()
+                stations_event = window.station.to_list()
 
-            event_dicts.append(
+                event_dicts.append(
+                    {
+                        "first_match_time": time_event,
+                        "num_sta": len(set(stations_event)),
+                        "station_time": dict(
+                            zip(stations_event, window.time.to_list())
+                        ),
+                    }
+                )
+
+                # reset bookkeeping; *re‑include* current pick as fresh start
+                event_open = False
+                active_counts.clear()
+                unique_stations = 0
+                i_left = i_right
+
+                # Re‑initialise counts for the current pick
+                sta_curr = match_time_df.loc[i_right, "station"]
+                active_counts[sta_curr] = 1
+                unique_stations = 1
+
+    # --------------------------------------------------------------
+    # 4. clean‑up: capture an event that extends to the last pick
+    # --------------------------------------------------------------
+    if event_open:
+        window = match_time_df.iloc[event_start_idx : last_good_right + 1]
+        time_event = window.time.min()
+        stations_event = window.station.to_list()
+
+        event_dicts.append(
+            {
+                "first_match_time": time_event,
+                "num_sta": len(set(stations_event)),
+                "station_time": dict(zip(stations_event, window.time.to_list())),
+            }
+        )
+
+    # ---------------------------------------------------------------------
+    # Build the hierarchical record DataFrame (unchanged logic)
+    # ---------------------------------------------------------------------
+    record_dicts = []
+    for evt in event_dicts:
+        first_match_time = evt["first_match_time"]
+        num_sta = evt["num_sta"]
+
+        for station, match_time in evt["station_time"].items():
+            self_match = abs(
+                (first_match_time - first_template_starttime).total_seconds()
+            ) < 1 / sampling_rate
+
+            num_pts = tm_dict[station].template.num_pts
+
+            record_dicts.append(
                 {
-                    "first_match_time": time_event,
-                    "num_sta": len(stations_event),
-                    "station_time": dict(zip(stations_event, window.time.to_list()))
+                    "first_match_time": first_match_time,
+                    "num_sta": num_sta,
+                    "station": station,
+                    "num_pts": num_pts,
+                    "match_time": match_time,
+                    "self_match": self_match,
                 }
             )
-
-            # ----------------------------------------------------
-            # Reset window bookkeeping so subsequent picks start
-            # a fresh coincidence search (no overlapping events)
-            # ----------------------------------------------------
-            active_counts.clear()
-            unique_stations = 0
-            i_left = i_right + 1
-
-    # Convert the event data into a hierchical data frame
-    record_dicts = []
-    for event_dict in event_dicts:
-        first_match_time = event_dict["first_match_time"]
-        num_sta = event_dict["num_sta"]
-        
-        for station, match_time in event_dict["station_time"].items():
-            record_dicts.append({
-                "first_match_time": first_match_time,
-                "num_sta": num_sta,
-                "station": station,
-                "match_time": match_time
-            })
 
     record_df = DataFrame(record_dicts)
     record_df.set_index(["first_match_time", "station"], inplace=True)
     record_df.sort_index(inplace=True)
 
-    # Print the number of events
-    print(f"Number of associated events: {len(record_df.index.unique(level=0))}")
+    print(
+        f"Number of associated events: {len(record_df.index.unique(level=0))}"
+    )
 
     return record_df
 
+def get_normalized_time_lags(tpl_dict: Dict[str, "Template"],
+                             record_df: DataFrame) -> DataFrame:
+    """Return a *new* DataFrame with an extra ``lag_time_norm`` column.
+
+    Parameters
+    ----------
+    tpl_dict : Dict[str, Template]
+        Mapping ``station → Template``.  Each Template must expose a
+        ``.starttime`` attribute (pandas.Timestamp).
+    record_df : DataFrame
+        Hierarchical DataFrame indexed by (origin, station) that *must*
+        include a ``match_time`` column, holding the detection time for each
+        station.
+
+    Returns
+    -------
+    DataFrame
+        A *copy* of ``record_df`` with a float column ``lag_time_norm`` where, for
+        every event, the raw lag (match_time − template start) is centred by
+        subtracting that event’s mean lag.
+    """
+
+    if "match_time" not in record_df.columns:
+        raise KeyError("record_df must contain a 'match_time' column")
+
+    # for station in tpl_dict.keys():
+    #     print(station)
+    #     print(tpl_dict[station].template.starttime)
+
+    print(record_df.head())
+
+    # ------------------------------------------------------------------
+    # 1. Compute raw lag per row → seconds (float)
+    # ------------------------------------------------------------------
+    lag_raw = (
+        record_df
+        .reset_index()
+        .apply(lambda row: (row["match_time"] -
+                            tpl_dict[row["station"]].template.starttime).total_seconds(),
+               axis=1)
+    )
+
+    # Attach raw lag to a *copy* so we don’t mutate caller’s DataFrame
+    out_df = record_df.copy()
+    out_df["lag_time_raw"] = lag_raw.values
+    # print(out_df.head())
+
+    # print(out_df)
+
+    # ------------------------------------------------------------------
+    # 2. Normalise inside each event (first‑level index)
+    # ------------------------------------------------------------------
+    out_df["lag_time_norm"] = (
+        out_df.groupby(level=0)["lag_time_raw"].transform(lambda x: x - x.mean())
+    )
+
+    # Optionally drop the helper column
+    out_df = out_df.drop(columns="lag_time_raw")
+
+    return out_df
 
 # -----------------------------------------------------------------------------
 # Plotting
@@ -394,7 +531,7 @@ def plot_all_stations_template_waveforms(template_dict: Dict[str, Template], sca
         template = template_dict[station]
 
         # Normalize the waveforms by the maximum amplitude of the three components
-        max_amp = max(max(template.waveform[channel]) for channel in channels)
+        max_amp = max(max(template.waveform[component]) for component in components)
 
         # Get the time axis
         num_pts = template.num_pts
@@ -402,9 +539,8 @@ def plot_all_stations_template_waveforms(template_dict: Dict[str, Template], sca
         timeax = arange(num_pts) / sampling_rate + (starttime - min_time).total_seconds()
         max_time = max(amax(timeax), max_time)
 
-        for j, channel in enumerate(channels):
-            component = geo_channel2component(channel)
-            waveform = template.waveform[channel]
+        for j, component in enumerate(components):
+            waveform = template.waveform[component]
             axs[j].plot(timeax, waveform / max_amp * scale + i + 1, color = get_geo_component_color(component))
             axs[j].set_title(f"{component2label(component)}", fontsize = 12, fontweight = "bold")
             axs[j].set_xlabel("Time (s)", fontsize = 12)
@@ -420,6 +556,65 @@ def plot_all_stations_template_waveforms(template_dict: Dict[str, Template], sca
     return fig, axs
     
 
+
+def plot_station_lag_time_histogram(
+        ax: Axes,
+        record_df: DataFrame,
+        station: str,
+        min_lag: float = -5e-3,
+        max_lag: float = 5e-3,
+        bin_width: float = 1e-3,
+        color: str = "tab:cyan",
+        linewidth: float = 1.0,
+) -> Axes:
+    """Plot a histogram of *normalised* time lags for one station.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Existing axes to draw the histogram on.
+    record_df : pandas.DataFrame
+        DataFrame produced by :func:`get_normalized_time_lags`, containing a
+        ``lag_norm`` column and indexed by (origin, station).
+    station : str
+        Station code whose lags to plot.
+    min_lag, max_lag : float, optional
+        Lower and upper limits (seconds) of the histogram range.  Defaults to
+        ±5 ms.
+    bin_width : float, optional
+        Width of each histogram bin in seconds.  Default is 1 ms.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+        The same axes, now populated with the histogram.
+    """
+
+    if "lag_time_norm" not in record_df.columns:
+        raise KeyError("record_df must contain a 'lag_time_norm' column – run get_normalized_time_lags() first")
+
+    # Extract rows for this station -----------------------------------
+    try:
+        station_df = record_df.xs(station, level="station")
+    except KeyError as exc:
+        raise KeyError(f"Station {station!r} not found in record_df index") from exc
+
+    lags = station_df["lag_time_norm"].values
+
+    if lags.size == 0:
+        raise ValueError(f"No lag data available for station {station!r}")
+
+    bin_edges = arange(min_lag, max_lag + bin_width, bin_width)
+    bin_centers = bin_edges[:-1] + bin_width / 2
+
+    ax.hist(lags, bins=bin_centers, color=color, linewidth=linewidth, edgecolor="black")
+    ax.set_xlim(min_lag, max_lag)
+    
+    format_norm_time_lag_xlabels(ax)
+    ax.set_ylabel("Count")
+    ax.set_title(f"{station}", fontsize=12, fontweight="bold")
+
+    return ax
 
 
 #------------------------------------------------------------------------------

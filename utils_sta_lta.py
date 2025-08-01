@@ -3,7 +3,27 @@
 
 ## Import libraries
 from pathlib import Path    
-from numpy import sqrt, mean, square, amin, argmin, asarray, fromiter, zeros, array, float32, int32, int64, issubdtype, integer, ndarray   
+from numpy import (
+    sqrt, 
+    mean, 
+    square, 
+    amin, 
+    argmin, 
+    asarray,
+    empty_like,
+    float32, 
+    issubdtype, 
+    integer,
+    ndarray,
+    full,
+    cumsum,
+    maximum,
+    zeros,
+    array,
+    int32,
+    int64,
+    fromiter,
+)
 from obspy.signal.trigger import coincidence_trigger
 from obspy.core.utcdatetime import UTCDateTime
 from pandas import DataFrame, Timestamp, Grouper, Timedelta, Series, date_range, cut
@@ -427,44 +447,44 @@ class Snippets:
 
         return bin_count_df
 
-### Run the STA/LTA method on the 3C waveforms of a given station at a given time window
-def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigger_type='classicstalta'):
+# ### Run the STA/LTA method on the 3C waveforms of a given station at a given time window
+# def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigger_type='classicstalta'):
 
-    #### Determine if the number of channels is correct
-    if len(stream) != 3:
-        raise ValueError("The input stream must have 3 channels!")
+#     #### Determine if the number of channels is correct
+#     if len(stream) != 3:
+#         raise ValueError("The input stream must have 3 channels!")
 
-    #### Run the STA/LTA method
-    triggers = coincidence_trigger(trigger_type=trigger_type, thr_on=thr_on, thr_off=thr_off, stream=stream, thr_coincidence_sum=thr_coincidence_sum, sta=sta, lta=lta)
+#     #### Run the STA/LTA method
+#     triggers = coincidence_trigger(trigger_type=trigger_type, thr_on=thr_on, thr_off=thr_off, stream=stream, thr_coincidence_sum=thr_coincidence_sum, sta=sta, lta=lta)
 
-    #### Eliminate repeating snippets (Why do they exist? Bug reported on Github, 2023-10-17.)
-    triggers, numrep = remove_repeating_triggers(triggers)
+#     #### Eliminate repeating snippets (Why do they exist? Bug reported on Github, 2023-10-17.)
+#     triggers, numrep = remove_repeating_triggers(triggers)
 
-    numdet = len(triggers)
-    print("Finished.")
-    print(f"Number of snippets: {numdet}. Number of repeating snippets removed: {numrep}.")
+#     numdet = len(triggers)
+#     print("Finished.")
+#     print(f"Number of snippets: {numdet}. Number of repeating snippets removed: {numrep}.")
 
-    return triggers
+#     return triggers
 
 
-### Eliminate repeating STA/LTA snippets (Why do they exist? Bug reported on Github, 2023-10-17.)
-def remove_repeating_triggers(triggers):
+# ### Eliminate repeating STA/LTA snippets (Why do they exist? Bug reported on Github, 2023-10-17.)
+# def remove_repeating_triggers(triggers):
 
-    numrep = 0
-    i = 0
-    print("Eliminating repeating snippets...")
-    while i < len(triggers)-1:
-        trigtime1 = triggers[i]['time']
-        dur = triggers[i]['duration'] 
-        trigtime2 = triggers[i+1]['time']
+#     numrep = 0
+#     i = 0
+#     print("Eliminating repeating snippets...")
+#     while i < len(triggers)-1:
+#         trigtime1 = triggers[i]['time']
+#         dur = triggers[i]['duration'] 
+#         trigtime2 = triggers[i+1]['time']
 
-        if trigtime2-trigtime1 < dur:
-            numrep = numrep+1
-            triggers.pop(i+1)
-        else:
-            i = i+1
+#         if trigtime2-trigtime1 < dur:
+#             numrep = numrep+1
+#             triggers.pop(i+1)
+#         else:
+#             i = i+1
     
-    return triggers, numrep
+#     return triggers, numrep
 
 ### Generate the lines in a Snuffler pick file from an STA-LTA snippet object
 def snippets_to_snuffler_picks(snippets, seed_id, buffer_start=0.0, buffer_end=0.0):
@@ -874,4 +894,76 @@ def plot_station_hourly_detections(detnumdf, individual_color=True, days_and_nig
 
 #     return events
         
+# Compute the STA/LTA characteristic function of a 1-D time-series.
+def compute_sta_lta(trace,
+                    sampling_rate: float,
+                    sta_window_sec: float,
+                    lta_window_sec: float,
+                    *,
+                    use_square: bool = False):
+    """
+    Compute the classic STA/LTA characteristic function.
 
+    Parameters
+    ----------
+    trace : 1-D array-like
+        The input time-series.
+    sampling_rate : float
+        Samples per second (Hz).
+    sta_window_sec : float
+        Length of the short-term window in seconds.
+    lta_window_sec : float
+        Length of the long-term window in seconds.
+    use_square : bool, optional
+        If True, energy (amplitude²) is used; otherwise absolute amplitude.
+        Default is False (absolute).
+
+    Returns
+    -------
+    cf : ndarray
+        An array the same length as *trace* containing the STA/LTA ratio.
+        Values in the first *lta* samples are set to 0 because the LTA
+        is not yet defined there.
+    """
+    # ---- Input checks and preparation ----------------------------------------
+    x = asarray(trace, dtype=float)           # ensure float ndarray copy
+    if x.ndim != 1:
+        raise ValueError("`trace` must be 1-D")
+
+    # Convert window lengths from seconds to sample counts
+    sta_n = int(round(sta_window_sec * sampling_rate))
+    lta_n = int(round(lta_window_sec * sampling_rate))
+    if sta_n <= 0 or lta_n <= 0 or sta_n >= lta_n:
+        raise ValueError("Require 0 < STA < LTA (in samples)")
+
+    # Choose amplitude measure
+    if use_square:
+        x = x ** 2.0
+    else:
+        x = abs(x)
+
+    # ---- Efficient moving-average using cumulative sum -----------------------
+    # Cumulative sum with a leading zero so that windows align nicely
+    cs = cumsum(x, dtype=float)
+    cs = cs.insert(0, 0.0) if hasattr(cs, "insert") else \
+         cumsum(x, dtype=float)  # numpy <2.0 compatibility
+
+    # ---- Compute STA/LTA characteristic function -----------------------------
+    n_samples = x.size
+    cf = empty_like(x)
+
+    # First LTA samples have undefined LTA → set ratio to 0
+    cf[:lta_n] = 0.0
+
+    for i in range(lta_n, n_samples):
+        sta = window_mean(cs, i, sta_n)
+        lta = window_mean(cs, i, lta_n)
+        # Protect against zero division
+        cf[i] = sta / maximum(lta, 1e-16)
+
+    return cf
+
+# Helper to compute mean over any window ending at i (exclusive):
+# mean(i, n) = (cs[i] - cs[i - n]) / n
+def window_mean(csum, i, n):
+    return (csum[i] - csum[i - n]) / n

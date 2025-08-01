@@ -1,10 +1,10 @@
 from h5py import File
-from numpy import ndarray
-from pandas import Timestamp
+from numpy import ndarray, amax
+from pandas import Timedelta, Timestamp
 from obspy import Trace
 from typing import Dict, Union
 
-from utils_basic import GEO_CHANNELS as channels, geo_component2channel
+from utils_basic import GEO_CHANNELS as channels, geo_channel2component, geo_component2channel
 
 # -----------------------------------------------------------------------------
 # Class to store the day-long waveform
@@ -144,9 +144,9 @@ def load_day_long_waveform_from_hdf(hdf5_path: str,
         sampling_rate = None
         num_pts = None
         starttime_ns = None
-        for comp in day_grp:
-            ds = day_grp[comp]
-            waveform[comp] = ds[()]
+        for channel in day_grp:
+            ds = day_grp[channel]
+            waveform[geo_channel2component(channel)] = ds[()]
             if sampling_rate is None:
                 sampling_rate = ds.attrs['sampling_rate']
                 num_pts = ds.attrs['num_pts']
@@ -169,8 +169,9 @@ def load_day_long_waveform_from_hdf(hdf5_path: str,
 # -----------------------------------------------------------------------------
 def load_waveform_slice(hdf5_path: str,
                         station: str,
-                        start_time: Union[str, Timestamp],
-                        end_time: Union[str, Timestamp]) -> Dict[str, ndarray]:
+                        starttime: Union[str, Timestamp, float],
+                        normalize: bool = False,
+                        **kwargs) -> Dict[str, ndarray]:
     """
     Load a slice of the three-component day-long waveform from HDF5.
 
@@ -180,19 +181,40 @@ def load_waveform_slice(hdf5_path: str,
         Path to the HDF5 file.
     station : str
         Station code.
-    start_time : str or pandas.Timestamp
+    starttime : str or pandas.Timestamp
         Start of slice (ISO format or pandas.Timestamp).
-    end_time : str or pandas.Timestamp
-        End of slice (ISO format or pandas.Timestamp).
+    **kwargs : dict
+        Keyword arguments to pass to the function.
 
     Returns
     -------
     waveform_dict : Dict[str, numpy.ndarray]
         Dictionary with keys for each component, containing the sliced data array.
     """
+    # Get the keyword arguments
+    num_pts = kwargs.get("num_pts", None)
+    endtime = kwargs.get("endtime", None)
+
+    # Determine if input is redundant
+    if num_pts is not None and endtime is not None:
+        raise ValueError("Either num_pts or endtime must be provided, but not both.")
+    if num_pts is None and endtime is None:
+        raise ValueError("Either num_pts or end_time must be provided.")
+    
+    # Convert starttime to Timestamp
+    if isinstance(starttime, float):
+        start_ts = Timestamp(starttime, unit="s")
+    else:
+        start_ts = starttime
+    
     # Normalize slice times
-    start_ts = Timestamp(start_time)
-    end_ts = Timestamp(end_time)
+    if num_pts is None:
+        if isinstance(endtime, float):
+            end_ts = Timestamp(endtime, unit="s")
+        else:
+            end_ts = endtime
+    else:
+        end_ts = start_ts + Timedelta(seconds=(num_pts - 1) / sampling_rate)
 
     # Get the date string
     date_str = start_ts.strftime("%Y-%m-%d")
@@ -207,15 +229,28 @@ def load_waveform_slice(hdf5_path: str,
         # Convert orig_start to seconds
         orig_start_sec = orig_start_ns / 1e9
         # Compute sample indices
-        idx0 = int((start_ts.timestamp() - orig_start_sec) * sampling_rate)
-        idx1 = int((end_ts.timestamp() - orig_start_sec) * sampling_rate)
+
+        idx0 = int(round((start_ts.timestamp() - orig_start_sec) * sampling_rate))
+        idx1 = int(round((end_ts.timestamp() - orig_start_sec) * sampling_rate))
         # Clip to valid range
         idx0 = max(0, idx0)
         idx1 = min(ds0.attrs['num_pts'], idx1)
 
         waveform_dict: Dict[str, ndarray] = {}
-        for comp, ds in day_grp.items():
-            waveform_dict[comp] = ds[idx0:idx1]
+        for channel, ds in day_grp.items():
+            waveform_dict[geo_channel2component(channel)] = ds[idx0:idx1]
+
+    # Normalize the waveform
+    max_amp = 0.0
+    if normalize:
+        for component, waveform in waveform_dict.items():
+            max_amp = max(max_amp, amax(abs(waveform)))
+        
+        if max_amp > 0.0:
+            for component, waveform in waveform_dict.items():
+                waveform_dict[component] /= max_amp
+        else:
+            raise ValueError("The waveform is all zeros!")
 
     return waveform_dict
 

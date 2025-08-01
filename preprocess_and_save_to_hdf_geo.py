@@ -27,14 +27,16 @@ if __name__ == "__main__":
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--days", type=str, nargs="+", default=get_geophone_days())
     parser.add_argument("--day_test", type=str, default="2020-01-12")
-    parser.add_argument("--corner_freq", type=float, default=20.0)
+    parser.add_argument("--min_freq", type=float, default=20.0)
+    parser.add_argument("--max_freq", type=float, default=None)
     parser.add_argument("--overwrite", action="store_true")
 
     args = parser.parse_args()
     test = args.test
     day_test = args.day_test
     days = args.days
-    corner_freq = args.corner_freq
+    min_freq = args.min_freq
+    max_freq = args.max_freq
     overwrite = args.overwrite
 
     # If test is True, only process the test day
@@ -45,10 +47,15 @@ if __name__ == "__main__":
         print(f"Running for days: {days}")
 
     # Print the corner frequency
-    print(f"Corner frequency for highpass filter: {corner_freq} Hz")
+    print(f"Corner frequency for highpass filter: {min_freq} Hz")
+    if max_freq is not None:
+        print(f"Corner frequency for lowpass filter: {max_freq} Hz")
 
     # Create the HDF5 file
-    hdf5_path = Path(dirpath) / f"preprocessed_data_freq{corner_freq:.0f}hz.h5"
+    if max_freq is not None:
+        hdf5_path = Path(dirpath) / f"preprocessed_data_min{min_freq:.0f}hz_max{max_freq:.0f}hz.h5"
+    else:
+        hdf5_path = Path(dirpath) / f"preprocessed_data_min{min_freq:.0f}hz.h5"
 
     # Preprocess the data and save it to HDF5
     for day in days:
@@ -68,8 +75,8 @@ if __name__ == "__main__":
                                                              stations = [station], 
                                                              filter = True, 
                                                              filter_type = "butter",
-                                                             min_freq = corner_freq,
-                                                             max_freq = None)
+                                                             min_freq = min_freq,
+                                                             max_freq = max_freq)
             end_time = time()
             print(f"Time taken: {end_time - start_time} seconds")
 

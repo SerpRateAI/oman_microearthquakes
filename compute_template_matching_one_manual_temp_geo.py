@@ -21,7 +21,7 @@ from scipy.signal import find_peaks
 from typing import Dict, List
 
 
-from utils_basic import GEO_COMPONENTS as components, GEO_CHANNELS as channels, SAMPLING_RATE as sampling_rate, ROOTDIR_GEO as dirpath_geo, PICK_DIR as dirpath_pick, DETECTION_DIR as dirpath_det
+from utils_basic import GEO_COMPONENTS as components, SAMPLING_RATE as sampling_rate, ROOTDIR_GEO as dirpath_geo, PICK_DIR as dirpath_pick, DETECTION_DIR as dirpath_det
 from utils_basic import get_geophone_days
 from utils_cc import TemplateMatches, Template, Match, plot_all_stations_template_waveforms
 from utils_cont_waveform import DayLongWaveform, load_day_long_waveform_from_hdf, load_waveform_slice
@@ -39,10 +39,10 @@ def load_template_waveforms(pick_df: DataFrame, template_id: str, hdf5_path: Pat
         station = row["station"]
         starttime = row["starttime"]
         endtime = row["endtime"]
-        waveform_dict = load_waveform_slice(hdf5_path, station, starttime, endtime)
+        waveform_dict = load_waveform_slice(hdf5_path, station, starttime, endtime = endtime)
 
         # print(waveform_dict.keys())
-        template_dict[station] = Template(id = template_id, station = station, starttime = starttime, num_pts = len(waveform_dict[channels[0]]), waveform = waveform_dict)
+        template_dict[station] = Template(id = template_id, station = station, starttime = starttime, num_pts = len(waveform_dict[components[0]]), waveform = waveform_dict)
 
     return template_dict
 
@@ -104,17 +104,17 @@ def assemble_template_matches(template_dict: Dict[str, Template], match_dict: Di
     return tm_dict
 
 # Save the template matches for all stations
-def save_template_matches(tm_dict: Dict[str, TemplateMatches], min_freq_filter: float):
+def save_template_matches(tm_dict: Dict[str, TemplateMatches], min_freq_filter: float, cc_threshold: float):
     for station in tm_dict.keys():
         print(f"Saving template matches for {station}...")
-        filepath_tm = Path(dirpath_det) / f"template_matches_manual_templates_freq{min_freq_filter:.0f}hz.h5"
+        filepath_tm = Path(dirpath_det) / f"template_matches_manual_templates_freq{min_freq_filter:.0f}hz_cc{cc_threshold:.2f}.h5"
         tm_dict[station].to_hdf(filepath_tm, overwrite=True)
 
 # Compute the three-component cross-correlation between a template and a stream
 def compute_cc(template: Template, waveform: Dict[str, ndarray]):
-    for i, channel in enumerate(channels):
-        template_waveform = template.waveform[channel]
-        data_waveform = waveform[channel]
+    for i, component in enumerate(components):
+        template_waveform = template.waveform[component]
+        data_waveform = waveform[component]
         cc = correlate_template(data_waveform, template_waveform)
 
         if i == 0:
@@ -140,8 +140,8 @@ def get_match_times_and_waveforms(cc_sta: ndarray, cc_threshold: float, template
         coeff = cc_sta[idx]
 
         waveform_match = {}
-        for channel in channels:
-            waveform_match[channel] = waveform_dict[channel][idx : idx + num_pts].copy()
+        for component in components:
+            waveform_match[component] = waveform_dict[component][idx : idx + num_pts].copy()
 
         match = Match(starttime = starttime_match, coeff = coeff, waveform = waveform_match)
         matches.append(match)
@@ -216,4 +216,4 @@ if __name__ == "__main__":
 
     # Save the template matches
     print(f"Saving template matches...")
-    save_template_matches(tm_dict, min_freq_filter = min_freq_filter)
+    save_template_matches(tm_dict, min_freq_filter = min_freq_filter, cc_threshold = cc_threshold)
