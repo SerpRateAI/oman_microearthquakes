@@ -25,6 +25,19 @@ from utils_basic import (
 from utils_plot import component2label, get_geo_component_color, format_norm_time_lag_xlabels
 
 # -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+def get_repeating_snippet_suffix(min_cc, min_num_similar):
+    """
+    Get the suffix of the repeating snippet file.
+    """
+
+    suffix = f"cc{min_cc:.2f}_num_sim_det{min_num_similar:d}"
+    
+    return suffix
+
+# -----------------------------------------------------------------------------
 # Data‑holding structures (brought inline from utils_cc.py)
 # -----------------------------------------------------------------------------
 

@@ -18,7 +18,7 @@ from obspy import UTCDateTime
 from obspy.signal.cross_correlation import correlate_template
 from numpy import float32, ndarray
 from scipy.signal import find_peaks
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 from utils_basic import GEO_COMPONENTS as components, SAMPLING_RATE as sampling_rate, ROOTDIR_GEO as dirpath_geo, PICK_DIR as dirpath_pick, DETECTION_DIR as dirpath_det
@@ -104,10 +104,15 @@ def assemble_template_matches(template_dict: Dict[str, Template], match_dict: Di
     return tm_dict
 
 # Save the template matches for all stations
-def save_template_matches(tm_dict: Dict[str, TemplateMatches], min_freq_filter: float, cc_threshold: float):
+def save_template_matches(tm_dict: Dict[str, TemplateMatches], min_freq_filter: float, max_freq_filter: Optional[float] = None, cc_threshold: float = 0.95):
     for station in tm_dict.keys():
         print(f"Saving template matches for {station}...")
-        filepath_tm = Path(dirpath_det) / f"template_matches_manual_templates_freq{min_freq_filter:.0f}hz_cc{cc_threshold:.2f}.h5"
+        if max_freq_filter is None:
+            filepath_tm = Path(dirpath_det) / f"template_matches_manual_templates_freq{min_freq_filter:.0f}hz_cc{cc_threshold:.2f}.h5"
+        else:
+            filepath_tm = Path(dirpath_det) / f"template_matches_manual_templates_freq{min_freq_filter:.0f}_{max_freq_filter:.0f}hz_cc{cc_threshold:.2f}.h5"
+            
+        print(f"Saving template matches to {filepath_tm}...")
         tm_dict[station].to_hdf(filepath_tm, overwrite=True)
 
 # Compute the three-component cross-correlation between a template and a stream
@@ -156,6 +161,7 @@ parser = ArgumentParser()
 parser.add_argument("--template_id", type=str, help="The ID of the template to match")
 
 parser.add_argument("--min_freq_filter", type=float, help="The low corner frequency for filtering the data", default=20.0)
+parser.add_argument("--max_freq_filter", type=float, help="The high corner frequency for filtering the data", default=None)
 parser.add_argument("--cc_threshold", type=float, help="The cross-correlation threshold", default=0.95)
 parser.add_argument("--test", action="store_true", help="Test mode: only process one day")
 parser.add_argument("--day_test", type=str, help="The day to test", default="2020-01-14")
@@ -163,6 +169,7 @@ parser.add_argument("--day_test", type=str, help="The day to test", default="202
 args = parser.parse_args()
 template_id = args.template_id
 min_freq_filter = args.min_freq_filter
+max_freq_filter = args.max_freq_filter
 cc_threshold = args.cc_threshold
 test = args.test
 day_test = args.day_test
@@ -174,7 +181,10 @@ day_test = args.day_test
 if __name__ == "__main__":
 
     # Get the HDF5 file path
-    hdf5_path = Path(dirpath_geo) / f"preprocessed_data_freq{min_freq_filter:.0f}hz.h5"
+    if max_freq_filter is None:
+        hdf5_path = Path(dirpath_geo) / f"preprocessed_data_freq{min_freq_filter:.0f}hz.h5"
+    else:
+        hdf5_path = Path(dirpath_geo) / f"preprocessed_data_freq{min_freq_filter:.0f}_{max_freq_filter:.0f}hz.h5"
 
     # Load the template waveforms
     print(f"Loading template waveforms for {template_id}...")
@@ -216,4 +226,4 @@ if __name__ == "__main__":
 
     # Save the template matches
     print(f"Saving template matches...")
-    save_template_matches(tm_dict, min_freq_filter = min_freq_filter, cc_threshold = cc_threshold)
+    save_template_matches(tm_dict, min_freq_filter = min_freq_filter, max_freq_filter = max_freq_filter, cc_threshold = cc_threshold)

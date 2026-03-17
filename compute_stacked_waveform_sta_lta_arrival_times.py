@@ -56,31 +56,26 @@ def plot_station_cf(ax, cf,
 
 """
 Get the trigger time from the STA/LTA characteristic function
+The trigger time and uncertainty are estimated by taking the mean of the trigger times and uncertainties for each cf threshold.
 """
-def get_trigger_time(cf, threshold, timeax, get_uncertainty = True):
-    indices = where(cf > threshold)[0]
+def get_trigger_time(cf, timeax, get_uncertainty = True, min_cf_threshold = 1.5, max_cf_threshold = 2.5, cf_threshold_interval = 0.1):
+    cf_thresholds = arange(min_cf_threshold, max_cf_threshold + cf_threshold_interval, cf_threshold_interval)
 
-    if len(indices) == 0:
-        if get_uncertainty:
-            return nan, nan
+    trigger_times = []
+    for cf_threshold in cf_thresholds:
+        indices = where(cf > cf_threshold)[0]
+        if len(indices) == 0:
+            continue
         else:
-            return nan
-    else:
-        i_trigger = indices[0]
-        trigger_time = timeax[i_trigger]
+            i_trigger = indices[0]
+            trigger_time = timeax[i_trigger]
+            trigger_times.append(trigger_time)
 
-        if get_uncertainty:
-            noise_std = std(cf[:i_trigger])
-            print(f"Noise std: {noise_std}")
-            slope_before = (cf[i_trigger] - cf[i_trigger - 1]) / (timeax[i_trigger] - timeax[i_trigger - 1])
-            print(f"Slope before: {slope_before}")
-            slope_after = (cf[i_trigger + 1] - cf[i_trigger]) / (timeax[i_trigger + 1] - timeax[i_trigger])
-            print(f"Slope after: {slope_after}")
-            trigger_time_std = noise_std / (slope_before + slope_after) * 2
+    if get_uncertainty:
+        trigger_time_mean = mean(trigger_times)
+        trigger_time_std = std(trigger_times)
 
-            return trigger_time, trigger_time_std
-        else:
-            return trigger_time
+        return trigger_time_mean, trigger_time_std
 
 #--------------------------------------------------------------------------------------------------
 # Define the main function
@@ -90,21 +85,31 @@ def main():
     # Get the command line arguments
     parser = ArgumentParser()
     parser.add_argument("--template_id", type=str)
-    parser.add_argument("--window_length_sta", type=float, default=0.02)
+    parser.add_argument("--min_freq_filter", type=float, default=20.0)
+    parser.add_argument("--max_freq_filter", type=float, default=200.0)
+    parser.add_argument("--snr_power", type=float, default=4.0)
+    parser.add_argument("--window_length_sta", type=float, default=0.005)
     parser.add_argument("--window_length_lta", type=float, default=0.05)
-    parser.add_argument("--threshold", type=float, default=4.0)
+    parser.add_argument("--min_cf_threshold", type=float, default=1.5)
+    parser.add_argument("--max_cf_threshold", type=float, default=2.5)
+    parser.add_argument("--cf_threshold_interval", type=float, default=0.1)
 
     args = parser.parse_args()
 
     # Get the input parameters
     template_id = args.template_id
+    min_freq_filter = args.min_freq_filter
+    max_freq_filter = args.max_freq_filter
+    snr_power = args.snr_power
     window_length_sta = args.window_length_sta
     window_length_lta = args.window_length_lta
-    threshold = args.threshold
+    min_cf_threshold = args.min_cf_threshold
+    max_cf_threshold = args.max_cf_threshold
+    cf_threshold_interval = args.cf_threshold_interval
 
     # Load the stacked waveforms
     print(f"Loading the stacked waveforms for Template {template_id}")
-    filename = f"matched_waveform_stack_template{template_id}.mseed"
+    filename = f"matched_waveform_stack_template{template_id}_freq{min_freq_filter:.0f}_{max_freq_filter:.0f}hz_snr_power{snr_power:.0f}.mseed"
     filepath = Path(dirpath_detection) / filename
     stream = read(filepath)
     starttime = stream[0].stats.starttime
@@ -113,8 +118,8 @@ def main():
     print(f"Getting the unique stations")
     stations = get_unique_stations(stream)
 
-    # Compute the kurtosis and estimate the arrival times
-    print(f"Computing the kurtosis and estimating the arrival times")
+    # Compute the STA/LTA and estimate the arrival times
+    print(f"Computing the STA/LTA and estimating the arrival times")
     cf_dict = {}
     for station in stations:
         stream_sta = stream.select(station = station)
@@ -134,10 +139,10 @@ def main():
         print(f"Estimating the arrival times for station {station}")
         cf_sta = cf_dict[station]
         timeax = arange(len(cf_sta)) / sampling_rate
-        arrival_time, arrival_time_std = get_trigger_time(cf_sta, threshold, timeax, get_uncertainty = True)
+        arrival_time, arrival_time_std = get_trigger_time(cf_sta, timeax, get_uncertainty = True, min_cf_threshold = min_cf_threshold, max_cf_threshold = max_cf_threshold, cf_threshold_interval = cf_threshold_interval)
         arrival_time_dict[station] = (arrival_time, arrival_time_std)
 
-    # Plot the waveforms, kurtosis, and arrival times
+    # Plot the waveforms, characteristic function, and arrival times
     print(f"Plotting the waveforms, STA/LTA, and arrival times")
     fig, axes = subplots(len(stations), 1, figsize=(10, 15), sharex=True)
     fig.subplots_adjust(hspace=0.3)
@@ -189,13 +194,13 @@ def main():
 
     output_df = DataFrame(output_dicts)
     output_df.sort_values(by = "arrival_time", inplace = True)
-    outpath = Path(dirpath_detection) / f"template_arrivals_sta_lta_stack_{template_id}.csv"
+    outpath = Path(dirpath_detection) / f"template_arrivals_sta_lta_stack_{template_id}_freq{min_freq_filter:.0f}_{max_freq_filter:.0f}hz_snr_power{snr_power:.0f}.csv"
     output_df.to_csv(outpath, index=False, na_rep="nan")
     print(f"Saved the mean pick times to {outpath}")
 
     # Save the figure
     print(f"Saving the figure")
-    save_figure(fig, f"stacked_waveform_sta_lta_arrivals_template{template_id}.png")
+    save_figure(fig, f"stacked_waveform_sta_lta_arrivals_template{template_id}_freq{min_freq_filter:.0f}_{max_freq_filter:.0f}hz_snr_power{snr_power:.0f}.png")
 
 if __name__ == "__main__":
     main()

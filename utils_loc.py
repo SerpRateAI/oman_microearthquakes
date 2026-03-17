@@ -5,10 +5,13 @@ from h5py import File, string_dtype
 from typing import Dict, Any
 from pandas import Timestamp, Timedelta
 from tqdm import tqdm
+from pandas import DataFrame
 
 from utils_basic import (
     VEL_MODEL_DIR as dirpath_vel,
     LOC_DIR as dirpath_loc,
+    DETECTION_DIR as dirpath_detection,
+    get_template_subarray
 )
 
 from matplotlib.pyplot import figure, subplots, imshow, colorbar, show, tight_layout, savefig
@@ -18,20 +21,60 @@ from utils_plot import format_east_xlabels, format_north_ylabels, format_depth_y
 """
 Save the travel time volumes to a HDF5 file.
 """
-def save_travel_time_volumes(phase, subarray, scale_factor, easts_grid, norths_grid, depths_grid, travel_time_dict):
-    filename = "travel_time_volumes.h5"
-    filepath = Path(dirpath_vel) / filename
+def save_travel_time_volumes_individual(filepath, phase, subarray, scale_factor, easts_grid, norths_grid, depths_grid, travel_time_dict):
 
     # Check if the file exists
     with File(filepath, "a") as f:
-        # Get the group for the phase
-        phase_group = f.require_group(phase)
+        f.attrs["phase"] = phase
+        f.attrs["subarray"] = subarray
+        f.attrs["scale_factor"] = scale_factor    
 
-        # Get the group for the subarray
-        subarray_group = phase_group.require_group(subarray)
+        # Save the axes
+        if "east_grid" in f.keys():
+            del f["east_grid"]
+        f.create_dataset("east_grid", data = easts_grid, dtype=float, shape=easts_grid.shape)
 
+        if "north_grid" in f.keys():
+            del f["north_grid"]
+        f.create_dataset("north_grid", data = norths_grid, dtype=float, shape=norths_grid.shape)
+
+        if "depth_grid" in f.keys():
+            del f["depth_grid"]
+        f.create_dataset("depth_grid", data = depths_grid, dtype=float, shape=depths_grid.shape)
+
+        # Save the stations
+        stations = list(travel_time_dict.keys())
+        dt = string_dtype(encoding="utf-8")
+
+        # Delete the stations dataset if it exists
+        if "stations" in f.keys():
+            del f["stations"]
+
+        f.create_dataset("stations",
+                                      data=array(stations, dtype=dt),
+                                      dtype=dt, shape=len(stations))
+
+        # Save the travel time volumes for each station
+        for station, travel_time_vol in travel_time_dict.items():
+            station_group = f.require_group(station)
+
+            if "travel_time" in station_group.keys():
+                del station_group["travel_time"]
+
+            # Save the travel time volume
+            station_group.create_dataset("travel_time", data = travel_time_vol, dtype=float, shape=travel_time_vol.shape)
+
+            print(f"Saved travel time volume of {phase} for station {station} and scale factor {scale_factor} to {filepath}.")
+
+"""
+Combine the travel time volumes of multiple scale factors into a single HDF5 file.
+"""
+def save_travel_time_volumes_combined(filepath, scale_factor, easts_grid, norths_grid, depths_grid, travel_time_dict):
+
+    # Check if the file exists
+    with File(filepath, "a") as f:
         # Get the group for the scale factor
-        scale_factor_group = subarray_group.require_group(f"{scale_factor:.1f}")
+        scale_factor_group = f.require_group(f"{scale_factor:.1f}")
 
         # Save the axes
         if "east_grid" in scale_factor_group.keys():
@@ -68,19 +111,37 @@ def save_travel_time_volumes(phase, subarray, scale_factor, easts_grid, norths_g
             # Save the travel time volume
             station_group.create_dataset("travel_time", data = travel_time_vol, dtype=float, shape=travel_time_vol.shape)
 
-            print(f"Saved travel time volume of {phase} for station {station} to {filepath}.")
+            print(f"Saved travel time volumes of {station} for scale factor {scale_factor} to {filepath}.")
 
 """
 Load the travel time volumes of a certain phase and subarray from a HDF5 file.
 """
-def load_travel_time_volumes(phase, subarray, scale_factor):
-    filename = "travel_time_volumes.h5"
-    filepath = Path(dirpath_vel) / filename
+def load_travel_time_volumes_individual(filepath):
 
     with File(filepath, "r") as f:
-        phase_group = f[phase]
-        subarray_group = phase_group[subarray]
-        scale_factor_group = subarray_group[f"{scale_factor:.1f}"]
+        # Read the axes
+        easts_grid = f["east_grid"][:]
+        norths_grid = f["north_grid"][:]
+        depths_grid = f["depth_grid"][:]
+
+        # Read the stations
+        stations = f["stations"][:]
+        stations = [station.decode("utf-8") for station in stations]
+
+        # Read the travel time volumes for each station
+        travel_time_dict = {}
+        for station in stations:
+            travel_time_dict[station] = f[station]["travel_time"][:]
+
+        return easts_grid, norths_grid, depths_grid, travel_time_dict
+    
+"""
+Load the travel time volumes of a certain scale factor from a combined HDF5 file.
+"""
+def load_travel_time_volumes_combined(filepath, scale_factor = 1.0):
+    with File(filepath, "r") as f:
+        print(f.keys())
+        scale_factor_group = f[f"{scale_factor:.1f}"]
 
         # Read the axes
         easts_grid = scale_factor_group["east_grid"][:]
@@ -97,42 +158,48 @@ def load_travel_time_volumes(phase, subarray, scale_factor):
             travel_time_dict[station] = scale_factor_group[station]["travel_time"][:]
 
         return easts_grid, norths_grid, depths_grid, travel_time_dict
-    
+
 """
-Save location information to an HDF5 file.
+Save location information of a grid search to an individual HDF5 file.
 The location information includes the origin time, location, minimum RMS, predicted arrival times, and the RMS volume.
 """
-def save_location_info(event_type, event_id, arrival_type, phase, scale_factor, location_dict, arrival_time_dict, easts_grid, norths_grid, depths_grid, rms_vol):
-    filename = "location_info.h5"
-    filepath = Path(dirpath_loc) / filename
+def save_location_to_hdf_individual(filepath, event_type, event_id, arrival_type, phase, subarray, scale_factor, weight, location_dict, arrival_time_dict, misfit_dict, easts_grid, norths_grid, depths_grid, misfit_vol):
 
-    with File(filepath, "a") as f:
-        event_type_group = f.require_group(event_type)
-        event_group = event_type_group.require_group(event_id)
-        arrival_type_group = event_group.require_group(arrival_type)
-        phase_group = arrival_type_group.require_group(phase)
-        scale_factor_group = phase_group.require_group(f"{scale_factor:.1f}")
-
+    with File(filepath, "w") as f:
         # Save the location information
         origin_time = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
         east = location_dict["east"]
         north = location_dict["north"]
         depth = location_dict["depth"]
-        rms = location_dict["min_rms"]
+        misfit = location_dict["min_misfit"]
 
-        scale_factor_group.attrs["origin_time"] = origin_time
-        scale_factor_group.attrs["east"] = east
-        scale_factor_group.attrs["north"] = north
-        scale_factor_group.attrs["depth"] = depth
-        scale_factor_group.attrs["min_rms"] = rms
+        # Save the event information
+        f.attrs["event_type"] = event_type
+        f.attrs["event_id"] = event_id
+        f.attrs["arrival_type"] = arrival_type
+        f.attrs["phase"] = phase
+        f.attrs["scale_factor"] = scale_factor
+        f.attrs["subarray"] = subarray
+        f.attrs["weight"] = weight
+
+        f.attrs["origin_time"] = origin_time
+        f.attrs["east"] = east
+        f.attrs["north"] = north
+        f.attrs["depth"] = depth
+        f.attrs["min_misfit"] = misfit
 
         # Save the predicted arrival times
-        arrival_group = scale_factor_group.require_group("arrival_time")
+        arrival_group = f.require_group("arrival_time")
         for station, arrival_time in arrival_time_dict.items():
             arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
 
-        # Save the RMS volume
-        volume_group = scale_factor_group.require_group("rms_volume")
+        # Save the misfit at each station (in seconds)
+        misfit_group = f.require_group("misfit")
+        for station, misfit in misfit_dict.items():
+            misfit_group.attrs[station] = misfit
+
+        # Save the misfit volume
+        volume_group = f.require_group("misfit_volume")
 
         # Save the axes
         if "east_grid" in volume_group.keys():
@@ -147,64 +214,226 @@ def save_location_info(event_type, event_id, arrival_type, phase, scale_factor, 
             del volume_group["depth_grid"]
         volume_group.create_dataset("depth_grid", data=depths_grid, dtype=float, shape=depths_grid.shape)
 
-        # Save the RMS volume
-        if "rms" in volume_group.keys():
-            del volume_group["rms"]
-        volume_group.create_dataset("rms", data=rms_vol, dtype=float, shape=rms_vol.shape)
+        # Save the misfit volume
+        if "misfit" in volume_group.keys():
+            del volume_group["misfit"]
+        volume_group.create_dataset("misfit", data=misfit_vol, dtype=float, shape=misfit_vol.shape)
 
-    print(f"Saved the location information of {event_type} {event_id} {phase} with scale factor {scale_factor} to {filepath}.")
+    print(f"Saved the location information to {filepath}.")
+
+"""
+Save the location information of multiple grid searches to a combined HDF5 file
+"""
+def save_location_to_hdf_combined(filepath, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
+    # Unpack the parameters
+    arrival_type = param_dict["arrival_type"]
+    phase = param_dict["phase"]
+    subarray = param_dict["subarray"]
+    scale_factor = param_dict["scale_factor"]
+    weight = param_dict["weight"]
+
+    # Get the grid information
+    easts_grid = grid_dict["easts_grid"]
+    norths_grid = grid_dict["norths_grid"]
+    depths_grid = grid_dict["depths_grid"]
+    misfit_vol = grid_dict["misfit_vol"]
+
+    with File(filepath, "a") as f:
+        # Create a group for the arrival type
+        arrival_type_group = f.require_group(arrival_type)
+        phase_group = arrival_type_group.require_group(phase)
+        scale_factor_group = phase_group.require_group(f"{scale_factor:.1f}")
+        
+        # Save the location information
+        origin_time = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
+        east = location_dict["east"]
+        north = location_dict["north"]
+        depth = location_dict["depth"]
+        misfit = location_dict["min_misfit"]
+        
+        # Save the location information
+        scale_factor_group.attrs["origin_time"] = origin_time
+        scale_factor_group.attrs["east"] = east
+        scale_factor_group.attrs["north"] = north
+        scale_factor_group.attrs["depth"] = depth
+        scale_factor_group.attrs["min_misfit"] = misfit
+
+        # Save the weight
+        scale_factor_group.attrs["weight"] = weight
+
+        # Save the predicted arrival times
+        arrival_group = scale_factor_group.require_group("arrival_time")
+        for station, arrival_time in arrival_time_dict.items():
+            arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
+        
+        # Save the misfit at each station (in seconds)
+        misfit_group = scale_factor_group.require_group("station_misfit")
+        for station, misfit in station_misfit_dict.items():
+            misfit_group.attrs[station] = misfit
+
+        # Save the misfit volume
+        volume_group = scale_factor_group.require_group("misfit_volume")
+
+        # Save the axes
+        if "east_grid" in volume_group.keys():
+            del volume_group["east_grid"]
+        volume_group.create_dataset("east_grid", data=easts_grid, dtype=float, shape=easts_grid.shape)
+
+        if "north_grid" in volume_group.keys():
+            del volume_group["north_grid"]
+        volume_group.create_dataset("north_grid", data=norths_grid, dtype=float, shape=norths_grid.shape)
+
+        if "depth_grid" in volume_group.keys():
+            del volume_group["depth_grid"]
+        volume_group.create_dataset("depth_grid", data=depths_grid, dtype=float, shape=depths_grid.shape)
+
+        if "misfit" in volume_group.keys():
+            del volume_group["misfit"]
+        volume_group.create_dataset("misfit", data=misfit_vol, dtype=float, shape=misfit_vol.shape)
+
+    print(f"Saved the location information to {filepath}.")
+
+"""
+Read the station misfits of a grid search result from an HDF5 file
+"""
+def load_station_misfits_from_hdf_combined(filepath, arrival_type, phase, subarray, scale_factor):
+    with File(filepath, "r") as f:
+        arrival_type_group = f[arrival_type]
+        phase_group = arrival_type_group[phase]
+        subarray_group = phase_group[subarray]
+        print(subarray_group.keys())
+        scale_factor_group = subarray_group[f"{scale_factor:.1f}"]
+        
+        misfit_dict = {}
+        misfit_group = scale_factor_group.require_group("station_misfit")
+        for station in misfit_group.attrs.keys():
+            misfit_dict[station] = misfit_group.attrs[station]
+
+        return misfit_dict
+
+"""
+Load the predicted arrival times from a combined HDF5 file
+"""
+def load_predicted_arrival_times_from_hdf_combined(filepath, arrival_type, phase, scale_factor):
+
+    with File(filepath, "r") as f:
+        arrival_type_group = f[arrival_type]
+        phase_group = arrival_type_group[phase]
+        scale_factor_group = phase_group[f"{scale_factor:.1f}"]
+        
+        # Load the predicted arrival times
+        arrival_time_dict = {}
+        arrival_group = scale_factor_group.require_group("arrival_time")
+        for station in arrival_group.attrs.keys():
+            arrival_time_dict[station] = Timestamp(arrival_group.attrs[station], unit="ns")
+
+        # Load the origin time
+        origin_time = Timestamp(scale_factor_group.attrs["origin_time"], unit="ns")
+
+        return arrival_time_dict, origin_time
 
 """
 Load the location information from an HDF5 file.
 """
-def load_location_info(event_type, event_id, arrival_type, phase, scale_factor):
-    filename = "location_info.h5"
-    filepath = Path(dirpath_loc) / filename
-
+def load_location_from_hdf_individual(filepath):
     with File(filepath, "r") as f:
-        event_type_group = f[event_type]
-        event_group = event_type_group[event_id]
-        arrival_type_group = event_group[arrival_type]
-        phase_group = arrival_type_group[phase]
-        scale_factor_group = phase_group[f"{scale_factor:.1f}"]
-
         # Load the location information
-        origin_time = Timestamp(scale_factor_group.attrs["origin_time"], unit="ns")
-        east = scale_factor_group.attrs["east"]
-        north = scale_factor_group.attrs["north"]
-        depth = scale_factor_group.attrs["depth"]
-        rms = scale_factor_group.attrs["min_rms"]
+        event_type = f.attrs["event_type"]
+        event_id = f.attrs["event_id"]
+        arrival_type = f.attrs["arrival_type"]
+        phase = f.attrs["phase"]
+        scale_factor = f.attrs["scale_factor"]
+        subarray = f.attrs["subarray"]
+        weight = f.attrs["weight"]
+
+        origin_time = Timestamp(f.attrs["origin_time"], unit="ns")
+        east = f.attrs["east"]
+        north = f.attrs["north"]
+        depth = f.attrs["depth"]
+        misfit = f.attrs["min_misfit"]
 
         location_dict = {
             "origin_time": origin_time,
             "east": east,
             "north": north,
             "depth": depth,
-            "min_rms": rms
+            "min_misfit": misfit
         }
 
         # Load the predicted arrival times
         arrival_time_dict = {}
-        arrival_group = scale_factor_group["arrival_time"]
+        arrival_group = f["arrival_time"]
         for station in arrival_group.attrs.keys():
             arrival_time_dict[station] = Timestamp(arrival_group.attrs[station], unit="ns")
 
-        # Load the RMS volume
-        easts_grid = scale_factor_group["rms_volume"]["east_grid"][:]
-        norths_grid = scale_factor_group["rms_volume"]["north_grid"][:]
-        depths_grid = scale_factor_group["rms_volume"]["depth_grid"][:]
-        rms_vol = scale_factor_group["rms_volume"]["rms"][:]
+        # Load the misfit at each station
+        station_misfit_dict = {}
+        misfit_group = f["misfit"]
+        for station in misfit_group.attrs.keys():
+            station_misfit_dict[station] = misfit_group.attrs[station]
 
-        return location_dict, arrival_time_dict, easts_grid, norths_grid, depths_grid, rms_vol
+        # Load the misfit volume
+        easts_grid = f["misfit_volume"]["east_grid"][:]
+        norths_grid = f["misfit_volume"]["north_grid"][:]
+        depths_grid = f["misfit_volume"]["depth_grid"][:]
+        misfit_vol = f["misfit_volume"]["misfit"][:]
+
+        # Pack the location information
+        param_dict = {
+            "event_type": event_type,
+            "event_id": event_id,
+            "arrival_type": arrival_type,
+            "phase": phase,
+            "subarray": subarray,
+            "scale_factor": scale_factor,
+            "weight": weight
+        }
+
+        # Pack the grid information
+        grid_dict = {
+            "easts_grid": easts_grid,
+            "norths_grid": norths_grid,
+            "depths_grid": depths_grid,
+            "misfit_vol": misfit_vol
+        }
     
+        return param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict
+    
+
+
 """
-Plot the RMS distribution of a template event.
+Save the location to an CSV file
+"""
+def save_location_to_csv_individual(filepath, template_id, arrival_type, phase, scale_factor, weight, east, north, depth, origin_time, misfit):
+    subarray = get_template_subarray(template_id)
+    
+    location_dict = {
+        "template_id": template_id,
+        "arrival_type": arrival_type,
+        "phase": phase,
+        "subarray": subarray,
+        "scale_factor": scale_factor,
+        "weight": weight,
+        "east": east,
+        "north": north,
+        "depth": depth,
+        "origin_time": origin_time,
+        "misfit": misfit,
+    }
+    
+    location_df = DataFrame(location_dict, index=[0])
+    #print(location_df)
+    location_df.to_csv(filepath, index=False)
+    print(f"Saved the location to {filepath}.")
+
+"""
+Plot the misfit distribution of a template event.
 The figure consists of two subplots:
-- The first subplot shows the RMS distribution at the depth slice of the template event
-- The second subplot shows the RMS distribution at the north slice of the template event
+- The first subplot shows the misfit distribution at the depth slice of the template event
+- The second subplot shows the misfit distribution at the north slice of the template event
 """
-def plot_rms_distribution(rms_grid, easts_grid, norths_grid, depths_grid, i_east, i_north, i_depth, station_df,
-                          rmsmax=0.02,
+def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, i_east, i_north, i_depth, station_df,
+                          misfitmax=0.01,
                           figwidth = 8.0, hspace = 0.07, margin_x = 0.02, margin_y = 0.02,
                           source_size = 300, station_size = 250,
                           cbar_x = 0.05, cbar_y = 0.05, cbar_width = 0.03, cbar_height = 0.3, cbar_tick_spacing = 0.005,
@@ -237,13 +466,13 @@ def plot_rms_distribution(rms_grid, easts_grid, norths_grid, depths_grid, i_east
     frac_map_height = 1 - 2 * margin_y - hspace - frac_profile_height
     ax_map = fig.add_axes([margin_x, margin_y + frac_profile_height + hspace, 1 - 2 * margin_x, frac_map_height])
 
-    # Plot the RMS distribution at the depth slice
-    rms_map = rms_grid[i_depth, :, :]
+    # Plot the misfit distribution at the depth slice
+    misfit_map = misfit_grid[i_depth, :, :]
     east_min_rms = easts_grid[i_east]
     north_min_rms = norths_grid[i_north]
     depth_min_rms = depths_grid[i_depth]
 
-    im = ax_map.pcolormesh(easts_grid, norths_grid, rms_map, vmin=0.0, vmax=rmsmax, shading='auto')
+    im = ax_map.pcolormesh(easts_grid, norths_grid, misfit_map, vmin=0.0, vmax=misfitmax, shading='auto')
     ax_map.scatter(east_min_rms, north_min_rms, color='salmon', marker='*', linewidths=1.0, edgecolors='black', s=source_size, zorder=10)
     format_east_xlabels(ax_map, 
                         major_tick_spacing=10.0,
@@ -251,16 +480,16 @@ def plot_rms_distribution(rms_grid, easts_grid, norths_grid, depths_grid, i_east
     format_north_ylabels(ax_map,
                          major_tick_spacing=10.0,
                          num_minor_ticks=5)
-    ax_map.set_title(f"RMS at depth = {depth_min_rms:.0f} m", fontsize=12, fontweight='bold')
+    ax_map.set_title(f"Misfit at depth = {depth_min_rms:.0f} m", fontsize=12, fontweight='bold')
 
     # Plot the stations
     for _, row in station_df.iterrows():
         ax_map.scatter(row["east"], row["north"], color='lightgray', marker='^', linewidths=1.0, edgecolors='black', s=station_size)
         ax_map.annotate(row["name"], (row["east"], row["north"]), xytext=(0, 10), textcoords='offset points', color='black', fontsize=12, ha="center", va="bottom")
 
-    # Plot the RMS distribution along the profile
-    rms_profile = rms_grid[:, i_north, :]
-    ax_profile.pcolormesh(easts_grid, depths_grid, rms_profile, vmin=0.0, vmax=rmsmax)
+    # Plot the misfit distribution along the profile
+    misfit_profile = misfit_grid[:, i_north, :]
+    ax_profile.pcolormesh(easts_grid, depths_grid, misfit_profile, vmin=0.0, vmax=misfitmax)
     ax_profile.scatter(east_min_rms, depth_min_rms, color='salmon', marker='*', linewidths=1.0, edgecolors='black', s=source_size, zorder=10)
     format_east_xlabels(ax_profile,
                         major_tick_spacing=10.0,
@@ -268,7 +497,7 @@ def plot_rms_distribution(rms_grid, easts_grid, norths_grid, depths_grid, i_east
     format_depth_ylabels(ax_profile,
                          major_tick_spacing=10.0,
                          num_minor_ticks=5)
-    ax_profile.set_title(f"RMS at north = {north_min_rms:.0f} m", fontsize=12, fontweight='bold')
+    ax_profile.set_title(f"Misfit at north = {north_min_rms:.0f} m", fontsize=12, fontweight='bold')
 
     ax_profile.set_xlim(min_east, max_east)
     ax_profile.set_ylim(min_depth, max_depth)
@@ -276,8 +505,8 @@ def plot_rms_distribution(rms_grid, easts_grid, norths_grid, depths_grid, i_east
 
     # Plot the colorbar
     cbar_ax = ax_profile.inset_axes([cbar_x, cbar_y, cbar_width, cbar_height])
-    cbar = colorbar(im, cax=cbar_ax, orientation='vertical', label="RMS (s)")
-    cbar.set_ticks(arange(0, rmsmax + cbar_tick_spacing, cbar_tick_spacing))
+    cbar = colorbar(im, cax=cbar_ax, orientation='vertical', label="Misfit (s)")
+    cbar.set_ticks(arange(0, misfitmax + cbar_tick_spacing, cbar_tick_spacing))
 
     if title is not None:
         fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
@@ -287,49 +516,44 @@ def plot_rms_distribution(rms_grid, easts_grid, norths_grid, depths_grid, i_east
 """
 Process the arrival information stored in a data frame
 """
-def process_arrival_info(arrival_df, arrival_type, to_seconds = True):
+def process_arrival_info(arrival_df, arrival_type):
     arrival_df = arrival_df.copy()
     
     # Format the arrival times and uncertainty
     if arrival_type == "kurtosis_stack" or arrival_type == "kurtosis" or arrival_type == "sta_lta_stack" or arrival_type == "sta_lta":
-        if to_seconds:
-            arrival_df["arrival_time"] = arrival_df["arrival_time"].apply(lambda x: x.timestamp()) # Convert to seconds since the Unix epoch
-    elif arrival_type == "manual":
-        if to_seconds:
+        arrival_df["arrival_time"] = arrival_df["arrival_time"].apply(lambda x: x.timestamp()) # Convert to seconds since the Unix epoch
+    elif arrival_type == "manual_stack":
             arrival_df["starttime"] = arrival_df["starttime"].apply(lambda x: x.timestamp())
             arrival_df["endtime"] = arrival_df["endtime"].apply(lambda x: x.timestamp())
-
-        # Get the arrival time
-        arrival_df["arrival_time"] = arrival_df["starttime"] + arrival_df["duration"] / 2
-    
-        arrival_df["uncertainty"] = arrival_df["duration"] / 2
+            arrival_df["arrival_time"] = arrival_df["starttime"] + arrival_df["duration"] / 2
+            arrival_df["uncertainty"] = arrival_df["duration"] / 2
 
     return arrival_df
 
 """
-Get the RMS and origin time grids
+Get the misfit and origin time grids
 """
-def get_rms_and_origin_time_grids(arrival_df, easts_grid, norths_grid, depths_grid, travel_time_dict):
+def get_misfit_and_origin_time_grids(arrival_df, easts_grid, norths_grid, depths_grid, travel_time_dict, weight = False):
     # Loop through the grid points
-    rms_vol = zeros((len(depths_grid), len(norths_grid), len(easts_grid)))
+    misfit_vol = zeros((len(depths_grid), len(norths_grid), len(easts_grid)))
     origin_times_grid = zeros((len(depths_grid), len(norths_grid), len(easts_grid)))
     print(f"Computing RMS and origin time grids...")
     for i_depth, _ in tqdm(enumerate(depths_grid), total=len(depths_grid), desc="Depth"):
         for i_north, _ in enumerate(norths_grid):
             for i_east, _ in enumerate(easts_grid):
-                rms, origin_time = get_rms_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_dict)
-                rms_vol[i_depth, i_north, i_east] = rms
+                misfit, origin_time = get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_dict, weight)
+                misfit_vol[i_depth, i_north, i_east] = misfit
                 origin_times_grid[i_depth, i_north, i_east] = origin_time
 
     # Replace the nan values with inf
-    rms_vol[isnan(rms_vol)] = inf
+    misfit_vol[isnan(misfit_vol)] = inf
 
-    return rms_vol, origin_times_grid
+    return misfit_vol, origin_times_grid
 
 """
-Get the RMS and origin time for one grid point
+Get the misfit and origin time for one grid point
 """
-def get_rms_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_dict):
+def get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_dict):
     # Loop through the arrival times
     origin_times = zeros(len(arrival_df))
     travel_times = zeros(len(arrival_df))
@@ -345,9 +569,9 @@ def get_rms_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth,
         arrival_times[i] = arrival_time
 
     origin_time = mean(origin_times)
-    rms = sqrt( mean( (arrival_times - travel_times - origin_time) ** 2))
+    misfit = sum(abs(arrival_times - travel_times - origin_time) / weights) / sum(1 / weights)
 
-    return rms, origin_time
+    return misfit, origin_time
 
 
     

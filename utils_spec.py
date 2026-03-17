@@ -9,7 +9,6 @@ from pandas import Series, DataFrame, DatetimeIndex, IntervalIndex, Timedelta, T
 from pandas import concat, crosstab, cut, date_range, merge, read_csv, read_hdf, to_datetime
 from matplotlib.pyplot import subplots, get_cmap
 from h5py import File, special_dtype
-from multitaper import MTSpec
 from multiprocessing import Pool
 from skimage.morphology import remove_small_objects
 
@@ -1840,8 +1839,8 @@ def read_geo_stft(inpath, time_labels = None, starttime = None, endtime = None, 
         else:
             # Option 2: Read the STFT of a specific time range
             # Convert the start and end times to Timestamp objects
-            starttime_to_read = Timestamp(starttime, tz = "UTC")
-            endtime_to_read = Timestamp(endtime, tz = "UTC")
+            starttime_to_read = str2timestamp(starttime)
+            endtime_to_read = str2timestamp(endtime)
 
             # Check the start time is greater than the end time
             if starttime_to_read > endtime_to_read:

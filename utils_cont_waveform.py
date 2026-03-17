@@ -1,10 +1,11 @@
 from h5py import File
-from numpy import ndarray, amax
-from pandas import Timedelta, Timestamp
+from numpy import ndarray, amax, linspace
+from pandas import Timedelta, Timestamp, date_range
 from obspy import Trace
 from typing import Dict, Union
 
-from utils_basic import GEO_CHANNELS as channels, geo_channel2component, geo_component2channel
+from utils_basic import GEO_CHANNELS as channels, geo_channel2component
+from utils_sta_lta import Snippet
 
 # -----------------------------------------------------------------------------
 # Class to store the day-long waveform
@@ -43,7 +44,23 @@ class DayLongWaveform:
         self.starttime = starttime
 
     def get_component(self, component: str) -> ndarray:
-        return self.waveform[geo_component2channel(component)]
+        return self.waveform[component]
+    
+    def slice(self, starttime: Timestamp, endtime: Timestamp) -> Snippet:
+        """
+        Slice the day-long waveform to a snippet.
+        """
+        # Convert the starttime and endtime to indices
+        start_idx = int(round((starttime.timestamp() - self.starttime.timestamp()) * self.sampling_rate))
+        end_idx = int(round((endtime.timestamp() - self.starttime.timestamp()) * self.sampling_rate))
+
+        # Slice the waveform
+        waveform_dict = {component: self.waveform[component][start_idx:end_idx] for component in self.waveform}
+
+        # Create the snippet
+        snippet = Snippet(starttime, end_idx - start_idx, waveform_dict)
+
+        return snippet
 
 # -----------------------------------------------------------------------------
 # Save a day-long trace to HDF5
@@ -100,7 +117,7 @@ def save_day_long_trace_to_hdf(trace: Trace,
 # -----------------------------------------------------------------------------
 def load_day_long_waveform_from_hdf(hdf5_path: str,
                                     station: str,
-                                    date: Union[str, Timestamp]) -> DayLongWaveform:
+                                    date: Union[str, Timestamp]) -> Union[DayLongWaveform, None]:
     """
     Load a DayLongWaveform from an HDF5 file.
 
@@ -132,11 +149,13 @@ def load_day_long_waveform_from_hdf(hdf5_path: str,
 
     with File(hdf5_path, 'r') as h5f:
         if station not in h5f:
-            raise KeyError(f"No data found for station {station}!")
+            print(f"No data found for station {station}!")
+            return None
         
         station_grp = h5f[station]
         if date_str not in station_grp:
-            raise KeyError(f"No data found for station {station} on {date_str}!")
+            print(f"No data found for station {station} on {date_str}!")
+            return None
 
         day_grp = station_grp[date_str]
 
@@ -190,6 +209,9 @@ def load_waveform_slice(hdf5_path: str,
     -------
     waveform_dict : Dict[str, numpy.ndarray]
         Dictionary with keys for each component, containing the sliced data array.
+
+    time_array : numpy.ndarray
+        Time array of the sliced waveform.
     """
     # Get the keyword arguments
     num_pts = kwargs.get("num_pts", None)
@@ -206,38 +228,41 @@ def load_waveform_slice(hdf5_path: str,
         start_ts = Timestamp(starttime, unit="s")
     else:
         start_ts = starttime
-    
-    # Normalize slice times
-    if num_pts is None:
-        if isinstance(endtime, float):
-            end_ts = Timestamp(endtime, unit="s")
-        else:
-            end_ts = endtime
-    else:
-        end_ts = start_ts + Timedelta(seconds=(num_pts - 1) / sampling_rate)
 
     # Get the date string
     date_str = start_ts.strftime("%Y-%m-%d")
 
     with File(hdf5_path, 'r') as h5f:
         day_grp = h5f[station][date_str]
+
         # Read metadata from any component
         ds0 = next(iter(day_grp.values()))
         # Nanoseconds since epoch
         orig_start_ns = int(ds0.attrs['starttime_ns'])
-        sampling_rate = ds0.attrs['sampling_rate']
         # Convert orig_start to seconds
         orig_start_sec = orig_start_ns / 1e9
         # Compute sample indices
 
-        idx0 = int(round((start_ts.timestamp() - orig_start_sec) * sampling_rate))
-        idx1 = int(round((end_ts.timestamp() - orig_start_sec) * sampling_rate))
-        # Clip to valid range
-        idx0 = max(0, idx0)
-        idx1 = min(ds0.attrs['num_pts'], idx1)
+
 
         waveform_dict: Dict[str, ndarray] = {}
+        time_array: ndarray = None
         for channel, ds in day_grp.items():
+            sampling_rate = ds.attrs["sampling_rate"]
+            if num_pts is None:
+                if isinstance(endtime, float):
+                    end_ts = Timestamp(endtime, unit="s")
+                else:
+                    end_ts = endtime
+            else:
+                end_ts = start_ts + Timedelta(seconds=(num_pts - 1) / sampling_rate)
+
+            idx0 = int(round((start_ts.timestamp() - orig_start_sec) * sampling_rate))
+            idx1 = int(round((end_ts.timestamp() - orig_start_sec) * sampling_rate))
+            # Clip to valid range
+            idx0 = max(0, idx0)
+            idx1 = min(ds0.attrs['num_pts'], idx1)
+            time_array = date_range(start_ts, end_ts, periods=idx1 - idx0)
             waveform_dict[geo_channel2component(channel)] = ds[idx0:idx1]
 
     # Normalize the waveform
@@ -252,7 +277,7 @@ def load_waveform_slice(hdf5_path: str,
         else:
             raise ValueError("The waveform is all zeros!")
 
-    return waveform_dict
+    return waveform_dict, time_array
 
 # Example:
 # slice_dict = load_waveform_slice('data.h5', 'ABC', '2025-06-12', '2025-06-12T01:00:00', '2025-06-12T02:00:00')

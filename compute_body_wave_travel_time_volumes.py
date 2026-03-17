@@ -32,7 +32,7 @@ from utils_basic import (
     VEL_MODEL_DIR as dirpath_vel
 )
 
-from utils_loc import save_travel_time_volumes
+from utils_loc import save_travel_time_volumes_individual   
 from utils_plot import format_east_xlabels, format_north_ylabels, save_figure
 
 # -----------------------------------------------------------------------------
@@ -121,9 +121,9 @@ def plot_depth_slice(ax, travel_time_vol, easts_grid, norths_grid, depths_grid, 
 parser = ArgumentParser()
 parser.add_argument("--phase", type = str, required = True, help = "Phase name")
 parser.add_argument("--subarray", type = str, required = True, help = "Subarray name")
-
-
 parser.add_argument("--scale_factor", type = float, default = 1.0, help = "Scale factor")
+
+# Optional arguments
 parser.add_argument("--delta", type = float, default = 1.0, help = "Grid spacing in meters")
 parser.add_argument("--max_depth", type = float, default = 30.0, help = "Maximum depth in meters")
 parser.add_argument("--test", action = "store_true", help = "Run in test mode")
@@ -136,6 +136,13 @@ scale_factor = args.scale_factor
 delta = args.delta
 max_depth = args.max_depth
 test = args.test
+
+print(f"Running in test mode: {test}")
+print(f"Phase: {phase}")
+print(f"Subarray: {subarray}")
+print(f"Scale factor: {scale_factor}")
+print(f"Delta: {delta}")
+print(f"Max depth: {max_depth}")
 
 if subarray == "A":
     min_east = min_east_a
@@ -155,10 +162,16 @@ else:
     raise ValueError(f"Invalid subarray: {subarray}")
 
 if phase == "P":
-    filename_vel = f"vp_1d_scale{scale_factor:.1f}.nd"
+    if scale_factor == 1.0:
+        filename_vel = f"vp_1d_{subarray.lower()}.nd"
+    else:
+        filename_vel = f"vp_1d_{subarray.lower()}_scale{scale_factor:.1f}.nd"
     phases = [PhaseDef("P"), PhaseDef("p")]
 elif phase == "S":
-    filename_vel = f"vs_1d_scale{scale_factor:.1f}.nd"
+    if scale_factor == 1.0:
+        filename_vel = f"vs_1d_{subarray.lower()}.nd"
+    else:
+        filename_vel = f"vs_1d_{subarray.lower()}_scale{scale_factor:.1f}.nd"
     phases = [PhaseDef("S"), PhaseDef("s")]
 else:
     raise ValueError(f"Invalid phase name: {phase}")
@@ -217,15 +230,19 @@ for i, station in enumerate(stations):
     travel_time_dict[station] = travel_times
 
     if test:
-        depths = [0.0, 15.0, 30.0]
+        depths = [0.0, 10.0]
         for depth in depths: 
             print(f"Plotting the travel-time map at depth = {depth:.0f} m")
             fig, ax = subplots(1, 1, figsize = (10, 10))
 
             ax = plot_depth_slice(ax, travel_times, easts_grid, norths_grid, depths_grid, depth, east_station, north_station)
-            save_figure(fig, f"travel_time_map_{phase.lower()}_{station}_depth{depth:.0f}m.png")
+            save_figure(fig, f"travel_time_map_{phase.lower()}_{subarray.lower()}_{station}_depth{depth:.0f}m.png")
 
         break
 
 # Save the travel time volumes
-save_travel_time_volumes(phase, subarray, scale_factor, easts_grid, norths_grid, depths_grid, travel_time_dict)
+filename = f"travel_time_volumes_{phase.lower()}_{subarray.lower()}_scale{scale_factor:.1f}.h5"
+filepath = Path(dirpath_vel) / filename
+save_travel_time_volumes_individual(filepath, phase, subarray, scale_factor, easts_grid, norths_grid, depths_grid, travel_time_dict)
+
+print(f"Saved the travel time volumes to {filepath}.")

@@ -13,7 +13,7 @@ from utils_basic import DHOFAR_DATA_DIR as outdir
 
 ### Inputs ###
 # Command line arguments
-parser = ArgumentParser(description="Plot the map of the stations whose phase differences are derived and the respective observations for the AGU 2024 iPoster")
+parser = ArgumentParser(description="Get the data from the DHofar array")
 parser.add_argument("--station", type=str, help="Station")
 parser.add_argument("--starttime", type=str, help="Start time")
 parser.add_argument("--endtime", type=str, help="End time")

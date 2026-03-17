@@ -10,9 +10,9 @@ from obspy.signal.cross_correlation import correlate_template
 from pandas import to_datetime, Timestamp, Timedelta, DataFrame
 
 # from utils_cc import TemplateEventWaveforms, TemplateEvent, Matches, MatchedEvent, MatchWaveforms, MatchedEventWaveforms
-from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_BROADBAND, ROOTDIR_HYDRO, PATH_GEO_METADATA, GEO_STATIONS, GEO_COMPONENTS, BROADBAND_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
+from utils_basic import COUNTS_TO_VOLT, DB_VOLT_TO_MPASCAL, ROOTDIR_GEO, ROOTDIR_BROADBAND, KARST_DATA_DIR, ROOTDIR_HYDRO, KARST_COMPONENTS, GEO_STATIONS, GEO_COMPONENTS, BROADBAND_COMPONENTS, HYDRO_STATIONS, HYDRO_LOCATIONS, BROKEN_CHANNELS, BROKEN_LOCATIONS
 from utils_basic import NUM_SEONCDS_IN_DAY
-from utils_basic import get_broadband_metadata, get_geo_metadata, timestamp_to_utcdatetime, str2list, str2timestamp
+from utils_basic import get_broadband_metadata, get_geo_metadata, get_karst_metadata, timestamp_to_utcdatetime, str2list, str2timestamp
 
 # Read and preprocess day-long geophone waveforms
 def read_and_process_day_long_geo_waveforms(day, 
@@ -626,6 +626,65 @@ def read_and_process_picked_geo_waveforms(pickdf, freqmin=None, freqmax=None, st
 #     print(f"In total, {len(match_waveforms)} matches processed!")
 #     return match_waveforms
 
+# Read and preprocess the waveform data of the karst experiment in a time window
+def read_and_process_windowed_karst_waveforms(stations, starttime,
+                                            dur = None, endtime = None,
+                                            metadata = None,
+                                            freqmin = None, freqmax = None, 
+                                            components = None, 
+                                            zerophase = False, corners = 4, normalize = False, decimate = False, decimate_factor = 10):
+    
+        # Check if both endtime and dur are specified
+        if endtime is not None and dur is not None:
+            raise ValueError("Error: Only one of endtime and dur can be specified!")
+        
+        # Check if meta data is specified
+        if metadata is None:
+            metadata = get_karst_metadata()
+        
+        if not isinstance(starttime, Timestamp):
+            if type(starttime) is str:
+                starttime = Timestamp(starttime, tz="UTC")
+            else:
+                raise TypeError("Error: starttime must be a Pandas Timestamp object!")
+    
+        # Define the time window
+        if endtime is not None:
+            if not isinstance(endtime, Timestamp):
+                if type(endtime) is str:
+                    endtime = Timestamp(endtime, tz="UTC")
+                else:
+                    raise TypeError("Error: endtime must be a string or Pandas Timestamp object!")
+        elif dur is not None:
+            endtime = starttime + Timedelta(seconds=dur)
+    
+        # Read the waveforms
+        channels_to_read = get_karst_channels_to_read(components)
+
+        stream_in = Stream()
+        for station in stations:
+            stream_station = Stream()
+    
+            for channel in channels_to_read:
+                stream = read_karst_waveforms_in_timewindow(starttime, endtime, station, channel)
+                
+                if stream is None:
+                    print(f"Warning: No data found for {station}.{channel}!")
+                    break
+                else:
+                    stream_station += stream
+            
+            if len(stream_station) == len(channels_to_read):
+                stream_in += stream_station
+            else:
+                print(f"Warning: Not all components read for {station}! The station is skipped.")
+                continue
+    
+        # Process the waveforms
+        stream_proc = preprocess_karst_stream(stream_in, metadata, freqmin, freqmax, zerophase=zerophase, corners=corners, normalize=normalize, decimate=decimate, decimate_factor=decimate_factor)
+    
+        return stream_proc
+
 ## Get the list of geophone stations to read
 def get_geo_stations_to_read(stations):
     if stations is None:
@@ -672,6 +731,23 @@ def get_broadband_channels_to_read(components):
             components_to_read = components
 
     channels_to_read = [f"HH{component}" for component in components_to_read]
+
+    return channels_to_read
+
+# Get the list of broadband channels to read
+def get_karst_channels_to_read(components):
+    if components is None:
+        components_to_read = KARST_COMPONENTS
+    else:
+        if type(components) is not list:
+            if type(components) is str:
+                components_to_read = [components]
+            else:
+                raise TypeError("Error: component must be a list of strings!")
+        else:
+            components_to_read = components
+
+    channels_to_read = [f"DH{component}" for component in components_to_read]
 
     return channels_to_read
 
@@ -796,6 +872,24 @@ def read_broadband_waveforms_in_timewindow(starttime, endtime, station, channel,
 
         return stream
 
+# Read the karst waveforms in a timewindow recorded on specific channels of a specific station
+def read_karst_waveforms_in_timewindow(starttime, endtime, station, channel, rootdir=KARST_DATA_DIR):
+    
+        ### Find the day of the starttime
+        day = starttime.strftime("%Y-%m-%d")
+    
+        ### Read the waveforms
+        pattern = join(rootdir, day, f"*{station}*{channel}.mseed")
+        starttime = timestamp_to_utcdatetime(starttime)
+        endtime = timestamp_to_utcdatetime(endtime)
+        try:    
+            stream = read(pattern, starttime=starttime, endtime=endtime)
+        except:
+            print(f"Warning: {pattern} not found!")
+            return None
+
+        return stream
+
 # ## Read the hydrophone waveforms in a timewindow recorded on specific locations of a specific station
 def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, rootdir=ROOTDIR_HYDRO):
 
@@ -876,6 +970,39 @@ def preprocess_geo_stream(stream_in, metadata,
 ## Preprocess a stream object consisting of broadband data by removing the sensitivity, detrending, tapering, and filtering
 ## The output data will be in nm/s
 def preprocess_broadband_stream(stream_in, metadata, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10):
+    
+        ### Remove the sensitivity
+        stream_out = stream_in
+        stream_out.remove_sensitivity(inventory=metadata)
+
+        ### Convert from m/s to nm/s
+        for trace in stream_out:
+            trace.data *= 1e9
+    
+        ### Detrend, taper, and filter
+        stream_out.detrend("linear")
+        stream_out.taper(0.001)
+    
+        if freqmin is not None and freqmax is not None:
+            stream_out.filter("bandpass", freqmin=freqmin, freqmax=freqmax, zerophase=zerophase ,corners=corners)
+        elif freqmin is not None and freqmax is None:
+            stream_out.filter("highpass", freq=freqmin, zerophase=zerophase ,corners=corners)
+        elif freqmin is None and freqmax is not None:
+            stream_out.filter("lowpass", freq=freqmax, zerophase=zerophase ,corners=corners)
+
+        ### Decimate the waveforms
+        if decimate:
+            stream_out.decimate(decimate_factor)
+
+        ### Normalize the waveforms
+        if normalize:
+            stream_out.normalize(global_max=True)
+
+        return stream_out
+
+## Preprocess a stream object consisting of karst data by removing the sensitivity, detrending, tapering, and filtering
+## The output data will be in nm/s
+def preprocess_karst_stream(stream_in, metadata, freqmin, freqmax, corners=4, zerophase=False, normalize=False, decimate=False, decimate_factor=10):
     
         ### Remove the sensitivity
         stream_out = stream_in

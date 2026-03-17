@@ -3,7 +3,7 @@
 ### Import the necessary libraries ###
 from os.path import join
 from argparse import ArgumentParser
-from numpy import amax, array, interp, nan, isnan, pi, deg2rad, linspace, histogram, concatenate, log10
+from numpy import sqrt
 from json import loads
 from pandas import read_csv, DataFrame, read_hdf
 from matplotlib.pyplot import figure, subplots
@@ -62,7 +62,9 @@ parser.add_argument("--qf_obs_anno_text_x", type=float, help="X-coordinate offse
 parser.add_argument("--qf_obs_anno_text_y", type=float, help="Y-coordinate offset of the quality factor observation annotation text", default=2.0)
 
 parser.add_argument("--qf_sat_label_x", type=float, help="X-coordinate of the quality factor saturation label", default=0.5)
-parser.add_argument("--qf_sat_label_y", type=float, help="Y-coordinate of the quality factor saturation label", default=4.0)
+parser.add_argument("--qf_sat_label_y", type=float, help="Y-coordinate of the quality factor saturation label", default=1e4)
+
+parser.add_argument("--qf_quantile", type=float, help="Quantile of the quality factors to plot", default=95.0)
 
 # Parse the arguments
 args = parser.parse_args()
@@ -101,6 +103,9 @@ qf_obs_anno_text_y = args.qf_obs_anno_text_y
 qf_sat_label_x = args.qf_sat_label_x
 qf_sat_label_y = args.qf_sat_label_y
 
+qf_quantile = args.qf_quantile
+
+
 # Constants
 hspace = 0.05
 margin_x = 0.03
@@ -130,14 +135,8 @@ dim_label_offset_y = 5.0
 fig_dim, ax_dim = subplots(figsize=(figwidth, figheight))
 fig_qf, ax_qf_curve = subplots(figsize=(figwidth, figheight))
 
-# Read the quality factor histogram
-filename = f"stationary_resonance_qf_log_histogram_{mode_name}.csv"
-filepath = join(dirname_spec, filename)
-qf_df = read_csv(filepath)
 
-# Extract the the quality factors
-bin_centers = qf_df["log_quality_factor"].values
-counts = qf_df["normalized_count"].values
+
 
 # Plot the inferred source dimensions and quality factors
 
@@ -178,33 +177,21 @@ max_qf_resolve = max_qf_df.loc[max_qf_df["mode_name"] == mode_name, "max_qf"].va
 patch = Rectangle((0, max_qf_resolve), 1, max_qf_plot - max_qf_resolve, fill = True, color ="gray", alpha = alpha_shade)
 ax_qf_curve.add_patch(patch)
 
-# Add the axis for plotting the histogram of the quality factors
-ax_qf_hist = ax_qf_curve.inset_axes([0, 0, 1, 1])
-ax_qf_hist.fill_betweenx(bin_centers, 0, counts, color = color_observed, alpha = 0.2)
+# Load the 95% quantile of the quality factors
+filename = f"stationary_resonance_qf_quantile_interval_{qf_quantile:.1f}.csv"
+filepath = join(dirname_spec, filename)
+qf_quantile_df = read_csv(filepath)
+qf_lower = qf_quantile_df["lower_qf"].values[0]
+qf_upper = qf_quantile_df["upper_qf"].values[0]
 
-# Add the annotation for the observed quality factor
-ax_qf_hist.annotate("Observations", xy = (qf_obs_anno_x, qf_obs_anno_y), xytext = (qf_obs_anno_text_x, qf_obs_anno_text_y),
-                    arrowprops = dict(arrowstyle = "-"),
-                     fontsize = fontsize_label_phys, fontweight = "bold", transform = ax_qf_hist.transData)
+# Shade the 95% quantile zone
+patch = Rectangle((0, qf_lower), 1, qf_upper - qf_lower, fill = True, color = color_observed, alpha = alpha_shade)
+ax_qf_curve.add_patch(patch)
 
 # Add the annotation for the quality-factor-saturation zone
-ax_qf_hist.text(qf_sat_label_x, qf_sat_label_y, "Observation saturated", ha = "center", va = "bottom", fontsize = fontsize_label_phys, fontweight = "bold")
+ax_qf_curve.text(qf_sat_label_x, qf_sat_label_y, "Observation saturated", ha = "center", va = "bottom", fontsize = fontsize_label_phys, fontweight = "bold")
 
-# Turn off all spines and ticks for the histogram axis
-ax_qf_hist.spines['top'].set_visible(False)
-ax_qf_hist.spines['right'].set_visible(False) 
-ax_qf_hist.spines['bottom'].set_visible(False)
-ax_qf_hist.spines['left'].set_visible(False)
-ax_qf_hist.tick_params(axis='both', which='both', length=0)
-ax_qf_hist.set_xticks([])
-ax_qf_hist.set_yticks([])
-
-# Set background color to none
-ax_qf_hist.set_facecolor('none')
-
-# Set the axis limits
-ax_qf_hist.set_xlim(0, 1)
-ax_qf_hist.set_ylim(min_log_qf, max_log_qf)
+ax_qf_curve.text(0.5, sqrt(qf_lower * qf_upper), f"{qf_quantile:.0f}% observations", ha = "center", va = "center", fontsize = fontsize_label_phys, fontweight = "bold")
 
 # ax_qf.add_patch(Rectangle((0, min_qf), 1, max_qf - min_qf, fill = True, color = color_observed, alpha = 0.2))
 # ax_qf.text(0.5, max_qf * 1.5, "Observed range", ha = "center", va = "bottom", fontsize = fontsize_label_phys, fontweight = "bold", color = color_observed)
@@ -212,7 +199,6 @@ ax_qf_hist.set_ylim(min_log_qf, max_log_qf)
 # Set the axis limits
 ax_dim.set_xlim(0, 1)
 ax_qf_curve.set_xlim(0, 1)
-ax_qf_hist.set_xlim(0, 1)
 
 # Set the y-axis scale to logarithmic
 ax_dim.set_yscale('log')
@@ -230,14 +216,14 @@ ax_qf_curve.set_ylabel("Quality factor", fontsize = axis_label_size)
 
 # Set the x-axis label
 ax_qf_curve.set_xlabel("Gas volume fraction", fontsize = axis_label_size)
-# ax_dim.set_xlabel("Gas volume fraction", fontsize = axis_label_size)
+ax_dim.set_xlabel("Gas volume fraction", fontsize = axis_label_size)
 
 # Set the title
 ax_dim.set_title(f"Inferred fracture dimension", fontsize = fontsize_title, fontweight = "bold")
 ax_qf_curve.set_title(f"Observed & modeled quality factors", fontsize = fontsize_title, fontweight = "bold")
 
 # Plot the legends
-ax_qf_curve.legend(fontsize = legend_size, loc = "upper left", title="Burial depth", title_fontsize = legend_size)
+ax_qf_curve.legend(fontsize = legend_size, loc = "upper left", title="Source depth", title_fontsize = legend_size)
 
 ### Save the figures ###
 print("Saving the figures...")

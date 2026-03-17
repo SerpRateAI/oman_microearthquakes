@@ -13,7 +13,7 @@ from matplotlib.pyplot import subplots
 from matplotlib import colormaps
 from matplotlib.patches import Rectangle
 
-from utils_basic import PHYS_DIR as dirpath_phys, NUM_SEONCDS_IN_DAY as num_seconds_in_day, BAR as bar
+from utils_basic import PHYS_DIR as dirpath_phys, NUM_SEONCDS_IN_DAY as num_seconds_in_day, BAR as bar, DENSITY_WATER as rho_water
 from utils_plot import save_figure
 
 ###
@@ -57,7 +57,7 @@ parser.add_argument('--kappa', type=float, default=1e-6, help='The thermal diffu
 parser.add_argument('--beta', type=float, default=1e-5, help='The thermal expansion coefficient')
 parser.add_argument('--sigma', type=float, default=0.25, help='Poisson ratio')
 parser.add_argument('--vp', type=float, default=4000.0, help='The P-wave velocity in m/s')
-parser.add_argument('--rho', type=float, default=2500.0, help='The density in kg/m^3')
+parser.add_argument('--rho_lith', type=float, default=2500.0, help='The density in kg/m^3')
 parser.add_argument('--temp', type=float, default=10.0, help='The amplitude of surface temperature variation')
 
 parser.add_argument('--max_depth', type=float, default=1000.0, help='The maximum depth to consider')
@@ -88,7 +88,7 @@ kappa = args.kappa
 beta = args.beta
 sigma = args.sigma
 vp = args.vp
-rho = args.rho
+rho_lith = args.rho_lith
 max_depth = args.max_depth
 num_depths = args.num_depths
 temp = args.temp
@@ -129,10 +129,10 @@ min_depth = depths[0]
 max_depth = depths[-1]
 
 # Compute the modulus relating the thermal elastic stress to the thermal elastic strain
-modulus = vp ** 2 * rho
+modulus = vp ** 2 * rho_lith
 
-# Compute the lithostatic pressure
-p_liths = rho * g * depths + bar
+# Compute the hydrostatic pressure
+p_hydro= rho_water * g * depths + bar
 
 # Compute the thermal elastic stress for each lambda
 epsilons_xx_dict = {}
@@ -157,8 +157,8 @@ for lamb in lambs:
     p_perturbs_simple = abs(modulus * (epsilons_simple_xx + epsilons_simple_yy))
 
     # Compute the fractional change in pressure
-    frac_p_perturbs = p_perturbs / p_liths
-    frac_p_perturbs_simple = p_perturbs_simple / p_liths
+    frac_p_perturbs = p_perturbs / p_hydro
+    frac_p_perturbs_simple = p_perturbs_simple / p_hydro
 
     # Store the results
     frac_dict[lamb] = frac_p_perturbs

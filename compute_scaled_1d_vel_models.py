@@ -20,17 +20,19 @@ from utils_basic import (
 
 parser = ArgumentParser()
 parser.add_argument("--model_name", type = str, default = "vp_1d", help = "Model name")
+parser.add_argument("--subarray", type = str, default = "A", help = "Subarray name")
 parser.add_argument("--scale_factors", type = float, nargs = "+", default = [1.0, 0.9, 0.8, 0.7, 0.6, 0.5], help = "Scale factors")
 
 args = parser.parse_args()
 scale_factors = args.scale_factors
 model_name = args.model_name
+subarray = args.subarray
 
 # -----------------------------------------------------------------------------
 # Load the velocity models
 # -----------------------------------------------------------------------------
-
-vel_path = Path(dirpath_vel) / f"{model_name}.nd"
+filename = f"{model_name}_{subarray.lower()}.nd"
+vel_path = Path(dirpath_vel) / filename
 vel_model = loadtxt(vel_path)
 
 # -----------------------------------------------------------------------------
@@ -42,7 +44,7 @@ for scale_factor in scale_factors:
     vel_model_scaled[:, 1:] = vel_model[:, 1:] * scale_factor
 
     # Save the scaled velocity model
-    filename_scaled = f"{model_name}_scale{scale_factor:.1f}.nd"
+    filename_scaled = f"{model_name}_{subarray.lower()}_scale{scale_factor:.1f}.nd"
     filepath_scaled = vel_path.with_name(filename_scaled)
     savetxt(filepath_scaled, vel_model_scaled, delimiter = " ", fmt = "%.4f")
 

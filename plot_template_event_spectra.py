@@ -44,14 +44,22 @@ parser.add_argument("--template_id", type=str, help="Template ID")
 parser.add_argument("--window_length", type=float, help="Window length in seconds", default=0.1)
 
 parser.add_argument("--nw", type=int, help="Number of tapers", default=3)
+parser.add_argument("--min_freq_scale", type=float, help="Minimum frequency scale", default=50.0)
+parser.add_argument("--max_freq_scale", type=float, help="Maximum frequency scale", default=100.0)
+parser.add_argument("--db0", type=float, help="Reference dB", default=-35.0)
+parser.add_argument("--scale_label_x", type=float, help="Scale label x", default=0.3)
+parser.add_argument("--scale_label_y", type=float, help="Scale label y", default=0.3)
 
 parser.add_argument("--figwidth", type=float, help="Figure width", default=15.0)
 parser.add_argument("--figheight", type=float, help="Figure height", default=7.5)
 parser.add_argument("--linewidth", type=float, help="Line width", default=1.0)
+parser.add_argument("--min_freq_plot", type=float, help="Minimum frequency plot", default=10.0)
+parser.add_argument("--max_freq_plot", type=float, help="Maximum frequency plot", default=500.0)
 parser.add_argument("--max_db", type=float, help="Maximum dB", default=45.0)
 parser.add_argument("--min_db", type=float, help="Minimum dB", default=-20.0)
 parser.add_argument("--fontsize_axis_label", type=float, help="Font size of axis label", default=12.0)
 parser.add_argument("--fontsize_annotation", type=float, help="Font size of annotation", default=14.0)
+
 
 args = parser.parse_args()
 
@@ -59,11 +67,18 @@ template_id = args.template_id
 
 window_length = args.window_length
 nw = args.nw
+min_freq_scale = args.min_freq_scale
+max_freq_scale = args.max_freq_scale
+db0 = args.db0
+scale_label_x = args.scale_label_x
+scale_label_y = args.scale_label_y
 
 figwidth = args.figwidth
 figheight = args.figheight
 linewidth = args.linewidth
 
+min_freq_plot = args.min_freq_plot
+max_freq_plot = args.max_freq_plot
 min_db = args.min_db
 max_db = args.max_db
 fontsize_axis_label = args.fontsize_axis_label
@@ -127,16 +142,13 @@ for station in stations:
         axs[i].plot(freqax[1:], aspec_db[1:], color=color, linewidth=linewidth)
 
 # Plot the frequency scaling
-freqax, scalings = get_freq_scaling()
+freqax, scalings = get_freq_scaling(min_freq = min_freq_scale, max_freq = max_freq_scale, db0 = db0)
 axs[0].plot(freqax, scalings, color="crimson", linewidth=2 * linewidth, linestyle="--")
-axs[0].text(0.6, 0.4, r"$\propto f^2$", fontsize=fontsize_annotation, transform=axs[0].transAxes, color="crimson", ha="left", va="top")
+axs[0].text(scale_label_x, scale_label_y, r"$\propto f^2$", fontsize=fontsize_annotation, transform=axs[0].transAxes, color="crimson", ha="left", va="top")
 
 # Set the y-axis labels
 for i, component in enumerate(components):
     ax = axs[i]
-
-    ax.set_xlim(1 / window_length, sampling_rate / 2)
-    ax.set_ylim(min_db, max_db)
 
     #format_freq_xlabels(ax)
 
@@ -149,6 +161,9 @@ for i, component in enumerate(components):
         format_db_ylabels(ax)
     else:
         format_db_ylabels(ax, plot_tick_label=False, plot_axis_label=False)
+
+    ax.set_xlim(min_freq_plot, max_freq_plot)
+    ax.set_ylim(min_db, max_db)
 
 # Set the title
 fig.suptitle(f"Template {template_id}", fontsize=16, fontweight="bold", y=0.95)

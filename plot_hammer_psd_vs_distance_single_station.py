@@ -11,6 +11,7 @@ from argparse import ArgumentParser
 from numpy import sqrt, interp
 from pandas import read_csv
 from matplotlib.pyplot import subplots
+from sklearn.linear_model import QuantileRegressor
 
 from utils_basic import MT_DIR as dirpath_mt, LOC_DIR as dirpath_loc
 from utils_basic import get_geophone_coords
@@ -18,23 +19,20 @@ from utils_plot import save_figure
 
 parser = ArgumentParser(description = "Plot the PSD of hammer shots at a certian frequency recorded at a station vs distance to the shots.")
 
-parser.add_argument("--station", type = str, help = "The station name")
+parser.add_argument("--station", type = str, help = "The station to plot")
 parser.add_argument("--freq_target", type = float, help = "The frequency of the PSD to plot", default = 150.0)
-
+parser.add_argument("--marker_size", type = float, help = "The size of the markers", default = 50)
 args = parser.parse_args()
 
-station = args.station
 freq_target = args.freq_target
-
+marker_size = args.marker_size
+station = args.station
 ###
 # Load the data
 ###
 
 # Load the station locations
 station_df = get_geophone_coords()
-east_sta = station_df.loc[station, "east"]
-north_sta = station_df.loc[station, "north"]
-
 # Load the hammer locations
 filename = "hammer_locations.csv"
 filepath = join(dirpath_loc, filename)
@@ -43,12 +41,18 @@ hammer_df = read_csv(filepath, dtype = {"hammer_id": str})
 ###
 # Extract the PSD at the target frequency for each hammer
 
+# Create the plot
+fig, ax = subplots()
+print(f"Plotting the PSD of hammer shots at {freq_target:.0f} Hz recorded at {station}...")
 psds_target = []
 distances = []
-for _, row in hammer_df.iterrows():
-    hammer_id = row["hammer_id"]
-    east_hammer = row["east"]
-    north_hammer = row["north"]
+east_sta = station_df.loc[station, "east"]
+north_sta = station_df.loc[station, "north"]
+
+for _, row_hammer in hammer_df.iterrows():
+    hammer_id = row_hammer["hammer_id"]
+    east_hammer = row_hammer["east"]
+    north_hammer = row_hammer["north"]
 
     # Load the MT auto-spectra
     filename = f"hammer_mt_aspecs_{hammer_id}_{station}.csv"
@@ -63,20 +67,27 @@ for _, row in hammer_df.iterrows():
     psd = interp(freq_target, freqs, psds)
 
     distance = sqrt((east_hammer - east_sta)**2 + (north_hammer - north_sta)**2)
+
     psds_target.append(psd)
     distances.append(distance)
 
-###
-# Plot the data
-###
+# Fit a linear regression to the data
+model = QuantileRegressor(quantile=0.5, alpha=0)
+model.fit(distances, psds_target)
 
-# Create the plot
-fig, ax = subplots()
+print("Slope:", model.coef_[0])
+print("Residuals:", model.residuals_)
+print("Intercept:", model.intercept_)
 
 # Plot the data
-ax.scatter(distances, psds_target, s = 100)
+ax.scatter(distances, psds_target, s = marker_size, color = "blue", label = station)
+
+
 ax.set_xlabel("Distance to station (m)")
-ax.set_ylabel(f"PSD")
+ax.set_ylabel(f"PSD (dB)")
+ax.set_title(f"Hammer PSD at {freq_target:.0f} Hz vs distance to {station}")
 
-# Save the plot
-save_figure(fig, f"hammer_psd_vs_distance_{station}_{freq_target:.0f}hz.png")
+# Add the legend
+handles, labels = ax.get_legend_handles_labels()
+unique_labels = dict(zip(labels, handles))
+ax.legend(unique_labels.values(), unique_labels.keys(), loc = "upper right")

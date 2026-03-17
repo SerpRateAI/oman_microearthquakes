@@ -3,6 +3,9 @@
 
 ## Import libraries
 from pathlib import Path    
+from typing import List, Tuple, Optional, Dict, Any
+from pandas import Timedelta, Timestamp
+
 from numpy import (
     sqrt, 
     mean, 
@@ -23,16 +26,18 @@ from numpy import (
     int32,
     int64,
     fromiter,
+    isfinite,
+    clip
 )
 from obspy.signal.trigger import coincidence_trigger
 from obspy.core.utcdatetime import UTCDateTime
-from pandas import DataFrame, Timestamp, Grouper, Timedelta, Series, date_range, cut
+from pandas import DataFrame, Timestamp, Grouper, to_timedelta, Series, date_range, cut
 from matplotlib.pyplot import subplots
 from matplotlib.dates import DayLocator, DateFormatter
 from h5py import File
 from uuid import uuid4
-from utils_basic import INNER_STATIONS, GEO_COMPONENTS as components
-from utils_basic import NETWORK 
+from utils_basic import INNER_STATIONS, GEO_COMPONENTS as components, SAMPLING_RATE as sampling_rate
+from utils_basic import NETWORK
 
 ## Class for storing the information of an event claimed by associating the detections
 class AssociatedEvent:
@@ -201,7 +206,7 @@ class Snippet:
         starttime: Timestamp | UTCDateTime,
         num_pts: int,
         waveform: dict[str, ndarray],
-        id: str | None = None):
+        id: int | None = None):
 
         # Convert the starttime to a pandas Timestamp object
         if not isinstance(starttime, Timestamp):
@@ -217,7 +222,7 @@ class Snippet:
 
         self.waveform: dict[str, ndarray] = {comp: waveform[comp].astype(float32) for comp in components}
 
-        self.id = id or str(uuid4())
+        self.id = id # integer id
 
     # -------------------------------------------------------------------------
     # Methods
@@ -242,6 +247,10 @@ class Snippet:
 
     def __delitem__(self, idx):
         del self.waveform[components[idx]]
+
+    def get_endtime(self):
+        return self.starttime + Timedelta(seconds=(self.num_pts - 1) / sampling_rate)
+
 
 
 class Snippets:
@@ -302,18 +311,38 @@ class Snippets:
     def __str__(self):
         return f"{len(self.snippets)} snippets – {self.station}"
 
-    def get_by_id(self, id_: str) -> Snippet | None:
-        return next((sn for sn in self.snippets if sn.id == id_), None)
+    def select_by_id(self, id_, return_index=False):
+        if isinstance(id_, int):
+            if return_index:
+                for index, snippet in enumerate(self.snippets):
+                    if snippet.id == id_:
+                        return snippet, index
+                return None, None
+            else:
+                for snippet in self.snippets:
+                    if snippet.id == id_:
+                        return snippet
+                return None
+        elif isinstance(id_, list):
+            snippets = Snippets(self.station)
+            indices = []
+            for index, snippet in enumerate(self.snippets):
+                if snippet.id in id_:
+                    if return_index:
+                        indices.append(index)
+                    snippets.append(snippet)
+            if return_index:
+                return snippets, indices
+            else:
+                return snippets
     
     def get_starttimes(self) -> list[Timestamp]:
         return [sn.starttime for sn in self.snippets]
     
-
+    # Set the sequential IDs for the snippets
     def set_sequential_ids(self):
-        count = len(self.snippets)
-        width = len(str(count)) if count else 1
-        for i, sn in enumerate(self.snippets, 1):
-            sn.id = f"{i:0{width}d}"
+        for i, snippet in enumerate(self.snippets):
+            snippet.id = i # integer id
 
     @classmethod
     def from_hdf(cls, path: str | Path, trim_pad: bool = False) -> "Snippets":
@@ -323,7 +352,7 @@ class Snippets:
             obj = cls(station)
 
             starts = file['starttime'][:]
-            ids = [x.decode() for x in file['id'][:]]
+            ids = file['id'][:]
             #   max_length = int(file.attrs['max_length'])
             lengths = file['length'][:]
 
@@ -340,7 +369,7 @@ class Snippets:
                     starttime=Timestamp(starts[i], tz = 'UTC'),
                     num_pts=len(waveform_dict['Z']),
                     waveform=waveform_dict,
-                    id=sid,
+                    id=int(sid),
                 )
                 obj.append(sn)
         return obj
@@ -395,8 +424,7 @@ class Snippets:
         print(f"Padding the snippets to {max_len} points")
 
         starts = fromiter((sn.starttime.value for sn in self.snippets), dtype=int64, count=num)
-        max_id = max(len(sn.id) for sn in self.snippets)
-        ids = array([sn.id.encode() for sn in self.snippets], dtype=f"S{max_id}")
+        ids = array([sn.id for sn in self.snippets], dtype=int64)
 
         with File(path, "w") as f:
             f.attrs['station'] = self.station
@@ -446,6 +474,35 @@ class Snippets:
         bin_count_df = DataFrame({"bin_center": bin_centers, "bin_count": bin_counts})
 
         return bin_count_df
+    
+def merge_snippets(snippets_list: List[Snippets]) -> Snippets:
+    """
+    Merge a list of Snippets containers into one.
+
+    Parameters
+    ----------
+    snippets_list : list of Snippets
+        List of Snippets objects to merge. All must share the same station.
+
+    Returns
+    -------
+    Snippets
+        A new Snippets object containing all the merged snippets.
+    """
+    if not snippets_list:
+        raise ValueError("Input list is empty.")
+
+    # Check that all stations match
+    stations = {snips.station for snips in snippets_list}
+    if len(stations) > 1:
+        raise ValueError(f"Cannot merge snippets from multiple stations: {stations}")
+
+    merged = Snippets(station=snippets_list[0].station)
+
+    for snips in snippets_list:
+        merged.extend(snips)
+
+    return merged
 
 # ### Run the STA/LTA method on the 3C waveforms of a given station at a given time window
 # def run_sta_lta(stream, sta, lta, thr_on, thr_off, thr_coincidence_sum=2, trigger_type='classicstalta'):
@@ -963,7 +1020,123 @@ def compute_sta_lta(trace,
 
     return cf
 
+def pick_triggers(
+    cf,
+    on_thresh: float,
+    off_thresh: float,
+    *,
+    sampling_rate: Optional[float] = None,  # if given, durations/gaps/padding are in seconds
+    min_duration: float = 0.0,              # minimum event length (sec or samples)
+    min_gap: float = 0.0,                   # merge events closer than this (sec or samples)
+    pad_pre: float = 0.0,                   # extend each event earlier (sec or samples)
+    pad_post: float = 0.0,                   # extend each event later (sec or samples)
+    starttime: Optional[Timestamp] = None    # absolute start time of cf[0]
+) -> Dict[str, Any]:
+    """
+    Identify (start_idx, end_idx) event windows from a characteristic function using
+    on/off thresholds. If `starttime` is provided, also return the
+    corresponding (start_time, end_time) pairs (end is exclusive).
+
+    Returns
+    -------
+    {
+      "event_indices": List[Tuple[int, int]],                 # (start_idx, end_idx), end exclusive
+      "event_times": Optional[List[Tuple[Timestamp, Timestamp]]]  # if starttime given
+    }
+    """
+    cf_arr = asarray(cf, float)
+    if cf_arr.ndim != 1:
+        raise ValueError("`cf` must be 1-D")
+    if on_thresh < off_thresh:
+        raise ValueError("Require on_thresh >= off_thresh for hysteresis.")
+
+    num_pts = cf_arr.size
+    cf_arr = cf_arr.copy()
+    cf_arr[~isfinite(cf_arr)] = 0.0
+
+    # Helper to convert sec->samples if sampling_rate is provided
+    def _to_samples(v: float) -> int:
+        if sampling_rate is None:
+            return int(round(v))
+        return int(round(v * sampling_rate))
+
+    min_len  = max(0, _to_samples(min_duration))
+    gap_len  = max(0, _to_samples(min_gap))
+    pre_pad  = max(0, _to_samples(pad_pre))
+    post_pad = max(0, _to_samples(pad_post))
+
+    # --- Hysteresis scan ---
+    event_indices: List[Tuple[int, int]] = []
+    triggered = False
+    start_idx = 0
+
+    for idx in range(num_pts):
+        if not triggered:
+            if cf_arr[idx] >= on_thresh:
+                triggered = True
+                start_idx = idx
+        else:
+            if cf_arr[idx] <= off_thresh:
+                triggered = False
+                end_idx = idx + 1  # end exclusive
+                event_indices.append((start_idx, end_idx))
+
+    if triggered:
+        event_indices.append((start_idx, num_pts))
+
+    # Enforce minimum duration
+    if min_len > 1 and event_indices:
+        event_indices = [(s, e) for (s, e) in event_indices if (e - s) >= min_len]
+
+    # Merge close events
+    if gap_len > 0 and len(event_indices) > 1:
+        merged: List[Tuple[int, int]] = []
+        cur_s, cur_e = event_indices[0]
+        for s, e in event_indices[1:]:
+            if s - cur_e <= gap_len:
+                cur_e = max(cur_e, e)
+            else:
+                merged.append((cur_s, cur_e))
+                cur_s, cur_e = s, e
+        merged.append((cur_s, cur_e))
+        event_indices = merged
+
+    # Pad and clip
+    if (pre_pad > 0) or (post_pad > 0):
+        padded: List[Tuple[int, int]] = []
+        for s, e in event_indices:
+            s2 = int(clip(s - pre_pad, 0, num_pts))
+            e2 = int(clip(e + post_pad, 0, num_pts))
+            padded.append((s2, e2))
+        event_indices = padded
+
+    # Optional absolute times
+    event_windows: Optional[List[Tuple[Timestamp, Timestamp]]] = None
+    if starttime is not None:
+        if sampling_rate is None:
+            raise ValueError("`sampling_rate` is required to compute event times.")
+        dt = 1.0 / sampling_rate
+        event_windows = []
+        for s, e in event_indices:
+            t0 = starttime + to_timedelta(s * dt, unit="s")
+            t1 = starttime + to_timedelta(e * dt, unit="s")  # end exclusive
+            event_windows.append((t0, t1))
+
+    return {"event_indices": event_indices, "event_windows": event_windows}
+
 # Helper to compute mean over any window ending at i (exclusive):
 # mean(i, n) = (cs[i] - cs[i - n]) / n
 def window_mean(csum, i, n):
     return (csum[i] - csum[i - n]) / n
+
+# Get the suffix of a STA/LTA detection
+def get_sta_lta_suffix(sta_window_sec, lta_window_sec, on_thresh, off_thresh):
+    sta_str = f"sta{sta_window_sec * sampling_rate:.0f}"
+    lta_str = f"lta{lta_window_sec * sampling_rate:.0f}"
+    on_str = f"on{on_thresh:.0f}"
+    off_str = f"off{off_thresh:.0f}"
+    suffix = f"{sta_str}_{lta_str}_{on_str}_{off_str}"
+
+    return suffix
+    
+

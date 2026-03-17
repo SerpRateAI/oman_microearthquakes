@@ -1,8 +1,18 @@
 # Functions and classes for plotting
 from os.path import join
+from typing import Union
 from pandas import Timestamp, Timedelta
 from pandas import date_range, merge
-from numpy import arctan, array, abs, amax, angle, column_stack, cos, sin, linspace, log, pi, radians
+from numpy import (
+    arctan, 
+    array, 
+    abs, 
+    amax, 
+    column_stack, 
+    cos, 
+    sin, linspace, 
+    pi, radians, zeros, ones_like, int64, fill_diagonal, diff, histogram, ones_like, int64, ceil, ndarray,
+)
 from numpy.linalg import norm
 from scipy.stats import gmean
 
@@ -18,7 +28,7 @@ from matplotlib.patches import Rectangle
 from matplotlib.cm import ScalarMappable
 from matplotlib.transforms import Bbox, TransformedBbox
 from mpl_toolkits.axes_grid1.inset_locator import BboxConnector, BboxPatch
-
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 import colorcet as cc
 
 from utils_basic import GEO_STATIONS, GEO_COMPONENTS, STARTTIME_GEO, ENDTIME_GEO, STARTTIME_HYDRO, ENDTIME_HYDRO, ROOTDIR_GEO, FIGURE_DIR, HYDRO_LOCATIONS
@@ -84,6 +94,93 @@ class ParticleMotionData:
 ######
 # Functions
 ######
+
+#------------------------------------------------------------------------------
+# Functions for plotting STA/LTA detections and correlation matrices
+#------------------------------------------------------------------------------
+
+def plot_corr_histogram_streaming(corr_mat,
+                                bins=100,
+                                cc_range=(0.0, 1.0),
+                                fraction_range=(0.0, 0.05),
+                                chunk_size=1000,
+                                figsize=(8, 5)):
+    """
+    Build a histogram of off-diagonal correlation values in streaming fashion.
+    Suitable for very large matrices (avoids flattening).
+    """
+    num_snips = corr_mat.shape[0]
+    hist_counts = zeros(bins, dtype=int64)
+    bin_edges = linspace(cc_range[0], cc_range[1], bins + 1)
+
+    for start in range(0, num_snips, chunk_size):
+        end = min(start + chunk_size, num_snips)
+        block = corr_mat[start:end, :]
+        # Mask diagonal inside this block
+        if end - start == num_snips:
+            # Full block includes diagonal
+            mask = ones_like(block, dtype=bool)
+            fill_diagonal(mask, 0)
+            values = block[mask]
+        else:
+            values = block.ravel()
+        # Update histogram
+        counts, _ = histogram(values, bins=bin_edges)
+        hist_counts += counts
+
+    # Normalize the histogram
+    hist_fractions = hist_counts / hist_counts.sum()
+
+    fig = figure(figsize=figsize)
+    ax = fig.add_subplot(111)
+    ax.bar(bin_edges[:-1], hist_fractions, width=diff(bin_edges),
+            align="edge", color="steelblue", edgecolor="black", alpha=0.8)
+    ax.set_xlim(cc_range[0], cc_range[1])
+    ax.set_ylim(fraction_range[0], fraction_range[1])
+
+    ax.set_xlabel("Correlation coefficient", fontsize=12)
+    ax.set_ylabel("Fraction", fontsize=12)
+
+    return fig, ax, bin_edges, hist_fractions
+
+def plot_downsampled_matrix(matrix: ndarray,
+                        block_size: Union[int, None] = None,
+                        target_tiles: int = 10000,
+                        min_block_size: int = 1,
+                        max_block_size: int = 2048,
+                        cmap: str = 'plasma',
+                        figsize: Union[tuple, None] = None):
+    num_snips = matrix.shape[0]
+    if block_size is None:
+        block_size = max(min_block_size or 1, min(max_block_size or 2048, int(ceil(num_snips / target_tiles))))
+
+    if num_snips < block_size:
+        downsampled = matrix
+    else:
+        down_num = num_snips // block_size
+        if down_num == 0:
+            downsampled = matrix
+        else:
+            downsampled = matrix[:down_num*block_size, :down_num*block_size] \
+                .reshape(down_num, block_size, down_num, block_size) \
+                .mean(axis=(1, 3))
+
+    fig = figure(figsize=figsize)
+    ax = fig.add_subplot(111)
+    im = ax.imshow(downsampled, cmap=cmap, aspect='auto', vmin=0.0, vmax=1.0)
+
+    # Create a new axis of equal height for the colorbar
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cb = fig.colorbar(im, cax=cax)
+    cb.set_label("Correlation")
+
+    ax.set_xlabel("Index (downsampled)")
+    ax.set_ylabel("Index (downsampled)")
+    ax.set_aspect('equal')
+
+    return fig, ax, block_size
+
 
 ###### Functions for plotting waveforms ######
 
@@ -2842,7 +2939,7 @@ def add_zoom_effect(ax1, ax2, xmin, xmax, prop_lines, prop_patches):
 
 ###### Functions for plotting maps ######
 # Plot the station triads while ensuring that each edge is plotted only once
-def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color = "crimson", zorder = 1, **kwargs):
+def plot_station_triads(ax, linewidth_normal = 1.0, linewidth_highlight = 2.0, linecolor = "gray", highlight_color = "crimson", zorder = 1, **kwargs):
 
     coord_df = get_geophone_coords()
     triad_df = get_geophone_triads()
@@ -2869,7 +2966,7 @@ def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color
                     east1, north1 = coord_df.loc[station1, ["east", "north"]]
                     east2, north2 = coord_df.loc[station2, ["east", "north"]]
 
-                    ax.plot([east1, east2], [north1, north2], color = highlight_color, linewidth = linewidth, zorder = zorder)
+                    ax.plot([east1, east2], [north1, north2], color = highlight_color, linewidth = linewidth_highlight, zorder = 10)
                     edges_plotted.add(edge)
 
     # Plot the remaining edges
@@ -2882,7 +2979,7 @@ def plot_station_triads(ax, linewidth = 1.0, linecolor = "gray", highlight_color
                 east1, north1 = coord_df.loc[station1, ["east", "north"]]
                 east2, north2 = coord_df.loc[station2, ["east", "north"]]
 
-                ax.plot([east1, east2], [north1, north2], color = linecolor, linewidth = linewidth, zorder = zorder)
+                ax.plot([east1, east2], [north1, north2], color = linecolor, linewidth = linewidth_normal, zorder = zorder)
                 edges_plotted.add(edge)
             
     return ax
@@ -2899,6 +2996,7 @@ def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="light
     x0, x1 = ax.get_xlim()
     xmin = Timestamp(num2date(x0))
     xmax = Timestamp(num2date(x1))
+    print(xmin, xmax)
 
     # Precompute next-day’s sunrise
     sun_df = sun_df.copy()
@@ -2910,6 +3008,7 @@ def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="light
     block = sun_df.loc[mask_start & mask_end]
 
     if block.empty:
+        print("No day-night shading to add!")
         return ax
 
     first_idx = block.index[0]
@@ -3175,14 +3274,14 @@ def format_freq_xlabels(ax,
 
 # Format the x labels in relative time
 def format_rel_time_xlabels(ax, label=True, 
-                            major_tick_spacing=60, minor_tick_spacing=15, 
+                            major_tick_spacing=60, num_minor_ticks=5,
                             axis_label_size=12, tick_label_size=10,
                             major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
         ax.set_xlabel("Time (s)", fontsize=axis_label_size)
 
     ax.xaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.xaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_xticklabels():
         label.set_fontsize(tick_label_size) 
@@ -3355,7 +3454,7 @@ def format_db_ylabels(ax, sensor="geo",
 ## Function to format the ylabel in ground velocity
 def format_vel_ylabels(ax, label=True, 
                        abbreviation=False, 
-                       major_tick_spacing=100, minor_tick_spacing=50, 
+                       major_tick_spacing=100, num_minor_ticks=5, 
                        axis_label_size=12,  tick_label_size=10,
                        major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if label:
@@ -3365,7 +3464,7 @@ def format_vel_ylabels(ax, label=True,
             ax.set_ylabel(f"{GROUND_VELOCITY_LABEL}", fontsize=axis_label_size)
 
     ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
-    ax.yaxis.set_minor_locator(MultipleLocator(minor_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
 
     for label in ax.get_yticklabels():
         label.set_fontsize(tick_label_size) 

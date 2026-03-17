@@ -15,7 +15,8 @@ from pandas import DataFrame
 from matplotlib.pyplot import Axes, figure
 from matplotlib.gridspec import GridSpec
 
-from utils_basic import GEO_CHANNELS as channels, GEO_COMPONENTS as components, SAMPLING_RATE as sampling_rate, ROOTDIR_GEO as dirpath_geo, PICK_DIR as dirpath_pick, DETECTION_DIR as dirpath_det
+from utils_basic import GEO_CHANNELS as channels, GEO_COMPONENTS as components, SAMPLING_RATE as sampling_rate, DETECTION_DIR as dirpath_det
+from utils_basic import get_freq_limits_string
 from utils_cc import TemplateMatches, associate_matched_events, get_normalized_time_lags, plot_station_lag_time_histogram
 from utils_plot import save_figure
 
@@ -37,6 +38,7 @@ parser.add_argument("--max_lag", type=float, default=1e-2, help="Maximum lag tim
 parser.add_argument("--bin_width", type=float, default=2 * 1 / sampling_rate, help=f"Bin width (s), default to 2 * 1 / {sampling_rate:.0f} = {2 * 1 / sampling_rate:.3f}")
 
 parser.add_argument("--min_freq_filter", type=float, help="The low corner frequency for filtering the data", default=20.0)
+parser.add_argument("--max_freq_filter", type=float, help="The high corner frequency for filtering the data", default=200.0)
 
 parser.add_argument("--dirpath_det", type=str, help="The directory path for the detection results", default="/vortexfs1/home/tianze.liu/slurm_oman/detection_results")
 
@@ -51,10 +53,14 @@ bin_width = args.bin_width
 subplot_height = args.subplot_height
 subplot_width = args.subplot_width
 min_freq_filter = args.min_freq_filter
+max_freq_filter = args.max_freq_filter
 
 # Load the match information
+freq_str = get_freq_limits_string(min_freq_filter, max_freq_filter)
 print(f"Loading the data for {template_id}...")
-filepath = Path(dirpath_det) / f"template_matches_manual_templates_freq{min_freq_filter:.0f}hz_cc{cc_threshold:.2f}.h5"
+filename = f"template_matches_manual_templates_{freq_str}_cc{cc_threshold:.2f}.h5"
+filepath = Path(dirpath_det) / filename
+
 tm_dict = {}
 for station in stations_to_plot:
     tm = TemplateMatches.from_hdf(filepath, id=template_id, station=station)
@@ -78,12 +84,12 @@ print(f"Computing the normalized time lags for {template_id}...")
 record_df = get_normalized_time_lags(tm_dict, record_df)
 
 # Save the record dataframe
-filename = f"matched_events_manual_templates_freq{min_freq_filter:.0f}hz_cc{cc_threshold:.2f}_num_unmatch{max_num_unmatched_sta:d}.h5"
+filename = f"matched_events_manual_templates_{freq_str}_cc{cc_threshold:.2f}_num_unmatch{max_num_unmatched_sta:d}.h5"
 outpath = Path(dirpath_det) / filename
 
 record_out_df = record_df.reset_index() # Reset the index to make it a regular dataframe
 print(record_out_df.head())
-record_out_df.to_hdf(outpath, key=f"template_{template_id}", mode="w")
+record_out_df.to_hdf(outpath, key=f"template_{template_id}", mode="a")
 print(f"Saved the record dataframe to {outpath}")
 
 # Plot the histograms of the normalized time lags
@@ -105,7 +111,7 @@ for i, station in enumerate(stations_to_plot):
 fig.suptitle(f"Template {template_id}, num. unmatched sta. = {max_num_unmatched_sta:d}", fontsize=14, fontweight="bold", y = 0.95)
 
 ## Save the figure
-save_figure(fig, f"template_match_lag_time_histograms_{template_id}_cc{cc_threshold:.2f}_num_unmatch{max_num_unmatched_sta:d}.png")
+save_figure(fig, f"template_match_lag_time_histograms_{template_id}_{freq_str}_cc{cc_threshold:.2f}_num_unmatch{max_num_unmatched_sta:d}.png")
 
 
 

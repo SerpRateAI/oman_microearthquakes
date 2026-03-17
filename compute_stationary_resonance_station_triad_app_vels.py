@@ -129,17 +129,17 @@ for _, row in phase_diff_df.iterrows():
         phase_diff_jks_12 = row[f"phase_diff_jks_{component.lower()}_12"]
         phase_diff_jks_23 = row[f"phase_diff_jks_{component.lower()}_23"]
 
-        print(phase_diff_jks_12.shape)
-        print(phase_diff_jks_23.shape)
+        # print(phase_diff_jks_12.shape)
+        # print(phase_diff_jks_23.shape)
 
-        print(freq_inds_12)
-        print(freq_inds_23)
+        # print(freq_inds_12)
+        # print(freq_inds_23)
 
         # Find the indices of the common frequency indices
         freq_inds_common, inds_12, inds_23 = intersect1d(freq_inds_12, freq_inds_23, return_indices=True)
 
-        print(inds_12)
-        print(inds_23)
+        # print(inds_12)
+        # print(inds_23)
 
         phase_diff_jks_12 = phase_diff_jks_12[:, inds_12]
         phase_diff_jks_23 = phase_diff_jks_23[:, inds_23]
@@ -154,7 +154,7 @@ for _, row in phase_diff_df.iterrows():
         num_indep = len(inds_common_indep)
         print(f"Number of independent frequency indices in the common set: {num_indep}")
 
-        # Use the jackknife estimate the covariance matrix for each pair of independent phase differences
+        # Use the jackknife to estimate the covariance matrix for each pair of independent phase differences
         vel_app_cov_mats = []
         vel_app_vars = []
         back_azi_vars = []
@@ -201,7 +201,7 @@ for _, row in phase_diff_df.iterrows():
         sum_of_inv = sum( inv(mat) for mat in vel_app_cov_mats )
         vel_app_cov_mat = inv(sum_of_inv)
 
-        print(vel_app_cov_mat)
+        # print(vel_app_cov_mat)
 
         result_dict[f"app_vel_cov_mat_{component.lower()}"] = vel_app_cov_mat
         result_dict[f"app_vel_uncer_{component.lower()}"] = sqrt(vel_app_var)

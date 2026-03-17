@@ -36,6 +36,7 @@ parser.add_argument("--test", action="store_true", help="Run in test mode", defa
 parser.add_argument("--mode_name", type=str, help="Mode name", default="PR02549")
 parser.add_argument("--nw", type=float, help="Time-bandwidth product", default=3.0)
 parser.add_argument("--min_cohe", type=float, help="Minimum coherence", default=0.85)
+parser.add_argument("--decimate", action="store_true", help="Decimate the data", default=False)
 parser.add_argument("--decimate_factor", type=int, help="Decimation factor", default=10)
 parser.add_argument("--bandwidth", type=float, help="Resonance bandwidth for computing the average frequency", default=0.02) 
 
@@ -51,6 +52,7 @@ test = args.test
 mode_name = args.mode_name
 nw = args.nw
 min_cohe = args.min_cohe
+decimate = args.decimate
 decimate_factor = args.decimate_factor
 
 bandwidth = args.bandwidth
@@ -134,11 +136,11 @@ for component in components:
         date_str = date.strftime("%Y-%m-%d")
         stream1 = read_and_process_day_long_geo_waveforms(date_str, 
                                                             stations = station1, components = component, 
-                                                            decimate = True, decimate_factor = decimate_factor)
+                                                            decimate = decimate, decimate_factor = decimate_factor)
         
         stream2 = read_and_process_day_long_geo_waveforms(date_str, 
                                                             stations = station2, components = component, 
-                                                            decimate = True, decimate_factor = decimate_factor)           
+                                                            decimate = decimate, decimate_factor = decimate_factor)           
         
         clock2 = time()
         print(f"Elapsed time: {clock2 - clock1} s")

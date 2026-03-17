@@ -3,7 +3,7 @@
 ## Import libraries
 from os.path import join
 from numpy import datetime64
-from numpy import angle, amax, array, exp, log10, mean, sqrt, ndarray
+from numpy import angle, amax, array, exp, log10, mean, sqrt, ndarray, isscalar
 from scipy.stats import gmean
 from scipy.signal import hilbert
 from pandas import Timestamp, Timedelta, DatetimeIndex
@@ -31,6 +31,8 @@ PICK_DIR = "/proj/mazu/tianze.liu/oman/snuffler_picks"
 GFZ_DATA_DIR = "/proj/mazu/tianze.liu/oman/gfz_data"
 NORCAL_DATA_DIR = "/proj/mazu/tianze.liu/oman/norcal_data"
 DHOFAR_DATA_DIR = "/proj/mazu/tianze.liu/oman/dhofar_data"
+KARST_DATA_DIR = "/proj/mazu/tianze.liu/oman/karst_data"
+COULEE_DATA_DIR = "/proj/mazu/tianze.liu/oman/coulee_data"
 IMAGE_DIR = "/proj/mazu/tianze.liu/oman/satellite_images"
 MT_DIR = "/proj/mazu/tianze.liu/oman/multitaper"
 PHYS_DIR = "/proj/mazu/tianze.liu/oman/physical_models"
@@ -39,9 +41,13 @@ LOC_DIR = "/proj/mazu/tianze.liu/oman/locations"
 TIME_DIR = "/proj/mazu/tianze.liu/oman/times"
 DETECTION_DIR = "/proj/mazu/tianze.liu/oman/detections"
 PLOTTING_DIR = "/proj/mazu/tianze.liu/oman/plotting"
+AUDIO_DIR = "/proj/mazu/tianze.liu/oman/audio"
+MOVIE_DIR = "/proj/mazu/tianze.liu/oman/movies"
+
 
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 PATH_BROADBAND_METADATA = join(ROOTDIR_BROADBAND, "station_metadata.xml")
+PATH_KARST_METADATA = join(KARST_DATA_DIR, "station_metadata.xml")
 
 CENTER_LONGITUDE = 58.70034
 CENTER_LATITUDE =  22.881751
@@ -62,6 +68,7 @@ ALL_COMPONENTS = ["Z", "1", "2", "H"]
 GEO_COMPONENTS = ["Z", "1", "2"]
 GEO_CHANNELS = ["GHZ", "GH1", "GH2"]
 BROADBAND_COMPONENTS = ["Z", "N", "E"]
+KARST_COMPONENTS = ["Z", "N", "E"]
 #PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
 PHASE_DIFF_COMPONENT_PAIRS = [("1", "2"), ("1", "Z"), ("2", "Z")]
 
@@ -118,12 +125,16 @@ EASTMAX_A_LOC = 50.0
 NORTHMIN_A_LOC = -84.0
 NORTHMAX_A_LOC = -34.0
 
-EASTMIN_B_LOC = -101.0
-EASTMAX_B_LOC = -51.0
-NORTHMIN_B_LOC = 37.0
-NORTHMAX_B_LOC = 87.0
+EASTMIN_B_LOC = -50.0
+EASTMAX_B_LOC = 0.0
+NORTHMIN_B_LOC = 40.0
+NORTHMAX_B_LOC = 85.0
 
-SAMPLING_RATE = 1000.0
+SAMPLING_RATE = 1000 # in Hz
+SAMPLING_RATE_AUDIO = 48000 # in Hz
+
+DENSITY_WATER = 1000.0 # kg/m^3
+SOUND_SPEED_WATER = 1500.0 # m/s
 
 # DAYS_PATH = join(ROOTDIR_GEO, "days.csv")
 # NIGHTS_PATH = join(ROOTDIR_GEO, "nights.csv")get_broadband_metadata
@@ -137,12 +148,12 @@ STARTTIME_HYDRO = Timestamp("2019-05-01T05:00:00", tz="UTC")
 ENDTIME_HYDRO = Timestamp("2020-02-03T09:59:59", tz="UTC")
 HAMMER_STARTTIME = Timestamp("2020-01-25T06:00:00", tz="UTC")
 HAMMER_ENDTIME = Timestamp("2020-01-25T15:00:00", tz="UTC")
-HAMMER_DAY = "2020-01-25"
+HAMMER_DAY = Timestamp("2020-01-25", tz="UTC")
 
 COUNTS_TO_VOLT = 419430 # Divide this number to get from counts to volts for the hydrophone data
 DB_VOLT_TO_MPASCAL = -165.0 # Divide this number in dB to get from volts to microPascals
 
-BOREHOLE_DEPTH = 382.0 # Depth of the borehole in meters
+BOREHOLE_DEPTH = 400.0 # Depth of the borehole in meters
 WATER_TABLE = 15.0 # Depth to the wavter table in meters
 WATER_HEIGHT = BOREHOLE_DEPTH - WATER_TABLE # Height of the water column in meters
 
@@ -170,7 +181,8 @@ def utcdatetime_to_timestamp(utcdatetime):
 
 ### Function to convert from Pandas Timestamp objects to ObsPy UTCDateTime objects
 def timestamp_to_utcdatetime(timestamp):
-    utcdatetime = UTCDateTime(to_datetime(timestamp, utc = True).to_pydatetime())
+    ts = to_datetime(timestamp, utc=True).floor('us')  # drop nanoseconds safely
+    utcdatetime = UTCDateTime(ts.to_pydatetime())
 
     return utcdatetime
 
@@ -213,7 +225,12 @@ def power2db(power, reference_type=None, **kwargs):
         raise ValueError("Invalid reference type!")
     
     power = power / reference
-    power[ power < POWER_FLOOR ] = POWER_FLOOR
+
+    if isscalar(power):
+        power = max(power, POWER_FLOOR)
+    else:
+        power[ power < POWER_FLOOR ] = POWER_FLOOR
+
     db = 10 * log10(power)
 
     return db
@@ -237,6 +254,12 @@ def get_geo_metadata():
 # Get the broadband metadata
 def get_broadband_metadata():
     inv = read_inventory(PATH_BROADBAND_METADATA)
+
+    return inv
+
+# Get the karst metadata
+def get_karst_metadata():
+    inv = read_inventory(PATH_KARST_METADATA)
 
     return inv
 
@@ -579,3 +602,18 @@ def geo_channel2component(channel):
     component = channel.replace("GH", "")
 
     return component
+
+# Get the string for the frequency limits
+def get_freq_limits_string(freqmin, freqmax):
+    if freqmax is not None:
+        return f"freq{freqmin:.0f}_{freqmax:.0f}hz"
+    else:
+        return f"freq{freqmin:.0f}hz"
+    
+# Get the subarray of a template event
+def get_template_subarray(template_id):
+    inpath = join(DETECTION_DIR, "manual_templates.csv")
+    template_df = read_csv(inpath, dtype={"template_id": "str"})
+    subarray = template_df.loc[template_df["template_id"] == template_id, "subarray"].values[0]
+
+    return subarray

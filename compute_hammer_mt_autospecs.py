@@ -30,6 +30,8 @@ hammer_id = args.hammer_id
 nw = args.nw
 window_length = args.window_length
 
+print(f"Window length: {window_length}")
+
 ###
 # Load the data
 ###

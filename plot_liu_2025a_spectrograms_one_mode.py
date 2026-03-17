@@ -26,36 +26,39 @@ from utils_plot import add_zoom_effect, format_datetime_xlabels, format_freq_yla
 # Parse the arguments
 parser = ArgumentParser(description = "Plot the spectrograms of one mode in Liu et al. (2025a) for presentation purposes")
 parser.add_argument("--mode_name", type = str, help = "Name of the mode to plot")
-parser.add_argument("--location1", type = str, help = "Location of the hydrophone for plotting PR02549")
-parser.add_argument("--location2", type = str, help = "Location of the hydrophone for plotting PR03822")
-parser.add_argument("--station1", type = str, help = "Geophone station 1 for plotting")
-parser.add_argument("--station2", type = str, help = "Geophone station 2 for plotting")
+parser.add_argument("--location_hydro", type = str, help = "Location of the hydrophone for plotting PR02549")
+parser.add_argument("--station_geo", type = str, help = "Geophone station for plotting")
 
 parser.add_argument("--window_length", type = float, default = 60.0, help = "Window length for the spectrograms in seconds")
 parser.add_argument("--min_hydro_db", type = float, default = -10.0, help = "Minimum hydrophone dB")
 parser.add_argument("--max_hydro_db", type = float, default = 10.0, help = "Maximum hydrophone dB")
 parser.add_argument("--min_geo_db", type = float, default = -10.0, help = "Minimum geophone dB")
 parser.add_argument("--max_geo_db", type = float, default = 10.0, help = "Maximum geophone dB")
+parser.add_argument("--plot_break", action = "store_true", help = "Whether to plot the marker for the break in the spectrograms")
 
 parser.add_argument("--colormap_name", type = str, default = "plasma", help = "Name of the colormap")
 parser.add_argument("--color_ref", type = str, default = "limegreen", help = "Color of the reference line")
+parser.add_argument("--dpi", type = int, default = 300, help = "DPI of the figure")
+parser.add_argument("--format", type = str, default = "jpg", help = "Format of the figure")
 
 # Parse the arguments
 args = parser.parse_args()
 mode_name = args.mode_name
-location1 = args.location1
-location2 = args.location2
-station1 = args.station1
-station2 = args.station2
+location_hydro = args.location_hydro
+station_geo = args.station_geo
 
 window_length = args.window_length
 min_hydro_db = args.min_hydro_db
 max_hydro_db = args.max_hydro_db
 min_geo_db = args.min_geo_db
 max_geo_db = args.max_geo_db
+plot_break = args.plot_break
 
 colormap_name = args.colormap_name
 color_ref = args.color_ref
+
+dpi = args.dpi
+format = args.format
 
 # Constants
 station_hydro = "A00"
@@ -72,7 +75,7 @@ station_label_fontsize = 14
 long_label_x = 0.010
 long_label_y = 0.96
 
-short_label_x = 0.035
+short_label_x = 0.025
 short_label_y = 0.96
 
 cax_x = 0.04
@@ -101,7 +104,7 @@ linewidth_time = 3.0
 linewidth_box = 2.0
 linewidth_arrow = 1.5
 
-annoatation_size = 10
+annoatation_size = 12
 
 noise_annotation_gap = Timedelta("4.5d")
 arrow_length_noise = Timedelta("4d")
@@ -131,10 +134,8 @@ subplot_label_offset = (-0.01, 0.01)
 
 # Print the parameters
 print("### Plotting the spectrograms in Liu et al. (2025a) ###")
-print("Location 1: ", location1)
-print("Location 2: ", location2)
-print("Station 1: ", station1)
-print("Station 2: ", station2)
+print("Location hydro: ", location_hydro)
+print("Geophone station: ", station_geo)
 print(f"Hydrophone dB range: {min_hydro_db} - {max_hydro_db} dB")
 print(f"Geophone dB range: {min_geo_db} - {max_geo_db} dB")
 print(f"Window length: {window_length} s")
@@ -151,7 +152,7 @@ cmap.set_bad(color='darkgray')
 ### Generate the subplots ###
 # Top subplots for Mode 2
 # 1st row: 9-month hydrophone spectrogram, 2nd row: 21-day hydrophone spectrogram and geophone spectrograms of the two stations
-gs = GridSpec(2, 3, figure=fig, hspace = hspace, wspace = wspace)
+gs = GridSpec(2, 2, figure=fig, hspace = hspace, wspace = wspace)
 
 ### Read the plotting frequency ranges ###
 filename = f"stationary_resonance_freq_ranges_hydro.csv"
@@ -176,26 +177,21 @@ filename = f"whole_deployment_daily_hydro_stft_{station_hydro}_{suffix_spec}.h5"
 inpath = join(dir_spec, filename)
 
 stream_hydro = read_hydro_stft(inpath,
-                                locations = location1,
+                                locations = location_hydro,
                                 starttime = starttime_hydro, endtime = endtime_hydro,
                                 min_freq = min_mode_hydro_freq, max_freq = max_mode_hydro_freq,
-                                psd_only = True)
+                                psd_only = True)                        
 
-filename = f"whole_deployment_daily_geo_stft_{station1}_{suffix_spec}.h5"
+filename = f"whole_deployment_daily_geo_stft_{station_geo}_{suffix_spec}.h5"
 inpath = join(dir_spec, filename)
 
-stream_geo1 = read_geo_stft(inpath,
+stream_geo = read_geo_stft(inpath,
                                 starttime = starttime_geo, endtime = endtime_geo,
                                 min_freq = min_mode_geo_freq, max_freq = max_mode_geo_freq,
                                 psd_only = True)
 
-filename = f"whole_deployment_daily_geo_stft_{station2}_{suffix_spec}.h5"
+filename = f"whole_deployment_daily_geo_stft_{station_geo}_{suffix_spec}.h5"
 inpath = join(dir_spec, filename)
-
-stream_geo2 = read_geo_stft(inpath,
-                            starttime = starttime_geo, endtime = endtime_geo,
-                            min_freq = min_mode_geo_freq, max_freq = max_mode_geo_freq,
-                            psd_only = True)
 
 # # Read the frequencies of the instrument noise
 # filename = f"liu_2025a_spectrograms_instrument_noise_freqs_{mode1_name}.csv"
@@ -208,7 +204,7 @@ stream_geo2 = read_geo_stft(inpath,
 
 ### Plot PR02549 (Mode 2) ###
 # Plot the 9-month hydrophone spectrogram
-print("Plotting the 9-months hydrophone spectrograms of Mode 2 and 3...")
+print("Plotting the 9-months hydrophone spectrograms of Mode 2...")
 
 ax = fig.add_subplot(gs[0, :])
 trace_stft = stream_hydro[0]
@@ -222,7 +218,7 @@ ax.set_ylim(min_mode_hydro_freq, max_mode_hydro_freq)
 
 mappable_hydro = ax.pcolormesh(timeax, freqax, psd_mat, shading = "auto", cmap = cmap, vmin = min_hydro_db, vmax = max_hydro_db)
 
-ax.text(long_label_x, long_label_y, f"{station_hydro}.{location1}",
+ax.text(long_label_x, long_label_y, f"{station_hydro}.{location_hydro}",
         fontsize = station_label_fontsize, fontweight = "bold", transform = ax.transAxes,
         va = "top", ha = "left",
         bbox = dict(facecolor = "white", alpha = 1.0, edgecolor = "black"))
@@ -244,26 +240,17 @@ ax.set_title(f"Mode {mode_order}", fontsize = title_fontsize, fontweight = "bold
 
 ax_long = ax
 
-# Plot the arrow pointing to the break
-freq = (max_mode_hydro_freq + min_mode_hydro_freq) / 2
-ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
-            arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-            fontsize = annoatation_size, fontweight = "bold", color = color_ref,
-            ha = "center", va = "top")      
-
-# ax.annotate("Freq. increase", xy = (time_jump, freq), xytext = (time_jump, freq - arrow_length_jumping),
-#             arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
-#             fontsize = annoatation_size, fontweight = "bold", color = color_ref,
-#             ha = "center", va = "top")
-
-# # Plot the arrows at the frequencies of the instrument noise
-# noise_freqs = noise_freq1_df["frequency"].values
-# for noise_freq in noise_freqs:
-#     ax.annotate("", xy = (endtime, noise_freq), xytext = (endtime + arrow_length_noise, noise_freq),
-#                 arrowprops = dict(color = "gray", arrowstyle = "->", linewidth = linewidth_arrow))
+if plot_break:
+        print("Plotting the break...")
+        # Plot the arrow pointing to the break
+        freq = (max_mode_hydro_freq + min_mode_hydro_freq) / 2
+        ax.annotate("Break", xy = (time_break, freq), xytext = (time_break, freq - arrow_length_break),
+                arrowprops = dict(color = color_ref, arrowstyle = "->", linewidth = linewidth_arrow),
+                fontsize = annoatation_size, fontweight = "bold", color = color_ref,
+                ha = "center", va = "top") 
 
 # Plot the 21-day hydrophone spectrogram
-ax = fig.add_subplot(gs[1, 2])
+ax = fig.add_subplot(gs[1, 1])
 stream_hydro_short = stream_hydro.slice_time(starttime = starttime_geo, endtime = endtime_geo)
 trace_stft = stream_hydro_short[0]
 trace_stft.to_db()
@@ -284,7 +271,7 @@ format_freq_ylabels(ax,
                     plot_axis_label = False, plot_tick_label = False,
                     major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks)
 
-ax.text(short_label_x, short_label_y, f"{station_hydro}.{location1}",
+ax.text(short_label_x, short_label_y, f"{station_hydro}.{location_hydro}",
         fontsize = station_label_fontsize, fontweight = "bold", transform = ax.transAxes,
         va = "top", ha = "left",
         bbox = dict(facecolor = "white", alpha = 1.0, edgecolor = "black"))
@@ -315,7 +302,7 @@ _, _, _, _ = add_zoom_effect(ax_long, ax_short, date2num(starttime_geo), date2nu
 # Plot the 21-day geophone spectrograms
 # Station 1
 ax = fig.add_subplot(gs[1, 0])
-trace_stft = stream_geo1[0]
+trace_stft = stream_geo[0]
 trace_stft.to_db()
 psd_mat = trace_stft.psd_mat
 freqax = trace_stft.freqs
@@ -334,7 +321,7 @@ format_freq_ylabels(ax,
                     plot_axis_label = False, plot_tick_label = True,
                     major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks)
 
-ax.text(short_label_x, short_label_y, f"{station1}",
+ax.text(short_label_x, short_label_y, f"{station_geo}",
         fontsize = station_label_fontsize, fontweight = "bold", transform = ax.transAxes,
         va = "top", ha = "left",
         bbox = dict(facecolor = "white", alpha = 1.0, edgecolor = "black"))
@@ -349,34 +336,7 @@ cbar.ax.tick_params(labelsize = tick_label_size)
 cbar.ax.set_xlabel(geo_psd_label, fontsize = tick_label_size, ha = "left", va = "top")
 cbar.ax.xaxis.set_label_coords(0.0, cax_label_offset)
 
-# Station 2
-ax = fig.add_subplot(gs[1, 1])
-trace_stft = stream_geo2[0]
-trace_stft.to_db()
-psd_mat = trace_stft.psd_mat
-freqax = trace_stft.freqs
-timeax = trace_stft.times
-
-ax.set_xlim(starttime_geo, endtime_geo)
-ax.set_ylim(min_mode_geo_freq, max_mode_geo_freq)
-
-ax.pcolormesh(timeax, freqax, psd_mat, shading = "auto", cmap = cmap, vmin = min_geo_db, vmax = max_geo_db)
-
-format_datetime_xlabels(ax,
-                        plot_axis_label = False, plot_tick_label = True,
-                        major_tick_spacing = major_time_spacing_short, num_minor_ticks = num_minor_time_ticks_short, date_format = "%Y-%m-%d")
-
-format_freq_ylabels(ax,
-                    plot_axis_label = False, plot_tick_label = False,
-                    major_tick_spacing = major_freq_spacing, num_minor_ticks = num_minor_freq_ticks)
-
-ax.text(short_label_x, short_label_y, f"{station2}",
-        fontsize = station_label_fontsize, fontweight = "bold", transform = ax.transAxes,
-        va = "top", ha = "left",
-        bbox = dict(facecolor = "white", alpha = 1.0, edgecolor = "black"))
-
-
 ### Save the figure ###
 print("Saving the figure...")
-figname = f"liu_2025a_spectrograms_{mode_name}.png"
-save_figure(fig, figname, dpi = 600)
+figname = f"liu_2025a_spectrograms_{mode_name}.{format}"
+save_figure(fig, figname, dpi = dpi)

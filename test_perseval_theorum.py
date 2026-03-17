@@ -5,13 +5,13 @@ from numpy.fft import fft
 # Parameters
 fs = 1000.0                 # Sampling frequency (Hz)
 dt = 1 / fs                # Sampling interval (s)
-num_samples = 1024                   # Number of samples
+num_samples = 10240                  # Number of samples
 t = arange(num_samples) * dt
 duration = num_samples * dt                 # Total duration
 
 # Example signal: sine wave at 10 Hz
-freq = 10.0
-amp = 1e7
+freq = 40.0
+amp = 4e7
 signal = amp * sin(2 * pi * freq * t)
 
 # Energy in the time domain (correct calculation)

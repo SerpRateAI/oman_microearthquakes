@@ -22,7 +22,7 @@ def read_time_windows(inpath):
     pick_df["starttime"] = to_datetime(pick_df["date_begin"] + " " + pick_df["time_begin"])
     pick_df["endtime"] = to_datetime(pick_df["date_end"] + " " + pick_df["time_end"])
     pick_df["station"] = pick_df["seed_id"].str[3:6]
-    pick_df.drop(["date_begin", "date_end", "seed_id"], axis=1, inplace=True)
+    pick_df.drop(["date_begin", "date_end", "time_begin", "time_end", "seed_id"], axis=1, inplace=True)
     
     return pick_df
 
@@ -64,3 +64,16 @@ def read_phase_markers(inpath):
     pick_df.drop(["date", "time_of_day"], axis=1, inplace=True)
 
     return pick_df
+
+"""
+Write a list of time windows to a Snuffler picker file.
+"""
+def write_time_windows(outpath, starttimes, endtimes, seed_ids):
+    with open(outpath, "w") as f:
+        f.write("# Snuffler Markers File Version 0.2\n")
+        for starttime, endtime, seed_id in zip(starttimes, endtimes, seed_ids):
+            f.write(
+                    f"{starttime:%Y-%m-%d} {starttime:%H:%M:%S.%f} "
+                    f"{endtime:%Y-%m-%d} {endtime:%H:%M:%S.%f} "
+                    f"{(endtime - starttime).total_seconds():.3f} 0 {seed_id}\n"
+                    )
