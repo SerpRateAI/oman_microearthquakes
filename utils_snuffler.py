@@ -15,15 +15,25 @@ def read_normal_markers(inpath):
     return pick_df
 
 # Read a list of time windows from a Snuffler picker file
-def read_time_windows(inpath):
+def read_time_windows(inpath, phase_marker = True):
     pick_df = read_csv(inpath, sep=" ", skiprows=1, skipinitialspace=True, header=None)
-    pick_df.drop([5], axis=1, inplace=True)
-    pick_df.columns = ["date_begin", "time_begin", "date_end", "time_end", "duration", "seed_id"]
+    if phase_marker:
+        pick_df.drop([0, 6, 8, 9, 10, 12, 13], axis=1, inplace=True)
+        pick_df.columns = ["date_begin", "time_begin", "date_end", "time_end", "duration", "seed_id", "phase"]
+    else:        
+        pick_df.drop([5], axis=1, inplace=True)
+        pick_df.columns = ["date_begin", "time_begin", "date_end", "time_end", "duration", "seed_id"]
+
     pick_df["starttime"] = to_datetime(pick_df["date_begin"] + " " + pick_df["time_begin"])
     pick_df["endtime"] = to_datetime(pick_df["date_end"] + " " + pick_df["time_end"])
     pick_df["station"] = pick_df["seed_id"].str[3:6]
     pick_df.drop(["date_begin", "date_end", "time_begin", "time_end", "seed_id"], axis=1, inplace=True)
-    
+
+    if phase_marker:
+        pick_df = pick_df[["station", "phase", "starttime", "endtime", "duration"]]
+    else:
+        pick_df = pick_df[["station", "starttime", "endtime", "duration"]]
+
     return pick_df
 
 # Parse the picks into different hammer shots

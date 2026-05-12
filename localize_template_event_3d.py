@@ -161,7 +161,7 @@ depth_min_rms = depths_grid[i_depth_min_rms]
 coord_df = get_geophone_coords()
 coord_df = coord_df[coord_df.index.isin(arrival_df["station"])]
 coord_df = coord_df.reset_index(drop=False)
-fig, ax_map, ax_profile, cbar = plot_misfit_distribution(misfit_vol, easts_grid, norths_grid, depths_grid, i_east_min_rms, i_north_min_rms, i_depth_min_rms, coord_df,
+fig, ax_map, ax_profile, cbar = plot_misfit_distribution(misfit_vol.transpose(1, 2, 0), easts_grid, norths_grid, depths_grid, i_east_min_rms, i_north_min_rms, i_depth_min_rms, coord_df,
                                                       title = f"Template {template_id}, {phase.upper()} phase, scale factor {scale_factor:.1f}")
 if weight:
     figname = f"misfit_distribution_template{template_id}_{freq_string}_{arrival_type}_{phase.lower()}_subarray_{subarray.lower()}_scale{scale_factor:.1f}_weight.png"

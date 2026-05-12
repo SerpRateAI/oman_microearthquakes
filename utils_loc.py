@@ -1,11 +1,9 @@
-from numpy import array, vstack, sin, cos, arctan2, arange, ndarray, zeros, isnan, inf, mean, sqrt
+from numpy import array, vstack, sin, cos, arctan2, arange, ndarray, zeros, isnan, inf, mean, sqrt, ones, sum, nan
 from numpy.linalg import norm, inv
 from pathlib import Path
 from h5py import File, string_dtype
-from typing import Dict, Any
 from pandas import Timestamp, Timedelta
 from tqdm import tqdm
-from pandas import DataFrame
 
 from utils_basic import (
     VEL_MODEL_DIR as dirpath_vel,
@@ -160,97 +158,127 @@ def load_travel_time_volumes_combined(filepath, scale_factor = 1.0):
         return easts_grid, norths_grid, depths_grid, travel_time_dict
 
 """
-Save location information of a grid search to an individual HDF5 file.
-The location information includes the origin time, location, minimum RMS, predicted arrival times, and the RMS volume.
+Load the event travel time volumes for a given scale factor from the file produced by
+`compute_event_travel_time_volumes.py`.
+
+The file structure is:
+  /scale_factors                       : 1D array of all scale factors stored in the file
+  /easts_grid, /norths_grid, /depths_grid : 1D coordinate axes
+  /scale_factor_<i>/<station>          : 3D travel time volume with axes (north, east, depth)
+
+The travel time volumes are returned in the compute script's native layout
+``(north, east, depth)``, so they can be indexed as ``volume[i_north, i_east, i_depth]``.
 """
-def save_location_to_hdf_individual(filepath, event_type, event_id, arrival_type, phase, subarray, scale_factor, weight, location_dict, arrival_time_dict, misfit_dict, easts_grid, norths_grid, depths_grid, misfit_vol):
+def load_event_travel_time_volumes(filepath, scale_factor, atol = 1e-6):
+    with File(filepath, "r") as f:
+        scale_factors = f["scale_factors"][:]
 
-    with File(filepath, "w") as f:
-        # Save the location information
-        origin_time = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
-        east = location_dict["east"]
-        north = location_dict["north"]
-        depth = location_dict["depth"]
-        misfit = location_dict["min_misfit"]
+        # Find the index matching the requested scale factor
+        matches = [i for i, sf in enumerate(scale_factors) if abs(float(sf) - float(scale_factor)) < atol]
+        if not matches:
+            raise ValueError(
+                f"Scale factor {scale_factor} not found in {filepath}. "
+                f"Available scale factors: {list(scale_factors)}"
+            )
+        i_scale_factor = matches[0]
 
-        # Save the event information
-        f.attrs["event_type"] = event_type
-        f.attrs["event_id"] = event_id
-        f.attrs["arrival_type"] = arrival_type
-        f.attrs["phase"] = phase
-        f.attrs["scale_factor"] = scale_factor
-        f.attrs["subarray"] = subarray
-        f.attrs["weight"] = weight
+        # Read the axes
+        easts_grid = f["easts_grid"][:]
+        norths_grid = f["norths_grid"][:]
+        depths_grid = f["depths_grid"][:]
 
-        f.attrs["origin_time"] = origin_time
-        f.attrs["east"] = east
-        f.attrs["north"] = north
-        f.attrs["depth"] = depth
-        f.attrs["min_misfit"] = misfit
+        # Read the travel time volumes for each station in native (north, east, depth) layout
+        group = f[f"scale_factor_{i_scale_factor:d}"]
+        travel_time_dict = {}
+        for station in group.keys():
+            travel_time_dict[station] = group[station][:]
 
-        # Save the predicted arrival times
-        arrival_group = f.require_group("arrival_time")
-        for station, arrival_time in arrival_time_dict.items():
-            arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
+        return easts_grid, norths_grid, depths_grid, travel_time_dict
 
-        # Save the misfit at each station (in seconds)
-        misfit_group = f.require_group("misfit")
-        for station, misfit in misfit_dict.items():
-            misfit_group.attrs[station] = misfit
+# """
+# Save location information of a grid search to an individual HDF5 file.
+# The location information includes the origin time, location, minimum RMS, predicted arrival times, and the RMS volume.
+# """
+# def save_hub_event_location_to_hdf(filepath, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
 
-        # Save the misfit volume
-        volume_group = f.require_group("misfit_volume")
+#     with File(filepath, "w") as f:
+#         # Save the location information
+#         origin_time = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
+#         east = location_dict["east"]
+#         north = location_dict["north"]
+#         depth = location_dict["depth"]
+#         misfit = location_dict["min_misfit"]
 
-        # Save the axes
-        if "east_grid" in volume_group.keys():
-            del volume_group["east_grid"]
-        volume_group.create_dataset("east_grid", data=easts_grid, dtype=float, shape=easts_grid.shape)
+#         # Save the event information
+#         f.attrs["phase"] = phase
+#         f.attrs["scale_factor"] = scale_factor
+#         f.attrs["subarray"] = subarray
+#         f.attrs["weight"] = weight
 
-        if "north_grid" in volume_group.keys():
-            del volume_group["north_grid"]
-        volume_group.create_dataset("north_grid", data=norths_grid, dtype=float, shape=norths_grid.shape)
+#         f.attrs["origin_time"] = origin_time
+#         f.attrs["east"] = east
+#         f.attrs["north"] = north
+#         f.attrs["depth"] = depth
+#         f.attrs["min_misfit"] = misfit
 
-        if "depth_grid" in volume_group.keys():
-            del volume_group["depth_grid"]
-        volume_group.create_dataset("depth_grid", data=depths_grid, dtype=float, shape=depths_grid.shape)
+#         # Save the predicted arrival times
+#         arrival_group = f.require_group("arrival_time")
+#         for station, arrival_time in arrival_time_dict.items():
+#             arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
 
-        # Save the misfit volume
-        if "misfit" in volume_group.keys():
-            del volume_group["misfit"]
-        volume_group.create_dataset("misfit", data=misfit_vol, dtype=float, shape=misfit_vol.shape)
+#         # Save the misfit at each station (in seconds)
+#         misfit_group = f.require_group("misfit")
+#         for station, misfit in misfit_dict.items():
+#             misfit_group.attrs[station] = misfit
 
-    print(f"Saved the location information to {filepath}.")
+#         # Save the misfit volume
+#         volume_group = f.require_group("misfit_volume")
+
+#         # Save the axes
+#         if "east_grid" in volume_group.keys():
+#             del volume_group["east_grid"]
+#         volume_group.create_dataset("east_grid", data=easts_grid, dtype=float, shape=easts_grid.shape)
+
+#         if "north_grid" in volume_group.keys():
+#             del volume_group["north_grid"]
+#         volume_group.create_dataset("north_grid", data=norths_grid, dtype=float, shape=norths_grid.shape)
+
+#         if "depth_grid" in volume_group.keys():
+#             del volume_group["depth_grid"]
+#         volume_group.create_dataset("depth_grid", data=depths_grid, dtype=float, shape=depths_grid.shape)
+
+#         # Save the misfit volume
+#         if "misfit" in volume_group.keys():
+#             del volume_group["misfit"]
+#         volume_group.create_dataset("misfit", data=misfit_vol, dtype=float, shape=misfit_vol.shape)
+
+#     print(f"Saved the location information to {filepath}.")
 
 """
-Save the location information of multiple grid searches to a combined HDF5 file
+Save the location information of a hub event to an HDF5 file
 """
-def save_location_to_hdf_combined(filepath, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
+def save_hub_event_location_to_hdf(filepath, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
     # Unpack the parameters
-    arrival_type = param_dict["arrival_type"]
-    phase = param_dict["phase"]
-    subarray = param_dict["subarray"]
     scale_factor = param_dict["scale_factor"]
     weight = param_dict["weight"]
 
-    # Get the grid information
+    east = location_dict["east"]
+    north = location_dict["north"]
+    depth = location_dict["depth"]
+    misfit = location_dict["min_misfit"]
+    origin_time = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
+
     easts_grid = grid_dict["easts_grid"]
     norths_grid = grid_dict["norths_grid"]
     depths_grid = grid_dict["depths_grid"]
     misfit_vol = grid_dict["misfit_vol"]
 
+    # Group results by the scale factor used for localization
+    scale_factor_label = f"scale_factor_{scale_factor:.2f}"
+
     with File(filepath, "a") as f:
-        # Create a group for the arrival type
-        arrival_type_group = f.require_group(arrival_type)
-        phase_group = arrival_type_group.require_group(phase)
-        scale_factor_group = phase_group.require_group(f"{scale_factor:.1f}")
-        
-        # Save the location information
-        origin_time = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
-        east = location_dict["east"]
-        north = location_dict["north"]
-        depth = location_dict["depth"]
-        misfit = location_dict["min_misfit"]
-        
+        scale_factor_group = f.require_group(scale_factor_label)
+
         # Save the location information
         scale_factor_group.attrs["origin_time"] = origin_time
         scale_factor_group.attrs["east"] = east
@@ -258,7 +286,8 @@ def save_location_to_hdf_combined(filepath, param_dict, location_dict, arrival_t
         scale_factor_group.attrs["depth"] = depth
         scale_factor_group.attrs["min_misfit"] = misfit
 
-        # Save the weight
+        # Save the scale factor and weighting flag
+        scale_factor_group.attrs["scale_factor"] = scale_factor
         scale_factor_group.attrs["weight"] = weight
 
         # Save the predicted arrival times
@@ -294,6 +323,52 @@ def save_location_to_hdf_combined(filepath, param_dict, location_dict, arrival_t
     print(f"Saved the location information to {filepath}.")
 
 """
+Save the location information of a hammer event to an HDF5 file
+"""
+def save_hammer_location_to_hdf(filepath, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
+    with File(filepath, "a") as f:
+
+        # Save the location information
+        f.attrs["origin_time"] = location_dict["origin_time"].value # Convert to nanoseconds since the Unix epoch
+        print(f"Origin time: {location_dict['origin_time'].value}")
+        f.attrs["east"] = location_dict["east"]
+        f.attrs["north"] = location_dict["north"]
+        f.attrs["depth"] = location_dict["depth"]
+        f.attrs["min_misfit"] = location_dict["min_misfit"]
+
+        # Save the predicted arrival times
+        arrival_group = f.require_group("arrival_time")
+        for station, arrival_time in arrival_time_dict.items():
+            arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
+
+        # Save the misfit at each station (in seconds)
+        misfit_group = f.require_group("station_misfit")
+        for station, misfit in station_misfit_dict.items():
+            misfit_group.attrs[station] = misfit
+
+        # Save the misfit volume
+        volume_group = f.require_group("misfit_volume")
+
+        # Save the axes
+        if "east_grid" in volume_group.keys():
+            del volume_group["east_grid"]
+        volume_group.create_dataset("east_grid", data=grid_dict["easts_grid"], dtype=float, shape=grid_dict["easts_grid"].shape)
+
+        if "north_grid" in volume_group.keys():
+            del volume_group["north_grid"]
+        volume_group.create_dataset("north_grid", data=grid_dict["norths_grid"], dtype=float, shape=grid_dict["norths_grid"].shape)
+
+        if "depth_grid" in volume_group.keys():
+            del volume_group["depth_grid"]
+        volume_group.create_dataset("depth_grid", data=grid_dict["depths_grid"], dtype=float, shape=grid_dict["depths_grid"].shape)
+
+        if "misfit" in volume_group.keys():
+            del volume_group["misfit"]
+        volume_group.create_dataset("misfit", data=grid_dict["misfit_vol"], dtype=float, shape=grid_dict["misfit_vol"].shape)
+
+    print(f"Saved the hammer event location information to {filepath}.")
+
+"""
 Read the station misfits of a grid search result from an HDF5 file
 """
 def load_station_misfits_from_hdf_combined(filepath, arrival_type, phase, subarray, scale_factor):
@@ -312,14 +387,13 @@ def load_station_misfits_from_hdf_combined(filepath, arrival_type, phase, subarr
         return misfit_dict
 
 """
-Load the predicted arrival times from a combined HDF5 file
+Load the predicted arrival times of a hub event from an HDF5 file
 """
-def load_predicted_arrival_times_from_hdf_combined(filepath, arrival_type, phase, scale_factor):
+def load_hub_event_predicted_arrival_times_from_hdf(filepath, pick_type, scale_factor):
 
     with File(filepath, "r") as f:
-        arrival_type_group = f[arrival_type]
-        phase_group = arrival_type_group[phase]
-        scale_factor_group = phase_group[f"{scale_factor:.1f}"]
+        pick_type_group = f[pick_type]
+        scale_factor_group = pick_type_group[f"{scale_factor:.1f}"]
         
         # Load the predicted arrival times
         arrival_time_dict = {}
@@ -329,6 +403,21 @@ def load_predicted_arrival_times_from_hdf_combined(filepath, arrival_type, phase
 
         # Load the origin time
         origin_time = Timestamp(scale_factor_group.attrs["origin_time"], unit="ns")
+
+        return arrival_time_dict, origin_time
+
+"""
+Load the predicted arrival times of a hammer shot from an HDF5 file
+"""
+def load_hammer_predicted_arrival_times_from_hdf(filepath):
+    with File(filepath, "r") as f:
+        arrival_time_dict = {}
+        arrival_group = f.require_group("arrival_time")
+        for station in arrival_group.attrs.keys():
+            arrival_time_dict[station] = Timestamp(arrival_group.attrs[station], unit="ns")
+
+        # Load the origin time
+        origin_time = Timestamp(f.attrs["origin_time"], unit="ns")
 
         return arrival_time_dict, origin_time
 
@@ -431,12 +520,16 @@ Plot the misfit distribution of a template event.
 The figure consists of two subplots:
 - The first subplot shows the misfit distribution at the depth slice of the template event
 - The second subplot shows the misfit distribution at the north slice of the template event
+
+``misfit_grid`` is expected in the native ``(north, east, depth)`` layout used by
+``compute_event_travel_time_volumes.py``, i.e. it can be indexed as
+``misfit_grid[i_north, i_east, i_depth]``.
 """
 def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, i_east, i_north, i_depth, station_df,
                           misfitmax=0.01,
                           figwidth = 8.0, hspace = 0.07, margin_x = 0.02, margin_y = 0.02,
                           source_size = 300, station_size = 250,
-                          cbar_x = 0.05, cbar_y = 0.05, cbar_width = 0.03, cbar_height = 0.3, cbar_tick_spacing = 0.005,
+                          cbar_x = 0.03, cbar_y = 0.07, cbar_width = 0.02, cbar_height = 0.5, cbar_tick_spacing = 0.005,
                           title = None):
     
     # Compute the dimensions of the subplots
@@ -466,8 +559,8 @@ def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, 
     frac_map_height = 1 - 2 * margin_y - hspace - frac_profile_height
     ax_map = fig.add_axes([margin_x, margin_y + frac_profile_height + hspace, 1 - 2 * margin_x, frac_map_height])
 
-    # Plot the misfit distribution at the depth slice
-    misfit_map = misfit_grid[i_depth, :, :]
+    # Plot the misfit distribution at the depth slice (map view spans north x east)
+    misfit_map = misfit_grid[:, :, i_depth]
     east_min_rms = easts_grid[i_east]
     north_min_rms = norths_grid[i_north]
     depth_min_rms = depths_grid[i_depth]
@@ -487,8 +580,9 @@ def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, 
         ax_map.scatter(row["east"], row["north"], color='lightgray', marker='^', linewidths=1.0, edgecolors='black', s=station_size)
         ax_map.annotate(row["name"], (row["east"], row["north"]), xytext=(0, 10), textcoords='offset points', color='black', fontsize=12, ha="center", va="bottom")
 
-    # Plot the misfit distribution along the profile
-    misfit_profile = misfit_grid[:, i_north, :]
+    # Plot the misfit distribution along the east-depth profile at the picked north slice.
+    # misfit_grid[i_north, :, :] has shape (east, depth); transpose to (depth, east) for pcolormesh.
+    misfit_profile = misfit_grid[i_north, :, :].T
     ax_profile.pcolormesh(easts_grid, depths_grid, misfit_profile, vmin=0.0, vmax=misfitmax)
     ax_profile.scatter(east_min_rms, depth_min_rms, color='salmon', marker='*', linewidths=1.0, edgecolors='black', s=source_size, zorder=10)
     format_east_xlabels(ax_profile,
@@ -532,16 +626,18 @@ def process_arrival_info(arrival_df, arrival_type):
 
 """
 Get the misfit and origin time grids
+The misfit is computed as the weighted mean of the L1 misfit.
 """
-def get_misfit_and_origin_time_grids(arrival_df, easts_grid, norths_grid, depths_grid, travel_time_dict, weight = False):
+def get_misfit_and_origin_time_grids(arrival_df, easts_grid, norths_grid, depths_grid, travel_time_p_dict, travel_time_s_dict, weight = True):
     # Loop through the grid points
     misfit_vol = zeros((len(depths_grid), len(norths_grid), len(easts_grid)))
     origin_times_grid = zeros((len(depths_grid), len(norths_grid), len(easts_grid)))
-    print(f"Computing RMS and origin time grids...")
+    print(f"Computing misfit and origin time grids...")
     for i_depth, _ in tqdm(enumerate(depths_grid), total=len(depths_grid), desc="Depth"):
         for i_north, _ in enumerate(norths_grid):
             for i_east, _ in enumerate(easts_grid):
-                misfit, origin_time = get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_dict, weight)
+                misfit, origin_time = get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_p_dict, travel_time_s_dict,
+                                                                          weight = weight)
                 misfit_vol[i_depth, i_north, i_east] = misfit
                 origin_times_grid[i_depth, i_north, i_east] = origin_time
 
@@ -552,15 +648,30 @@ def get_misfit_and_origin_time_grids(arrival_df, easts_grid, norths_grid, depths
 
 """
 Get the misfit and origin time for one grid point
+The misfit is computed as the weighted mean of the L1 misfit.
 """
-def get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_dict):
+def get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_depth, travel_time_p_dict, travel_time_s_dict, weight = True):
+    if weight:
+        weights = arrival_df["uncertainty"]
+    else:
+        weights = ones(len(arrival_df))
+
     # Loop through the arrival times
     origin_times = zeros(len(arrival_df))
     travel_times = zeros(len(arrival_df))
     arrival_times = zeros(len(arrival_df))
     for i, row in arrival_df.iterrows():
         station = row["station"]
-        travel_time = travel_time_dict[station][i_depth, i_north, i_east]
+        if row["phase"] == "P":
+            travel_time = travel_time_p_dict[station][i_depth, i_north, i_east]
+        elif row["phase"] == "S":
+            travel_time = travel_time_s_dict[station][i_depth, i_north, i_east]
+        else:
+            raise ValueError(f"Invalid phase: {row['phase']}")
+
+        if isnan(travel_time):
+            return nan, nan
+        
         arrival_time = row["arrival_time"]
 
         origin_time = arrival_time - travel_time
@@ -569,7 +680,64 @@ def get_misfit_and_origin_time_for_grid_point(arrival_df, i_east, i_north, i_dep
         arrival_times[i] = arrival_time
 
     origin_time = mean(origin_times)
-    misfit = sum(abs(arrival_times - travel_times - origin_time) / weights) / sum(1 / weights)
+    misfit = sum(((arrival_times - travel_times - origin_time) / weights) ** 2) / sum(1 / weights ** 2)
+    misfit = sqrt(misfit)
+
+    return misfit, origin_time
+
+
+"""
+Compute the misfit and origin time grids for a single travel-time volume per station, without
+distinguishing P and S phases. All picks share the same volume.
+
+Output volumes follow the (north, east, depth) layout used by `compute_event_travel_time_volumes.py`,
+so they can be indexed as ``misfit_vol[i_north, i_east, i_depth]``.
+"""
+def get_misfit_and_origin_time_grids_no_phase(arrival_df, easts_grid, norths_grid, depths_grid, travel_time_dict, weight = True):
+    misfit_vol = zeros((len(norths_grid), len(easts_grid), len(depths_grid)))
+    origin_times_grid = zeros((len(norths_grid), len(easts_grid), len(depths_grid)))
+    print(f"Computing misfit and origin time grids...")
+    for i_north, _ in tqdm(enumerate(norths_grid), total=len(norths_grid), desc="North"):
+        for i_east, _ in enumerate(easts_grid):
+            for i_depth, _ in enumerate(depths_grid):
+                misfit, origin_time = get_misfit_and_origin_time_for_grid_point_no_phase(
+                    arrival_df, i_north, i_east, i_depth, travel_time_dict, weight = weight)
+                misfit_vol[i_north, i_east, i_depth] = misfit
+                origin_times_grid[i_north, i_east, i_depth] = origin_time
+
+    # Replace nan values with inf so they never win the argmin
+    misfit_vol[isnan(misfit_vol)] = inf
+
+    return misfit_vol, origin_times_grid
+
+
+"""
+Get the misfit and origin time for one grid point, using a single travel-time volume per station.
+The misfit is the weighted RMS of the residuals (matching ``get_misfit_and_origin_time_for_grid_point``).
+"""
+def get_misfit_and_origin_time_for_grid_point_no_phase(arrival_df, i_north, i_east, i_depth, travel_time_dict, weight = True):
+    if weight:
+        weights = arrival_df["uncertainty"].values
+    else:
+        weights = ones(len(arrival_df))
+
+    origin_times = zeros(len(arrival_df))
+    travel_times = zeros(len(arrival_df))
+    arrival_times = zeros(len(arrival_df))
+    for i, (_, row) in enumerate(arrival_df.iterrows()):
+        station = row["station"]
+        travel_time = travel_time_dict[station][i_north, i_east, i_depth]
+        if isnan(travel_time):
+            return nan, nan
+
+        arrival_time = row["arrival_time"]
+        origin_times[i] = arrival_time - travel_time
+        travel_times[i] = travel_time
+        arrival_times[i] = arrival_time
+
+    origin_time = mean(origin_times)
+    misfit = sum(((arrival_times - travel_times - origin_time) / weights) ** 2) / sum(1 / weights ** 2)
+    misfit = sqrt(misfit)
 
     return misfit, origin_time
 
