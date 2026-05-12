@@ -2,25 +2,28 @@
 Plot the hyrophone and geophone spectra in the frequency range of the borehole organ pipe modes.
 """
 from pathlib import Path
-from pandas import Timestamp, Timedelta
-from numpy import array
+from numpy import array, arange, nan
 from scipy.signal.windows import dpss
 from matplotlib.pyplot import subplots
+from pandas import read_csv, concat, DataFrame
+from pandas import Timestamp, Timedelta, read_hdf
+from os.path import join
 from argparse import ArgumentParser
 
-from utils_basic import SPECTROGRAM_DIR as indir, BOREHOLE_DEPTH as borehole_depth, SOUND_SPEED_WATER as sound_speed_water, WATER_TABLE as water_table
-from utils_basic import power2db
+from utils_basic import SPECTROGRAM_DIR as dirpath_spec, BOREHOLE_DEPTH as borehole_depth, SOUND_SPEED_WATER as sound_speed_water, WATER_TABLE as water_table
+from utils_basic import power2db, str2timestamp
 from utils_preproc import read_and_process_windowed_geo_waveforms, read_and_process_windowed_hydro_waveforms
 from utils_mt import get_mt_cspec, mt_autospec
 from utils_plot import format_freq_xlabels, format_db_ylabels, save_figure
+from utils_spec import get_spec_peak_file_suffix, get_spectrogram_file_suffix
 
 ###
 # Helper functions
 ###
-def get_organpipe_freqs(water_table_depth):
-    orders = array([1, 3, 5])
+def get_organpipe_freqs(water_table_depth, wavespeed, num_modes = 10):
+    orders = 2 * arange(num_modes) + 1
     wavelengths = (borehole_depth - water_table_depth) / orders * 4
-    freqs = sound_speed_water / wavelengths
+    freqs = wavespeed / wavelengths
 
     return freqs
 
@@ -30,15 +33,17 @@ def get_organpipe_freqs(water_table_depth):
 
 parser = ArgumentParser(description = "Plot the hyrophone and geophone spectra in the frequency range of the borehole organ pipe modes.")
 
-parser.add_argument("--starttime", type = Timestamp, help = "Start time of the time window")
+parser.add_argument("--starttime", type = str, help = "Start time of the time window")
 
 parser.add_argument("--water_table_depth", type = float, help = "Water table depth in meters", default = water_table)
+parser.add_argument("--wavespeed", type = float, help = "Wave speed in m/s", default = sound_speed_water)
+parser.add_argument("--num_modes", type = int, help = "Number of modes", default = 10)
 parser.add_argument("--duration", type = float, help = "Duration of the time window in seconds", default = 300.0)
 parser.add_argument("--station_hydro", type = str, default = "B00", help = "Station name of the hydrophone")
 parser.add_argument("--location_hydro", type = str, default = "01", help = "Location of the hydrophone")
 parser.add_argument("--station_geo", type = str, default = "B01", help = "Station name of the geophone")
 parser.add_argument("--min_freq", type = float, help = "Minimum frequency in Hz", default = 0.0)
-parser.add_argument("--max_freq", type = float, help = "Maximum frequency in Hz", default = 10.0)
+parser.add_argument("--max_freq", type = float, help = "Maximum frequency in Hz", default = 100.0)
 parser.add_argument("--nw", type = float, help = "Time-bandwidth product", default = 3.0)
 parser.add_argument("--figwidth", type = float, help = "Figure width in inches", default = 10.0)
 parser.add_argument("--figheight", type = float, help = "Figure height in inches", default = 10.0)
@@ -48,9 +53,15 @@ parser.add_argument("--min_db_geo", type = float, help = "Minimum decibel for th
 parser.add_argument("--max_db_geo", type = float, help = "Maximum decibel for the geophone spectrum", default = 30.0)
 parser.add_argument("--linewidth_curve", type = float, help = "Line width for the curve", default = 2.0)
 parser.add_argument("--linewidth_marker", type = float, help = "Line width for the markers", default = 2.0)
+parser.add_argument("--major_freq_tick_spacing", type = float, help = "Major frequency tick spacing", default = 10.0)
+parser.add_argument("--num_minor_freq_ticks", type = int, help = "Number of minor frequency ticks", default = 5)
+parser.add_argument("--major_db_tick_spacing", type = float, help = "Major decibel tick spacing", default = 10.0)
+parser.add_argument("--num_minor_db_ticks", type = int, help = "Number of minor decibel ticks", default = 5)
 
 args = parser.parse_args()
 water_table_depth = args.water_table_depth
+wavespeed = args.wavespeed
+num_modes = args.num_modes
 starttime = args.starttime
 duration = args.duration
 station_hydro = args.station_hydro
@@ -67,9 +78,30 @@ min_db_geo = args.min_db_geo
 max_db_geo = args.max_db_geo
 linewidth_curve = args.linewidth_curve
 linewidth_marker = args.linewidth_marker
+major_freq_tick_spacing = args.major_freq_tick_spacing
+num_minor_freq_ticks = args.num_minor_freq_ticks
+major_db_tick_spacing = args.major_db_tick_spacing
+num_minor_db_ticks = args.num_minor_db_ticks
+
+# Constants
+overlap = 0.0
+min_prom = 15.0
+min_rbw = 15.0
+max_mean_db = 15.0
+
+mode_label_x_offset = 0.5
+mode_label_y = 20.0
+resonance_mode_orders_to_plot = [2, 3]
+
+subplot_label_size = 16
+subplot_label_x = -0.02
+subplot_label_y = 1.03
 
 # Print the inputs
 print(f"Start time: {starttime}")
+print(f"Water table depth: {water_table_depth}")
+print(f"Wave speed: {wavespeed}")
+print(f"Number of modes: {num_modes}")
 print(f"Duration: {duration}")
 print(f"Station hydro: {station_hydro}")
 print(f"Location hydro: {location_hydro}")
@@ -81,6 +113,12 @@ print(f"Minimum decibel for the hydrophone spectrum: {min_db_hydro}")
 print(f"Maximum decibel for the hydrophone spectrum: {max_db_hydro}")
 print(f"Minimum decibel for the geophone spectrum: {min_db_geo}")
 print(f"Maximum decibel for the geophone spectrum: {max_db_geo}")
+print(f"Major frequency tick spacing: {major_freq_tick_spacing}")
+print(f"Number of minor frequency ticks: {num_minor_freq_ticks}")
+print(f"Major decibel tick spacing: {major_db_tick_spacing}")
+print(f"Number of minor decibel ticks: {num_minor_db_ticks}")
+
+
 ###
 # Read the hydrophone and geophone waveforms
 ###
@@ -95,6 +133,39 @@ print("Reading the geophone waveforms...")
 stream_geo = read_and_process_windowed_geo_waveforms(stations = station_geo, starttime = starttime, dur = duration)
 if stream_geo is None:
     raise ValueError(f"No geophone waveforms found for {station_geo}.")
+
+###
+# Read the tremor mode frequencies
+###
+print(f"Getting the resonance frequencies of station {station_geo}...")
+filename = f"stationary_harmonic_series_PR02549_base2.csv"
+filepath = join(dirpath_spec, filename)
+
+harmonic_df = read_csv(filepath)
+time_window = str2timestamp(starttime) + Timedelta(seconds =  duration / 2) 
+suffix_peak = get_spec_peak_file_suffix(min_prom, min_rbw, max_mean_db)
+suffix_spec = get_spectrogram_file_suffix(duration, overlap)
+
+mode_marker_dfs = []
+
+resonance_freq_dicts = []
+# Mode 2
+mode_name = harmonic_df.loc[harmonic_df["mode_order"] == 2, "mode_name"].values[0]
+filename = f"stationary_resonance_profile_geo_{mode_name}_{suffix_spec}_{suffix_peak}.h5"
+filepath = join(dirpath_spec, filename)
+resonance_df = read_hdf(filepath)
+
+for mode_order in resonance_mode_orders_to_plot:
+    mode_name = harmonic_df.loc[harmonic_df["mode_order"] == mode_order, "mode_name"].values[0]
+    filename = f"stationary_resonance_profile_geo_{mode_name}_{suffix_spec}_{suffix_peak}.h5"
+    filepath = join(dirpath_spec, filename)
+    resonance_df = read_hdf(filepath)
+    print(resonance_df)
+    print(time_window.tzinfo)
+    freq = resonance_df.loc[resonance_df["time"] == time_window, "frequency"].values[0]
+    resonance_freq_dicts.append({"mode_order": mode_order, "frequency": freq})
+
+resonance_freq_df = DataFrame(resonance_freq_dicts)
 
 ###
 # Compute the hydrophone and geophone spectra
@@ -130,51 +201,58 @@ for i, trace in enumerate(stream_geo):
 
 print("Plotting the hydrophone spectrum...")
 fig, axes = subplots(2, 1, figsize = (figwidth, figheight))
-fig.subplots_adjust(hspace = 0.12)
+fig.subplots_adjust(hspace = 0.15)
 
 # Plot the hydrophone spectrum
 ax = axes[0]
 freqax = freqax_hydro
 aspec = power2db(aspec_hydro)
-ax.plot(freqax, aspec, label = f"{station_hydro} at {location_hydro}", color = "mediumpurple", linewidth = linewidth_curve)
+ax.plot(freqax, aspec, label = f"{station_hydro} at {location_hydro}", color = "mediumpurple", linewidth = linewidth_curve, zorder = 2)
 ax.set_xlim(min_freq, max_freq)
 ax.set_ylim(min_db_hydro, max_db_hydro)
 
 format_freq_xlabels(ax,
                     plot_axis_label=False, plot_tick_label=False,
-                    major_tick_spacing=1.0, num_minor_ticks=5)
+                    major_tick_spacing=major_freq_tick_spacing, num_minor_ticks=num_minor_freq_ticks)
 
 format_db_ylabels(ax,
                   sensor = "hydro",
                   plot_axis_label=True, plot_tick_label=True,
-                  major_tick_spacing=10.0, num_minor_ticks=5)
+                  major_tick_spacing=major_db_tick_spacing, num_minor_ticks=num_minor_db_ticks)
 
 ax.set_title(f"Hydrophone {station_hydro}.{location_hydro}", fontsize = 14.0, fontweight = "bold")
 
 # Plot the organ pipe modes
-organpipe_freqs = get_organpipe_freqs(water_table_depth)
-freq0 = organpipe_freqs[0]
-ax.axvline(freq0, color = "crimson", linestyle = "--", linewidth = linewidth_marker)
+organpipe_freqs = get_organpipe_freqs(water_table_depth, wavespeed, num_modes)
+for freq in organpipe_freqs:
+    ax.axvline(freq, color = "crimson", linestyle = "--", linewidth = linewidth_marker, zorder = 1)
+
+# Plot the subplot label
+ax.text(subplot_label_x, subplot_label_y, "(a)", transform = ax.transAxes, fontsize = subplot_label_size, fontweight = "bold", va = "bottom", ha = "right")
 
 # Plot the geophone spectrum
 ax = axes[1]
 freqax = freqax_geo
 aspec = power2db(aspec_geo_total)
-ax.plot(freqax, aspec, label = f"{station_geo}", color = "teal", linewidth = linewidth_curve)
+ax.plot(freqax, aspec, label = f"{station_geo}", color = "teal", linewidth = linewidth_curve, zorder = 2)
 ax.set_xlim(min_freq, max_freq)
 ax.set_ylim(min_db_geo, max_db_geo)
 
 format_freq_xlabels(ax,
                     plot_axis_label=True, plot_tick_label=True,
-                    major_tick_spacing=1.0, num_minor_ticks=5)
+                    major_tick_spacing=major_freq_tick_spacing, num_minor_ticks=num_minor_freq_ticks)
 
 format_db_ylabels(ax,
                   sensor = "geo",
                   plot_axis_label=True, plot_tick_label=True,
-                  major_tick_spacing=10.0, num_minor_ticks=5)
+                  major_tick_spacing=major_db_tick_spacing, num_minor_ticks=num_minor_db_ticks)
 
 ax.set_title(f"Geophone {station_geo}", fontsize = 14.0, fontweight = "bold")
 
+# Plot the subplot label
+ax.text(subplot_label_x, subplot_label_y, "(b)", transform = ax.transAxes, fontsize = subplot_label_size, fontweight = "bold", va = "bottom", ha = "right")
+
+starttime = str2timestamp(starttime)
 endtime = starttime + Timedelta(seconds = duration)
 title = f"{starttime:%Y-%m-%d %H:%M:%S} - {endtime:%H:%M:%S}"
 fig.suptitle(title, fontsize = 14.0, fontweight = "bold", y = 0.93)

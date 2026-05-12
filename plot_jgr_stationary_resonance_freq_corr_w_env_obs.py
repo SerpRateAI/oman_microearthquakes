@@ -310,6 +310,9 @@ ax_cohe_narrow.xaxis.set_minor_locator(NullLocator())
 
 ax_cohe_narrow.set_ylabel("Squared coherence", fontsize = axis_label_fontsize)
 
+# Add the panel label
+ax_cohe_narrow.text(panel_label_x, panel_label_y, "(c)", transform = ax_cohe_narrow.transAxes, fontsize = panel_label_fontsize, fontweight = "bold")
+
 
 ###
 # Add the zoom-in effect between the wide-band and narrow-band plots
@@ -360,7 +363,7 @@ ax_phase.set_xlabel("Frequency (CPD)", fontsize = axis_label_fontsize)
 ax_phase.set_title(f"Frequency vs temperature, phase difference", fontsize = title_fontsize, fontweight = "bold")
 
 # Add the panel label
-ax_phase.text(panel_label_x, panel_label_y, "(c)", transform = ax_phase.transAxes, fontsize = panel_label_fontsize, fontweight = "bold")
+ax_phase.text(panel_label_x, panel_label_y, "(d)", transform = ax_phase.transAxes, fontsize = panel_label_fontsize, fontweight = "bold")
 
 # Save the figure
 save_figure(fig, "jgr_stationary_resonance_freq_corr_w_env_obs.png")
