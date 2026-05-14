@@ -255,10 +255,9 @@ def load_event_travel_time_volumes(filepath, scale_factor, atol = 1e-6):
 #     print(f"Saved the location information to {filepath}.")
 
 """
-Save the location information of a hub event to an HDF5 file
+Write one hub-event localization result into an existing HDF5 group (used by single- and multi-scale saves).
 """
-def save_hub_event_location_to_hdf(filepath, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
-    # Unpack the parameters
+def _write_hub_event_location_into_group(scale_factor_group, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
     scale_factor = param_dict["scale_factor"]
     weight = param_dict["weight"]
 
@@ -273,54 +272,117 @@ def save_hub_event_location_to_hdf(filepath, param_dict, location_dict, arrival_
     depths_grid = grid_dict["depths_grid"]
     misfit_vol = grid_dict["misfit_vol"]
 
-    # Group results by the scale factor used for localization
+    # Save the location information
+    scale_factor_group.attrs["origin_time"] = origin_time
+    scale_factor_group.attrs["east"] = east
+    scale_factor_group.attrs["north"] = north
+    scale_factor_group.attrs["depth"] = depth
+    scale_factor_group.attrs["min_misfit"] = misfit
+
+    # Save the scale factor and weighting flag
+    scale_factor_group.attrs["scale_factor"] = scale_factor
+    scale_factor_group.attrs["weight"] = weight
+
+    # Save the predicted arrival times
+    arrival_group = scale_factor_group.require_group("arrival_time")
+    for station, arrival_time in arrival_time_dict.items():
+        arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
+
+    # Save the misfit at each station (in seconds)
+    misfit_group = scale_factor_group.require_group("station_misfit")
+    for station, misfit_val in station_misfit_dict.items():
+        misfit_group.attrs[station] = misfit_val
+
+    # Save the misfit volume
+    volume_group = scale_factor_group.require_group("misfit_volume")
+
+    # Save the axes
+    if "east_grid" in volume_group.keys():
+        del volume_group["east_grid"]
+    volume_group.create_dataset("east_grid", data=easts_grid, dtype=float, shape=easts_grid.shape)
+
+    if "north_grid" in volume_group.keys():
+        del volume_group["north_grid"]
+    volume_group.create_dataset("north_grid", data=norths_grid, dtype=float, shape=norths_grid.shape)
+
+    if "depth_grid" in volume_group.keys():
+        del volume_group["depth_grid"]
+    volume_group.create_dataset("depth_grid", data=depths_grid, dtype=float, shape=depths_grid.shape)
+
+    if "misfit" in volume_group.keys():
+        del volume_group["misfit"]
+    volume_group.create_dataset("misfit", data=misfit_vol, dtype=float, shape=misfit_vol.shape)
+
+
+"""
+Save the location information of a hub event to an HDF5 file
+"""
+def save_hub_event_location_to_hdf(filepath, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict):
+    scale_factor = param_dict["scale_factor"]
     scale_factor_label = f"scale_factor_{scale_factor:.2f}"
 
     with File(filepath, "a") as f:
         scale_factor_group = f.require_group(scale_factor_label)
-
-        # Save the location information
-        scale_factor_group.attrs["origin_time"] = origin_time
-        scale_factor_group.attrs["east"] = east
-        scale_factor_group.attrs["north"] = north
-        scale_factor_group.attrs["depth"] = depth
-        scale_factor_group.attrs["min_misfit"] = misfit
-
-        # Save the scale factor and weighting flag
-        scale_factor_group.attrs["scale_factor"] = scale_factor
-        scale_factor_group.attrs["weight"] = weight
-
-        # Save the predicted arrival times
-        arrival_group = scale_factor_group.require_group("arrival_time")
-        for station, arrival_time in arrival_time_dict.items():
-            arrival_group.attrs[station] = arrival_time.value # Convert to nanoseconds since the Unix epoch
-        
-        # Save the misfit at each station (in seconds)
-        misfit_group = scale_factor_group.require_group("station_misfit")
-        for station, misfit in station_misfit_dict.items():
-            misfit_group.attrs[station] = misfit
-
-        # Save the misfit volume
-        volume_group = scale_factor_group.require_group("misfit_volume")
-
-        # Save the axes
-        if "east_grid" in volume_group.keys():
-            del volume_group["east_grid"]
-        volume_group.create_dataset("east_grid", data=easts_grid, dtype=float, shape=easts_grid.shape)
-
-        if "north_grid" in volume_group.keys():
-            del volume_group["north_grid"]
-        volume_group.create_dataset("north_grid", data=norths_grid, dtype=float, shape=norths_grid.shape)
-
-        if "depth_grid" in volume_group.keys():
-            del volume_group["depth_grid"]
-        volume_group.create_dataset("depth_grid", data=depths_grid, dtype=float, shape=depths_grid.shape)
-
-        if "misfit" in volume_group.keys():
-            del volume_group["misfit"]
-        volume_group.create_dataset("misfit", data=misfit_vol, dtype=float, shape=misfit_vol.shape)
+        _write_hub_event_location_into_group(
+            scale_factor_group, param_dict, location_dict, arrival_time_dict, station_misfit_dict, grid_dict,
+        )
 
     print(f"Saved the location information to {filepath}.")
+
+
+"""
+Write one hub-event localization (scale index ``i``) into a multi-scale HDF5 file.
+
+If ``i == 0``, the file is truncated (``"w"``) and root attributes ``scale_factors`` and ``weight``
+are written. For ``i > 0``, the file is opened in append mode and only group ``scale_factor_{i}``
+is added or replaced.
+"""
+def append_hub_event_location_one_scale_to_multi_scale_hdf(filepath, index, scale_factors, weight, payload):
+    if index < 0 or index >= len(scale_factors):
+        raise ValueError("index must satisfy 0 <= index < len(scale_factors)")
+
+    sf = float(scale_factors[index])
+    param_dict = {"scale_factor": sf, "weight": weight}
+    mode = "w" if index == 0 else "a"
+
+    with File(filepath, mode) as f:
+        if index == 0:
+            f.attrs["scale_factors"] = array(scale_factors, dtype=float)
+            f.attrs["weight"] = weight
+        g = f.require_group(f"scale_factor_{index}")
+        _write_hub_event_location_into_group(
+            g,
+            param_dict,
+            payload["location_dict"],
+            payload["arrival_time_dict"],
+            payload["station_misfit_dict"],
+            payload["grid_dict"],
+        )
+
+    print(f"Saved hub location scale index {index:d} (scale factor {sf:.4f}) to {filepath}.")
+
+
+"""
+Save hub-event localizations for several velocity scale factors in one HDF5 file.
+
+File attributes store ``scale_factors`` (1D array, same order as groups) and ``weight``.
+Each index ``i`` in ``scale_factors`` corresponds to HDF5 group ``scale_factor_{i}`` with the same layout as
+``save_hub_event_location_to_hdf`` (without the legacy velocity-value suffix in the group name).
+
+Writes each scale sequentially (same layout as calling ``append_hub_event_location_one_scale_to_multi_scale_hdf``
+for each index).
+"""
+def save_hub_event_locations_multi_scale_to_hdf(filepath, scale_factors, weight, per_scale_payloads):
+    if len(scale_factors) != len(per_scale_payloads):
+        raise ValueError("scale_factors and per_scale_payloads must have the same length")
+
+    for i, (sf, payload) in enumerate(zip(scale_factors, per_scale_payloads)):
+        append_hub_event_location_one_scale_to_multi_scale_hdf(
+            filepath, i, scale_factors, weight, payload,
+        )
+
+    print(f"Saved multi-scale location information to {filepath}.")
+
 
 """
 Save the location information of a hammer event to an HDF5 file
@@ -387,14 +449,30 @@ def load_station_misfits_from_hdf_combined(filepath, arrival_type, phase, subarr
         return misfit_dict
 
 """
-Load the predicted arrival times of a hub event from an HDF5 file
+Load the predicted arrival times of a hub event from an HDF5 file.
+
+Supports the multi-scale layout written by ``save_hub_event_locations_multi_scale_to_hdf``
+(root attribute ``scale_factors``, groups ``scale_factor_0``, ``scale_factor_1``, …) and the legacy layout
+(groups named ``scale_factor_{value:.2f}``).
 """
-def load_hub_event_predicted_arrival_times_from_hdf(filepath, pick_type, scale_factor):
+def load_hub_event_predicted_arrival_times_from_hdf(filepath, scale_factor):
 
     with File(filepath, "r") as f:
-        pick_type_group = f[pick_type]
-        scale_factor_group = pick_type_group[f"{scale_factor:.1f}"]
-        
+        if "scale_factors" in f.attrs:
+            sfs = array(f.attrs["scale_factors"], dtype=float)
+            idx_exact = None
+            for i, sf in enumerate(sfs):
+                if abs(float(sf) - float(scale_factor)) < 1e-9:
+                    idx_exact = i
+                    break
+            if idx_exact is not None:
+                idx = idx_exact
+            else:
+                idx = int((abs(sfs - float(scale_factor))).argmin())
+            scale_factor_group = f[f"scale_factor_{idx}"]
+        else:
+            scale_factor_group = f[f"scale_factor_{scale_factor:.2f}"]
+
         # Load the predicted arrival times
         arrival_time_dict = {}
         arrival_group = scale_factor_group.require_group("arrival_time")
@@ -405,6 +483,27 @@ def load_hub_event_predicted_arrival_times_from_hdf(filepath, pick_type, scale_f
         origin_time = Timestamp(scale_factor_group.attrs["origin_time"], unit="ns")
 
         return arrival_time_dict, origin_time
+
+"""
+Load minimum misfit and best-fit depth as a function of velocity scale factor from a multi-scale
+hub location HDF5 file (root attribute ``scale_factors``, groups ``scale_factor_{i}``).
+"""
+def load_hub_event_min_misfit_depth_vs_scale_factor_from_hdf(filepath):
+    with File(filepath, "r") as f:
+        if "scale_factors" not in f.attrs:
+            raise ValueError(
+                f"{filepath} has no root attribute 'scale_factors'; "
+                "expected a multi-scale hub location file from save_hub_event_locations_multi_scale_to_hdf."
+            )
+        scale_factors = array(f.attrs["scale_factors"][:], dtype=float)
+        n = len(scale_factors)
+        min_misfits = zeros(n)
+        depths = zeros(n)
+        for i in range(n):
+            g = f[f"scale_factor_{i}"]
+            min_misfits[i] = float(g.attrs["min_misfit"])
+            depths[i] = float(g.attrs["depth"])
+        return scale_factors, min_misfits, depths
 
 """
 Load the predicted arrival times of a hammer shot from an HDF5 file
@@ -608,6 +707,66 @@ def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, 
     return fig, ax_map, ax_profile, cbar
 
 """
+Plot minimum grid-search misfit and best-fit depth versus velocity scale factor from arrays.
+
+``scale_factors``, ``min_misfits``, and ``depths`` must have the same length (one value per
+localization). This avoids reading results back from HDF5 when the localization loop already
+holds these series in memory.
+
+Both curves share one horizontal axis (velocity scale factor); misfit uses the left *y* axis and
+depth uses the right *y* axis (depth increases upward).
+"""
+def plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays(
+    scale_factors,
+    min_misfits,
+    depths,
+    title=None,
+    figsize=(8.0, 5.5),
+    marker_size=7.0,
+):
+    scale_factors = array(scale_factors, dtype=float)
+    min_misfits = array(min_misfits, dtype=float)
+    depths = array(depths, dtype=float)
+
+    fig, ax_misfit = subplots(1, 1, figsize=figsize)
+    ax_depth = ax_misfit.twinx()
+
+    ax_misfit.plot(scale_factors, min_misfits, "o-", color="tab:blue", markersize=marker_size, linewidth=1.5)
+    ax_misfit.set_xlabel("Velocity scale factor", fontsize=12)
+    ax_misfit.set_ylabel("Min. misfit (s)", fontsize=12, color="tab:blue")
+    ax_misfit.tick_params(axis="y", labelcolor="tab:blue")
+    ax_misfit.grid(True, alpha=0.35)
+
+    ax_depth.plot(scale_factors, depths, "o-", color="tab:green", markersize=marker_size, linewidth=1.5)
+    ax_depth.set_ylabel("Event depth (m)", fontsize=12, color="tab:green")
+    ax_depth.tick_params(axis="y", labelcolor="tab:green")
+
+    if title is not None:
+        ax_misfit.set_title(title, fontsize=14, fontweight="bold")
+    else:
+        tight_layout()
+
+    return fig, ax_misfit, ax_depth
+
+
+"""
+Plot minimum grid-search misfit and best-fit depth versus velocity scale factor for a hub event.
+
+Loads series from a multi-scale location HDF5 file (see ``load_hub_event_min_misfit_depth_vs_scale_factor_from_hdf``).
+Prefer ``plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays`` when the data are already in memory.
+"""
+def plot_hub_event_min_misfit_and_depth_vs_scale_factor(
+    filepath,
+    title=None,
+    figsize=(8.0, 5.5),
+    marker_size=7.0,
+):
+    scale_factors, min_misfits, depths = load_hub_event_min_misfit_depth_vs_scale_factor_from_hdf(filepath)
+    return plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays(
+        scale_factors, min_misfits, depths, title=title, figsize=figsize, marker_size=marker_size,
+    )
+
+"""
 Process the arrival information stored in a data frame
 """
 def process_arrival_info(arrival_df, arrival_type):
@@ -735,7 +894,9 @@ def get_misfit_and_origin_time_for_grid_point_no_phase(arrival_df, i_north, i_ea
         travel_times[i] = travel_time
         arrival_times[i] = arrival_time
 
-    origin_time = mean(origin_times)
+    # Inverse-variance weighted mean of per-station origin time estimates.
+    # When `weight=False`, `weights = ones` and this reduces to the plain mean.
+    origin_time = sum(origin_times / weights ** 2) / sum(1 / weights ** 2)
     misfit = sum(((arrival_times - travel_times - origin_time) / weights) ** 2) / sum(1 / weights ** 2)
     misfit = sqrt(misfit)
 

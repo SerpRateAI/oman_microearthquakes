@@ -4,15 +4,13 @@ Plot the waveform stack and arrival time picks of a hub event
 
 from argparse import ArgumentParser
 from pathlib import Path
-from pandas import read_hdf
 from matplotlib.pyplot import subplots
 from obspy import read
 
 from utils_basic import LOC_DIR as dirpath_loc, DETECTION_DIR as dirpath_detection, PICK_DIR as dirpath_pick
-from utils_basic import get_geophone_coords, get_freq_limits_string
+from utils_basic import get_freq_limits_string
 from utils_sta_lta import get_sta_lta_suffix
 from utils_cc import get_repeating_snippet_suffix
-from utils_cont_waveform import load_waveform_slice
 from utils_snuffler import read_time_windows
 from utils_loc import process_arrival_info, load_hub_event_predicted_arrival_times_from_hdf
 from utils_basic import GEO_COMPONENTS as components
@@ -29,7 +27,6 @@ if __name__ == "__main__":
     parser = ArgumentParser(description="Plot the waveform stack and arrival time picks of a hub event")
     parser.add_argument("--group_label", type=int, required=True, help="Group label")
 
-    parser.add_argument("--pick_type", type=str, default="two_phase", help="Pick type")
     parser.add_argument("--scale_factor", type=float, default=1.0, help="Scale factor")
     parser.add_argument("--weight", help="Weight the RMS by the uncertainties", action="store_true", default=True)
     parser.add_argument("--min_freq_filter", type=float, default=20.0)
@@ -46,7 +43,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     group_label = args.group_label
-    pick_type = args.pick_type
     scale_factor = args.scale_factor
     weight = args.weight
     min_freq_filter = args.min_freq_filter
@@ -82,15 +78,15 @@ if __name__ == "__main__":
 
     # Load the arrival time picks
     print(f"Loading the arrival time picks...")
-    filename = f"hub_event_picks_group{group_label:d}_{suffix_group}_{pick_type}.mkr"
+    filename = f"hub_event_picks_group{group_label:d}_{suffix_group}.mkr"
     filepath = Path(dirpath_pick) / filename
-    arrival_df = read_time_windows(filepath, phase_marker = True)
+    arrival_df = read_time_windows(filepath, phase_marker = False)
     arrival_df = process_arrival_info(arrival_df, "manual_stack")
 
     # Load the predicted arrival time picks
     filename =f"hub_event_location_info_group{group_label:d}.h5"
     filepath = Path(dirpath_loc) / filename
-    arrival_time_dict, origin_time = load_hub_event_predicted_arrival_times_from_hdf(filepath, pick_type, scale_factor)
+    arrival_time_dict, origin_time = load_hub_event_predicted_arrival_times_from_hdf(filepath, scale_factor)
     origin_time_abs = origin_time.timestamp()
 
     # Plot the waveform stack and arrival time picks
@@ -140,16 +136,9 @@ if __name__ == "__main__":
         if i_sta == num_sta - 1:
             axes[i_sta].set_xlabel("Time (s)", fontsize=12)
 
-# Set the suptitle
-if pick_type == "two_phase":
-    pick_type_label = "Two-phase"
-elif pick_type == "p":
-    pick_type_label = "P phase"
-elif pick_type == "s":
-    pick_type_label = "S phase"
+    # Set the suptitle
+    title = f"Hub event waveform stack, Group {group_label}, Scale factor {scale_factor:.2f}"
+    fig.suptitle(title, fontsize=16, fontweight="bold", y=0.9)
 
-title = f"Hub event waveform stack, Group {group_label}, {pick_type_label}, Scale factor {scale_factor}"
-fig.suptitle(title, fontsize=16, fontweight="bold", y=0.9)
-
-# Save the figure
-save_figure(fig, f"hub_event_waveform_stack_and_arrival_time_picks_group{group_label:d}_{pick_type}_scale{scale_factor:.1f}.png")
+    # Save the figure
+    save_figure(fig, f"hub_event_waveform_stack_and_arrival_time_picks_group{group_label:d}_scale{scale_factor:.2f}.png")

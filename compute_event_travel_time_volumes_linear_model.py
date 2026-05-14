@@ -1,5 +1,9 @@
 """
-Compute the travel time volumes for a given combination of surface velocity and velocity gradient and a range of scaling factors.
+Compute the travel time volumes for a velocity model with a linear velocity gradient 
+The model is defined by a surface velocity and a velocity gradient.
+The output is a HDF5 file with the travel time volumes for each scale factor.
+The travel time volumes are stored in a group with the name of the scale factor.
+The travel time volumes are stored in a dataset with the name of the station.
 """
 
 #-----------
@@ -8,7 +12,7 @@ Compute the travel time volumes for a given combination of surface velocity and 
 
 from argparse import ArgumentParser
 from pathlib import Path
-from numpy import arange, asarray, arccosh, ndarray, sqrt, meshgrid
+from numpy import arange, asarray, arccosh, isclose, ndarray, sqrt, meshgrid
 from matplotlib.pyplot import subplots
 from h5py import File
 from pandas import read_csv
@@ -37,7 +41,7 @@ def get_travel_time_3d(x, z_s, v0, alpha):
     """
     Travel time from a source at depth z_s to a surface receiver.
 
-    v(z) = v0 + alpha*z
+    v(z) = v0 + alpha*z  (if alpha = 0, v is constant v0)
 
     x   : horizontal epicentral distance, in m
     z_s : source depth, positive downward, in m
@@ -46,6 +50,12 @@ def get_travel_time_3d(x, z_s, v0, alpha):
     """
     x = asarray(x, dtype=float)
     z_s = asarray(z_s, dtype=float)
+    alpha_arr = asarray(alpha, dtype=float)
+
+    if alpha_arr.size == 1 and isclose(float(alpha_arr), 0.0):
+        return sqrt(x**2 + z_s**2) / v0
+
+    alpha = alpha_arr
 
     v_s = v0 + alpha * z_s
 
@@ -125,7 +135,7 @@ if test:
     print(f"Running in test mode.")
 
 # Load the velocity model
-filename = "vel_model_params_from_hammers.csv"
+filename = f"linear_vel_model_params_{subarray.lower()}.csv"
 vel_path = Path(dirpath_vel) / filename
 vel_params_df = read_csv(vel_path)
 surface_vel = float(vel_params_df.loc[0, "surface_vel"])

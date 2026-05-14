@@ -6,13 +6,19 @@ The travel time volumes are stored in a single HDF5 file per subarray
 (`event_travel_time_volumes_{subarray}.h5`) and indexed by a velocity scale factor. The manual
 picks do not distinguish between P and S phases, so all arrivals share the same travel-time
 volume. Arrays follow the compute script's native ``(north, east, depth)`` layout end to end.
+
+Localization can be run for several scale factors at once. The output HDF5 file stores root
+attributes ``scale_factors`` (the list in order) and ``weight``, and one group per index named
+``scale_factor_{index}``. Each scale is written to the HDF5 file as soon as it is processed. With
+two or more scale factors, a line plot of minimum misfit and depth versus scale factor is built
+from the in-memory series and saved next to the per-scale misfit maps.
 """
 
 #---------------------------------
 # Import libraries
 #---------------------------------
 from argparse import ArgumentParser
-from numpy import unravel_index
+from numpy import array, unravel_index
 from pandas import Timestamp, read_csv
 from pathlib import Path
 
@@ -31,7 +37,8 @@ from utils_loc import (
     process_arrival_info,
     load_event_travel_time_volumes,
     plot_misfit_distribution,
-    save_hub_event_location_to_hdf,
+    plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays,
+    append_hub_event_location_one_scale_to_multi_scale_hdf,
     get_misfit_and_origin_time_grids_no_phase,
 )
 from utils_plot import save_figure
@@ -56,7 +63,13 @@ parser.add_argument("--thr_on", type=float, default=4.0)
 parser.add_argument("--thr_off", type=float, default=1.0)
 
 parser.add_argument("--weight", help="Weight the RMS by the uncertainties", action="store_true", default=True)
-parser.add_argument("--scale_factor", type=float, default=1.0, help="Velocity-model scale factor used for the travel time volumes")
+parser.add_argument(
+    "--scale_factors",
+    type=float,
+    nargs="+",
+    default=[1.0],
+    help="Velocity-model scale factors; each uses the matching travel-time volume and is written to HDF5 group scale_factor_{index}",
+)
 
 args = parser.parse_args()
 group_label = args.group_label
@@ -71,10 +84,11 @@ lta_window_sec = args.lta_window_sec
 thr_on = args.thr_on
 thr_off = args.thr_off
 weight = args.weight
-scale_factor = args.scale_factor
+scale_factors = args.scale_factors
 
 print("--------------------------------")
 print(f"Localizing the hub event for Group {group_label:d}...")
+print(f"Velocity scale factors: {scale_factors}")
 print("--------------------------------")
 
 
@@ -100,94 +114,104 @@ arrival_df = read_time_windows(filepath, phase_marker = False)
 
 arrival_df = process_arrival_info(arrival_df, "manual_stack")
 
-print(arrival_df)
-
 # Get the subarray
 subarray = arrival_df["station"][0][0]
 print(f"Subarray: {subarray}")
 
-# Load the event travel time volumes for the requested scale factor
-filename = f"event_travel_time_volumes_{subarray.lower()}.h5"
-filepath = Path(dirpath_vel) / filename
+filename_vol = f"event_travel_time_volumes_{subarray.lower()}.h5"
+filepath_vol = Path(dirpath_vel) / filename_vol
 
-print(f"Loading the event travel time volumes (scale factor {scale_factor:.2f})...")
-easts_grid, norths_grid, depths_grid, travel_time_dict = load_event_travel_time_volumes(filepath, scale_factor)
-
-# Get the misfit and origin time grids in native (north, east, depth) layout
-print(f"Computing misfit and origin time grids...")
-misfit_vol, origin_times_grid = get_misfit_and_origin_time_grids_no_phase(
-    arrival_df, easts_grid, norths_grid, depths_grid, travel_time_dict, weight = weight,
-)
-
-# Get the location with the minimum misfit
-print(f"Finding the location with the minimum misfit...")
-i_north_min_rms, i_east_min_rms, i_depth_min_rms = unravel_index(misfit_vol.argmin(), misfit_vol.shape)
-min_misfit = misfit_vol[i_north_min_rms, i_east_min_rms, i_depth_min_rms]
-origin_time_min_misfit = origin_times_grid[i_north_min_rms, i_east_min_rms, i_depth_min_rms]
-
-east_min_rms = easts_grid[i_east_min_rms]
-north_min_rms = norths_grid[i_north_min_rms]
-depth_min_rms = depths_grid[i_depth_min_rms]
-
-# Plot the misfit distribution (native (north, east, depth) layout throughout)
 coord_df = get_geophone_coords()
 coord_df = coord_df[coord_df.index.isin(arrival_df["station"])]
 coord_df = coord_df.reset_index(drop=False)
 
-title = f"Group {group_label:d}, Hub event {id_hub}, scale factor {scale_factor:.2f}"
-fig, ax_map, ax_profile, cbar = plot_misfit_distribution(
-    misfit_vol, easts_grid, norths_grid, depths_grid,
-    i_east_min_rms, i_north_min_rms, i_depth_min_rms, coord_df,
-    title = title,
-)
+filepath_h5 = Path(dirpath_loc) / f"hub_event_location_info_group{group_label:d}.h5"
+scale_factors_arr = array(scale_factors, dtype=float)
+min_misfits_series = []
+depths_series = []
 
-scale_suffix = f"scale{scale_factor:.2f}"
-if weight:
-    figname = f"misfit_distribution_group{group_label:d}_{scale_suffix}_weight.png"
-else:
-    figname = f"misfit_distribution_group{group_label:d}_{scale_suffix}.png"
-save_figure(fig, figname)
+for idx, scale_factor in enumerate(scale_factors):
+    print(f"--- Scale factor [{idx:d}] = {scale_factor:.4f} ---")
 
-# Compute the predicted arrival times
-arrival_times_pred_dict = {}
-for _, row in arrival_df.iterrows():
-    station = row["station"]
-    travel_time = travel_time_dict[station][i_north_min_rms, i_east_min_rms, i_depth_min_rms]
-    arrival_times_pred_dict[station] = Timestamp(origin_time_min_misfit + travel_time, unit="s")
+    print(f"Loading the event travel time volumes (scale factor {scale_factor:.2f})...")
+    easts_grid, norths_grid, depths_grid, travel_time_dict = load_event_travel_time_volumes(filepath_vol, scale_factor)
 
-# Compute the misfit at each station
-misfit_dict = {}
-for station in arrival_df["station"].values:
-    misfit = arrival_df.loc[arrival_df["station"] == station, "arrival_time"].values[0] - arrival_times_pred_dict[station].timestamp()
-    misfit_dict[station] = misfit
+    print("Computing misfit and origin time grids...")
+    misfit_vol, origin_times_grid = get_misfit_and_origin_time_grids_no_phase(
+        arrival_df, easts_grid, norths_grid, depths_grid, travel_time_dict, weight = weight,
+    )
 
+    print("Finding the location with the minimum misfit...")
+    i_north_min_rms, i_east_min_rms, i_depth_min_rms = unravel_index(misfit_vol.argmin(), misfit_vol.shape)
+    min_misfit = misfit_vol[i_north_min_rms, i_east_min_rms, i_depth_min_rms]
+    origin_time_min_misfit = origin_times_grid[i_north_min_rms, i_east_min_rms, i_depth_min_rms]
 
-# Save the location information to an HDF5 file
-param_dict = {
-    "scale_factor": scale_factor,
-    "weight": weight,
-}
+    east_min_rms = easts_grid[i_east_min_rms]
+    north_min_rms = norths_grid[i_north_min_rms]
+    depth_min_rms = depths_grid[i_depth_min_rms]
 
-origin_time_min_misfit = Timestamp(origin_time_min_misfit, unit="s")
-location_dict = {
-    "origin_time": origin_time_min_misfit,
-    "east": east_min_rms,
-    "north": north_min_rms,
-    "depth": depth_min_rms,
-    "min_misfit": min_misfit,
-}
+    title = f"Group {group_label:d}, Hub event {id_hub}, scale factor {scale_factor:.2f}"
+    fig, ax_map, ax_profile, cbar = plot_misfit_distribution(
+        misfit_vol, easts_grid, norths_grid, depths_grid,
+        i_east_min_rms, i_north_min_rms, i_depth_min_rms, coord_df,
+        title = title,
+    )
 
-grid_dict = {
-    "easts_grid": easts_grid,
-    "norths_grid": norths_grid,
-    "depths_grid": depths_grid,
-    "misfit_vol": misfit_vol,
-}
+    scale_suffix = f"scale{scale_factor:.2f}"
+    if weight:
+        figname = f"misfit_distribution_group{group_label:d}_{scale_suffix}_weight.png"
+    else:
+        figname = f"misfit_distribution_group{group_label:d}_{scale_suffix}.png"
+    save_figure(fig, figname)
 
-filename = f"hub_event_location_info_group{group_label:d}.h5"
-filepath = Path(dirpath_loc) / filename
-save_hub_event_location_to_hdf(filepath, param_dict, location_dict, arrival_times_pred_dict, misfit_dict, grid_dict)
+    arrival_times_pred_dict = {}
+    for _, row in arrival_df.iterrows():
+        station = row["station"]
+        travel_time = travel_time_dict[station][i_north_min_rms, i_east_min_rms, i_depth_min_rms]
+        arrival_times_pred_dict[station] = Timestamp(origin_time_min_misfit + travel_time, unit="s")
 
-print(f"Minimum misfit: {min_misfit} s")
-print(f"Origin time at minimum misfit: {origin_time_min_misfit}")
-print(f"Location: {east_min_rms} m E, {north_min_rms} m N, {depth_min_rms} m D")
+    misfit_dict = {}
+    for station in arrival_df["station"].values:
+        misfit = arrival_df.loc[arrival_df["station"] == station, "arrival_time"].values[0] - arrival_times_pred_dict[station].timestamp()
+        misfit_dict[station] = misfit
+
+    origin_time_ts = Timestamp(origin_time_min_misfit, unit="s")
+    location_dict = {
+        "origin_time": origin_time_ts,
+        "east": east_min_rms,
+        "north": north_min_rms,
+        "depth": depth_min_rms,
+        "min_misfit": min_misfit,
+    }
+
+    grid_dict = {
+        "easts_grid": easts_grid,
+        "norths_grid": norths_grid,
+        "depths_grid": depths_grid,
+        "misfit_vol": misfit_vol,
+    }
+
+    payload = {
+        "location_dict": location_dict,
+        "arrival_time_dict": arrival_times_pred_dict,
+        "station_misfit_dict": misfit_dict,
+        "grid_dict": grid_dict,
+    }
+
+    append_hub_event_location_one_scale_to_multi_scale_hdf(
+        filepath_h5, idx, scale_factors_arr, weight, payload,
+    )
+
+    min_misfits_series.append(min_misfit)
+    depths_series.append(depth_min_rms)
+
+    print(f"Minimum misfit: {min_misfit} s")
+    print(f"Origin time at minimum misfit: {origin_time_ts}")
+    print(f"Location: {east_min_rms} m E, {north_min_rms} m N, {depth_min_rms} m D")
+
+if len(scale_factors) >= 2:
+    title_sf = f"Group {group_label:d}, Hub event {id_hub}"
+    fig_sf, _, _ = plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays(
+        scale_factors, min_misfits_series, depths_series, title=title_sf,
+    )
+    save_figure(fig_sf, f"hub_event_min_misfit_depth_vs_scale_factor_group{group_label:d}.png")
