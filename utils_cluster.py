@@ -10,7 +10,7 @@ from scipy.sparse import csr_matrix
 from pathlib import Path
 from scipy.sparse import isspmatrix_csr
 from matplotlib.pyplot import figure
-from numpy import arange, int8
+from numpy import arange, argsort, asarray, int8, unique
 from scipy.sparse import spmatrix
 
 # -----------------------------------------------------------------------------
@@ -70,5 +70,107 @@ def plot_similarity_matrix(sim_matrix: spmatrix, *, downsample=None, title=None)
         ax.set_title(title, fontsize=14, fontweight="bold")
     ax.set_xlabel("Snippet index", fontsize=12)
     ax.set_ylabel("Snippet index", fontsize=12)
+
+    return fig, ax
+
+
+_BAR_EDGEWIDTH = 1.5
+
+
+def _bar_edgecolors(labels_sorted, highlight_labels):
+    highlight = set() if highlight_labels is None else set(highlight_labels)
+    return ["black" if label in highlight else "lightgray" for label in labels_sorted]
+
+
+def plot_label_histogram(labels, min_count=10, subarrays=None, highlight_labels=None):
+    """
+    Plot event counts per group with more than ``min_count`` members, sorted by
+    count in descending order, with a logarithmic y-axis.
+
+    If ``subarrays`` is given (same length as ``labels``, values ``"A"`` or ``"B"``),
+    each bar is stacked: Subarray A in blue, Subarray B in green.
+
+    If ``highlight_labels`` is given, bars for those group labels are outlined in
+    black; all other bars are outlined in light gray.
+    """
+    labels_unique, counts = unique(labels, return_counts=True)
+    mask = counts >= min_count
+    labels_unique = labels_unique[mask]
+    counts = counts[mask]
+
+    order = argsort(-counts)
+    labels_sorted = labels_unique[order]
+    counts_sorted = counts[order]
+
+    fig = figure(figsize=(10, 5))
+    ax = fig.add_subplot(111)
+    x = list(range(len(counts_sorted)))
+    if len(counts_sorted) > 0:
+        edgecolors = _bar_edgecolors(labels_sorted, highlight_labels)
+        if subarrays is not None:
+            subarrays = asarray(subarrays)
+            counts_a = []
+            counts_b = []
+            for label in labels_sorted:
+                in_group = labels == label
+                counts_a.append((subarrays[in_group] == "A").sum())
+                counts_b.append((subarrays[in_group] == "B").sum())
+            counts_a = asarray(counts_a)
+            counts_b = asarray(counts_b)
+            ax.bar(
+                x,
+                counts_a,
+                align="center",
+                color="tab:blue",
+                linewidth=_BAR_EDGEWIDTH,
+                edgecolor=edgecolors,
+                label="Subarray A",
+            )
+            ax.bar(
+                x,
+                counts_b,
+                bottom=counts_a,
+                align="center",
+                color="tab:green",
+                linewidth=_BAR_EDGEWIDTH,
+                edgecolor=edgecolors,
+                label="Subarray B",
+            )
+            ax.legend(loc="upper right")
+        else:
+            ax.bar(
+                x,
+                counts_sorted,
+                align="center",
+                color="tab:blue",
+                linewidth=_BAR_EDGEWIDTH,
+                edgecolor=edgecolors,
+            )
+        ax.set_yscale("log")
+    else:
+        ax.text(
+            0.5,
+            0.5,
+            f"No groups with more than {min_count} events",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            fontsize=12,
+        )
+
+    ax.set_xlabel("Group label", fontsize=12)
+    ax.set_ylabel("Count", fontsize=12)
+    ax.set_title(
+        f"Number of events per group",
+        fontsize=14,
+        fontweight="bold",
+    )
+
+    if len(counts_sorted) > 0:
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels_sorted)
+
+        ax.set_xlim(-0.5, len(counts_sorted) - 0.5)
+        ax.set_ylim(min_count * 0.9, counts_sorted.max() * 1.1)
 
     return fig, ax

@@ -11,7 +11,6 @@ from pandas import read_json, DataFrame
 from numpy import unique, where
 from scipy.sparse import load_npz
 from scipy.sparse.csgraph import connected_components
-from matplotlib.pyplot import figure, hist
 
 from utils_basic import (
     DETECTION_DIR as dirpath,
@@ -22,6 +21,7 @@ from utils_basic import get_freq_limits_string
 from utils_sta_lta import get_sta_lta_suffix
 from utils_cc import get_repeating_snippet_suffix
 
+from utils_cluster import plot_label_histogram
 from utils_plot import save_figure
 
 # -----------------------------------------------------------------------------
@@ -54,24 +54,6 @@ def get_group_info(labels_unique, labels_event, similarity_matrix, event_df):
     output_df = DataFrame(output_dicts)
 
     return output_df
-
-
-def plot_label_histogram(labels, num_comp):
-    """
-    Plot a histogram of the labels.
-    """
-    fig = figure(figsize=(10, 5))
-    ax = fig.add_subplot(111)
-    ax.hist(labels, bins=range(num_comp + 1))
-    ax.set_yscale("log")
-
-    ax.set_xlabel("Group label", fontsize=12)
-    ax.set_ylabel("Count", fontsize=12)
-    ax.set_title("Number of events per group", fontsize=14, fontweight="bold")
-
-    ax.set_xlim(0, num_comp)
-    
-    return fig, ax
 
 # -----------------------------------------------------------------------------
 # Main function
@@ -177,5 +159,5 @@ if __name__ == "__main__":
     print("--------------------------------")
     print("Plotting the histogram of the labels...")
     print("--------------------------------")
-    fig, _ = plot_label_histogram(labels_event, num_comp)
+    fig, _ = plot_label_histogram(labels_event)
     save_figure(fig, f"event_label_histogram_{suffix_sim}.png")
