@@ -1,6 +1,6 @@
 # Functions and classes for spectrum analysis
 from os.path import join, splitext
-from scipy.fft import fft, fftfreq, ifft
+from scipy.fft import fft, fftfreq, ifft, rfft, rfftfreq
 from scipy.signal import find_peaks
 from scipy.signal.windows import hann
 from scipy.interpolate import RegularGridInterpolator
@@ -3286,8 +3286,8 @@ def get_geo_3c_fft(stream):
 
 #     return freqs, signal_fft, window
 
-# Calculate the PSD of the FFT of a signal using a Hann window
-def get_fft_psd(signal, sampling_rate = 1000.0, normalize = False):
+# Calculate the PSD of the FFT of a signal with an optional taper window (default Hann).
+def get_fft_psd(signal, sampling_rate = 1000.0, normalize = False, window = None):
     # Remove the mean
     signal = signal - mean(signal)
 
@@ -3297,22 +3297,20 @@ def get_fft_psd(signal, sampling_rate = 1000.0, normalize = False):
 
     # Apply the window
     num_pts = len(signal)
-    window = hann(num_pts)
+    if window is None:
+        window = hann(num_pts)
+    elif callable(window):
+        window = window(num_pts)
     signal = signal * window
 
-    # Compute the FFT
-    signal_fft = fft(signal)
-
-    # Compute the PSD with right-sided FFT
-    signal_fft = signal_fft[0:num_pts//2 + 1]
+    # One-sided FFT: DC (0 Hz) is the first bin; freqax matches via rfftfreq
+    signal_fft = rfft(signal)
     signal_fft[1:] = 2 * signal_fft[1:]
 
     # Compute the PSD
     psd = abs(signal_fft) ** 2 / num_pts
 
-    # Compute the frequency axis
-    freqax = fftfreq(num_pts, 1/sampling_rate)
-    freqax = freqax[0:num_pts//2 + 1]
+    freqax = rfftfreq(num_pts, d=1.0 / sampling_rate)
 
     return freqax, psd
 

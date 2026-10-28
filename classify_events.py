@@ -27,6 +27,13 @@ from utils_plot import save_figure
 # -----------------------------------------------------------------------------
 # Functions
 # -----------------------------------------------------------------------------
+def infer_subarray_from_station(station):
+    """Infer Subarray A or B from the first character of a station name."""
+    letter = str(station)[0].upper()
+    if letter not in ("A", "B"):
+        raise ValueError(f"Cannot infer subarray from station name {station!r}")
+    return letter
+
 def classify(similarity_matrix):
     """
     Classify the events into different categories based on the similarity matrix.
@@ -49,7 +56,17 @@ def get_group_info(labels_unique, labels_event, similarity_matrix, event_df):
         degree_hub = degrees.max()
         index_hub = indices[degrees.argmax()]
         id_hub = event_df.iloc[index_hub]["event_id"]
-        output_dicts.append({"label": label, "num_events": num_events, "id_hub": id_hub, "degree_hub": degree_hub})
+        station_hub = event_df.iloc[index_hub]["first_onset_station"]
+        subarray = infer_subarray_from_station(station_hub)
+        output_dicts.append(
+            {
+                "label": label,
+                "num_events": num_events,
+                "id_hub": id_hub,
+                "degree_hub": degree_hub,
+                "subarray": subarray,
+            }
+        )
 
     output_df = DataFrame(output_dicts)
 

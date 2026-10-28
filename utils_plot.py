@@ -2987,13 +2987,23 @@ def plot_station_triads(ax, linewidth_normal = 1.0, linewidth_highlight = 2.0, l
 ###### Functions for adding elements to the plots ######
 
 # Add day-night shading to the plot
-def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray", alpha=0.5):
+def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="lightgray", alpha=0.5, axis="x"):
     # Get the sunrise and sunset times
     if sun_df is None:
         sun_df = get_sunrise_sunset_times()
 
-    # Get the axis limits as Timestamps
-    x0, x1 = ax.get_xlim()
+    # Choose the time axis
+    if axis == "x":
+        lim0, lim1 = ax.get_xlim()
+        add_span = ax.axvspan
+    elif axis == "y":
+        lim0, lim1 = ax.get_ylim()
+        add_span = ax.axhspan
+    else:
+        raise ValueError(f"axis must be 'x' or 'y'; got {axis!r}")
+
+    # Get the axis limits as Timestamps, in increasing order in case the axis is inverted
+    x0, x1 = sorted((lim0, lim1))
     xmin = Timestamp(num2date(x0))
     xmax = Timestamp(num2date(x1))
     print(xmin, xmax)
@@ -3023,26 +3033,26 @@ def add_day_night_shading(ax, sun_df=None, day_color="white", night_color="light
         if idx == first_idx:
             if sunrise > xmin:
                 # before first sunrise → night
-                ax.axvspan(xmin, sunrise,              color=night_color, alpha=alpha, zorder=0)
-                ax.axvspan(sunrise, sunset,            color=day_color,   alpha=alpha, zorder=0)
-                ax.axvspan(sunset, sunrise_next,       color=night_color, alpha=alpha, zorder=0)
+                add_span(xmin, sunrise,              color=night_color, alpha=alpha, zorder=0)
+                add_span(sunrise, sunset,            color=day_color,   alpha=alpha, zorder=0)
+                add_span(sunset, sunrise_next,       color=night_color, alpha=alpha, zorder=0)
             else:
                 # started during daytime
-                ax.axvspan(xmin, sunset,               color=day_color,   alpha=alpha, zorder=0)
-                ax.axvspan(sunset, sunrise_next,       color=night_color, alpha=alpha, zorder=0)
+                add_span(xmin, sunset,               color=day_color,   alpha=alpha, zorder=0)
+                add_span(sunset, sunrise_next,       color=night_color, alpha=alpha, zorder=0)
 
         # LAST day in range
         elif idx == last_idx:
             if sunset < xmax:
-                ax.axvspan(sunrise, sunset,            color=day_color,   alpha=alpha, zorder=0)
-                ax.axvspan(sunset, xmax,               color=night_color, alpha=alpha, zorder=0)
+                add_span(sunrise, sunset,            color=day_color,   alpha=alpha, zorder=0)
+                add_span(sunset, xmax,               color=night_color, alpha=alpha, zorder=0)
             else:
-                ax.axvspan(sunrise, xmax,               color=day_color,   alpha=alpha, zorder=0)
+                add_span(sunrise, xmax,               color=day_color,   alpha=alpha, zorder=0)
 
         # INTERMEDIATE days
         else:
-            ax.axvspan(sunrise, sunset,                color=day_color,   alpha=alpha, zorder=0)
-            ax.axvspan(sunset, sunrise_next,           color=night_color, alpha=alpha, zorder=0)
+            add_span(sunrise, sunset,                color=day_color,   alpha=alpha, zorder=0)
+            add_span(sunset, sunrise_next,           color=night_color, alpha=alpha, zorder=0)
 
     return ax
 
@@ -3243,6 +3253,42 @@ def format_datetime_xlabels(ax,
 
     if plot_axis_label:
         ax.set_xlabel("Time (UTC)", fontsize=axis_label_size)
+
+    return ax
+
+# Format the y labels in datetime
+def format_datetime_ylabels(ax, 
+                            plot_axis_label=True, plot_tick_label=True,
+                            date_format = '%Y-%m-%d %H:%M:%S', 
+                            major_tick_spacing = "24h", num_minor_ticks = 5,
+                            axis_label_size = 12, tick_label_size = 10, rotation = 0,
+                            major_tick_length = 5, minor_tick_length = 2.5, tick_width = 1,
+                            va = "center", ha = "right"):
+
+    # Convert to time deltas
+    major_tick_spacing = Timedelta(major_tick_spacing)
+
+    major_locator = timedelta_to_locator(major_tick_spacing)
+
+    ax.yaxis.set_major_locator(major_locator)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+    ax.yaxis.set_major_formatter(DateFormatter(date_format))
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment(va)
+            label.set_horizontalalignment(ha)
+            label.set_rotation(rotation)
+    else:
+        # Shared axes share one formatter, so set_yticklabels([]) would blank all of them
+        ax.tick_params(axis='y', labelleft=False)
+
+    if plot_axis_label:
+        ax.set_ylabel("Time (UTC)", fontsize=axis_label_size)
 
     return ax
 
@@ -3481,7 +3527,7 @@ def format_norm_amp_ylabels(ax,
                             plot_axis_label=True, plot_tick_label=True,
                             abbreviation=False, 
                             major_tick_spacing=0.5, num_minor_ticks=5,
-                            axis_label_size=12, tick_label_size=12,
+                            axis_label_size=12, tick_label_size=10,
                             major_tick_length=5, minor_tick_length=2.5, tick_width=1):
     if plot_axis_label:
         if abbreviation:
@@ -3572,6 +3618,32 @@ def format_norm_psd_ylabels(ax,
     if plot_tick_label:
         for label in ax.get_yticklabels():
             label.set_fontsize(tick_label_size) 
+            label.set_verticalalignment('center')
+            label.set_horizontalalignment('right')
+    else:
+        ax.set_yticklabels([])
+
+    ax.tick_params(axis='y', which='major', length=major_tick_length, width=tick_width)
+    ax.tick_params(axis='y', which='minor', length=minor_tick_length, width=tick_width)
+
+    return ax
+
+# Format the ylabel in normalized ground velocity
+def format_norm_ground_vel_ylabels(ax,
+                                    plot_axis_label=True, plot_tick_label=True,
+                                    major_tick_spacing=0.5, num_minor_ticks=5,
+                                    axis_label_size=12, tick_label_size=10,
+                                    major_tick_length=5, minor_tick_length=2.5, tick_width=1):
+
+    if plot_axis_label:
+        ax.set_ylabel("Normalized ground velocity", fontsize=axis_label_size)
+
+    ax.yaxis.set_major_locator(MultipleLocator(major_tick_spacing))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(num_minor_ticks))
+
+    if plot_tick_label:
+        for label in ax.get_yticklabels():
+            label.set_fontsize(tick_label_size)
             label.set_verticalalignment('center')
             label.set_horizontalalignment('right')
     else:

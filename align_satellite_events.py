@@ -113,6 +113,7 @@ if __name__ == "__main__":
     index_hub = event_df.index[event_df["event_id"] == id_hub].values[0]
     hub_dict = event_df.loc[event_df["event_id"] == id_hub].iloc[0].to_dict()
     stations_hub = hub_dict["stations"]
+    station_first_onset_hub = hub_dict["first_onset_station"]
     print(f"Stations of the hub event: {stations_hub}")
 
     # Find the ids of the satellite events
@@ -144,21 +145,20 @@ if __name__ == "__main__":
     # Align each satellite event with the hub event
     print("Aligning each satellite event with the hub event...")
     point_difference_stds = []
-    event_alignment_dicts = [{"id": id_hub, "first_onset_station": hub_dict["first_onset_station"], "aligned_first_onset": hub_dict["first_onset"], "hub": True}]
+    event_alignment_dicts = [{"id": id_hub, "aligned_station": station_first_onset_hub, "aligned_time": hub_dict["first_onset"], "hub": True}]
     for _, row in event_satellite_df.iterrows():
         event_id = row["event_id"]
 
-        station_first_onset = row["first_onset_station"]
-        if station_first_onset != hub_dict["first_onset_station"]:
+        # station_first_onset = row["first_onset_station"]
+        stations_satellite = row["stations"]
+        if station_first_onset_hub not in stations_satellite:
             continue
-
         print("--------------------------------")
         print(f"Aligning event {event_id} with the hub event...")
+        print(f"Aligned station: {station_first_onset_hub}")
         print("--------------------------------")
-        stations_satellite = row["stations"]
         stations_to_align = list(set(stations_satellite) & set(stations_hub))
         print(f"Stations to align: {stations_to_align}")
-
         starttime_aligned_dict = {}
         time_differences = []
         print("Aligning each station...")
@@ -186,8 +186,8 @@ if __name__ == "__main__":
         point_difference_std = int(time_difference_std * sample_rate)
 
         if point_difference_std == 0:
-            first_onset_aligned = starttime_aligned_dict[station_first_onset]
-            event_alignment_dicts.append({"id": event_id, "first_onset_station": station_first_onset, "aligned_first_onset": first_onset_aligned, "hub": False})
+            first_onset_aligned = starttime_aligned_dict[station_first_onset_hub]
+            event_alignment_dicts.append({"id": event_id, "aligned_station": station_first_onset_hub, "aligned_time": first_onset_aligned, "hub": False})
             print(f"Aligned first onset: {first_onset_aligned}")
 
         print(f"Point difference standard deviation: {point_difference_std}")

@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from os.path import join
 from numpy import amax, ndarray
 from pandas import Timestamp, Timedelta
-from pandas import read_json, read_csv, to_datetime
+from pandas import read_csv, to_datetime
 from typing import Dict
 from obspy import Stream, Trace
 
@@ -88,33 +88,31 @@ suffix_repeating_snippet = get_repeating_snippet_suffix(min_cc = min_cc, min_num
 suffix = f"{suffix_freq}_{suffix_sta_lta}_{suffix_repeating_snippet}"
 suffix_group = f"{suffix}_num_sim_sta{min_num_similar_station:d}"
 
-# Load the event information
-print("Loading the event information...")
-filename = f"grouped_events_group{group_label:d}_{suffix_group}.jsonl"
-filepath = join(dirpath_event, filename)
-event_df = read_json(filepath, lines = True)
-
-# Get the event alignment information
-print("Getting the event alignment information...")
+# Load the event alignment information
+print("Loading the event alignment information...")
 filename = f"event_alignments_group{group_label:d}_{suffix_group}.csv"
 filepath = join(dirpath_event, filename)
 alignment_df = read_csv(filepath)
-alignment_df["aligned_first_onset"] = to_datetime(alignment_df["aligned_first_onset"], format="ISO8601")
+alignment_df["aligned_time"] = to_datetime(alignment_df["aligned_time"], format="ISO8601")
 alignment_df["hub"] = alignment_df["hub"].astype(bool)
+num_events = len(alignment_df)
+print(f"Number of aligned events to stack: {num_events}")
 
-# Get the hub event
+# Get the hub event and stations to stack
 id_hub = alignment_df.loc[alignment_df["hub"] == True, "id"].values[0]
-hub_dict = event_df.loc[event_df["event_id"] == id_hub].iloc[0].to_dict()
-stations_hub = hub_dict["stations"]
-print(f"Stations of the hub event: {stations_hub}")
-
-# Get the stations to stack
-station_first_onset = alignment_df.loc[alignment_df["hub"] == True, "first_onset_station"].values[0]
+station_first_onset = alignment_df.loc[alignment_df["hub"] == True, "aligned_station"].values[0]
+print(f"Hub event ID: {id_hub}")
+print(f"Hub event first onset station: {station_first_onset}")
 if station_first_onset.startswith("A"):
     stations_to_stack = stations_inner_a + stations_middle_a
 elif station_first_onset.startswith("B"):
     stations_to_stack = stations_inner_b + stations_middle_b
 print(f"Stations to stack: {stations_to_stack}")
+
+hub_aligned_time = alignment_df.loc[alignment_df["hub"], "aligned_time"].values[0]
+stack_starttime = hub_aligned_time - Timedelta(seconds=buffer_before_sec)
+print(f"Hub aligned time: {hub_aligned_time}")
+print(f"Stack window starttime: {stack_starttime}")
 
 # Get the waveform file path
 filename = f"preprocessed_data_{suffix_freq}.h5"
@@ -123,37 +121,54 @@ filepath = join(dirpath_waveform, filename)
 # Compute the waveform stacks for each station and component
 print("Computing the waveform stacks for each station and component...")
 waveform_stack_dict = {}
+num_stacked_dict = {}
 for station in stations_to_stack:
     print(f"Processing station {station}...")
     waveform_stack_dict[station] = {}
-    for i, row in alignment_df.iterrows():
-        id = row["id"]
-        aligned_first_onset = row["aligned_first_onset"]
-        hub = row["hub"]
-        aligned_starttime_plot = aligned_first_onset - Timedelta(seconds=buffer_before_sec)
-        aligned_endtime_plot = aligned_first_onset + Timedelta(seconds=buffer_after_sec)
-        waveform_dict, _ = load_waveform_slice(filepath, station, aligned_starttime_plot, endtime = aligned_endtime_plot, normalize = True)
+    num_stacked = 0
+    for _, row in alignment_df.iterrows():
+        event_id = row["id"]
+        aligned_time = row["aligned_time"]
+        aligned_starttime_plot = aligned_time - Timedelta(seconds=buffer_before_sec)
+        aligned_endtime_plot = aligned_time + Timedelta(seconds=buffer_after_sec)
+        try:
+            waveform_dict, _ = load_waveform_slice(
+                filepath, station, aligned_starttime_plot, endtime=aligned_endtime_plot, normalize=True
+            )
+        except Exception as e:
+            print(f"Error loading waveform slice for event {event_id} at station {station}: {e}")
+            continue
 
-        if hub:
-            hub_first_onset = aligned_first_onset
-
+        num_stacked += 1
         for component in components:
             waveform = waveform_dict[component]
             waveform = waveform / amax(abs(waveform))
-            if i == 0:
+            if num_stacked == 1:
                 waveform_stack_dict[station][component] = waveform
             else:
                 waveform_stack_dict[station][component] += waveform
 
+    num_stacked_dict[station] = num_stacked
+    print(f"Stacked {num_stacked}/{num_events} events at station {station}")
+
 # Normalize the waveform stacks
 print("Normalizing the waveform stacks...")
-num_stack = len(alignment_df)
+stations_stacked = []
 for station in stations_to_stack:
+    num_stacked = num_stacked_dict[station]
+    if num_stacked == 0:
+        print(f"No successful waveform loads at station {station}; skipping.")
+        del waveform_stack_dict[station]
+        continue
+    stations_stacked.append(station)
     for component in components:
-        waveform_stack_dict[station][component] /= num_stack
+        waveform_stack_dict[station][component] /= num_stacked
 
-# Assemble the waveform stacks into a stream object
-stream = assemble_stream(waveform_stack_dict, hub_first_onset)
+if not stations_stacked:
+    raise RuntimeError("No waveform stacks could be computed for any station.")
+
+# Assemble the waveform stacks into a stream object (starttime = first sample of loaded window)
+stream = assemble_stream(waveform_stack_dict, stack_starttime)
 
 # Save the waveform stacks
 print("Saving the waveform stacks...")

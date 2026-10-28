@@ -44,6 +44,7 @@ figheight = 15.0
 
 axis_label_size = 15
 tick_label_size = 12
+title_size = 16
 
 mode_label_x = 0.008
 mode_label_y = 0.90
@@ -136,10 +137,9 @@ format_datetime_xlabels(axes[num_plot - 1],
 # cbar_pos = [bbox.x1 + 0.02, bbox.y0, 0.01, bbox.height]
 # add_colorbar(fig, cbar_pos,  "Mean frequency (Hz)", cmap = cmap, norm = norm)
 
-# # Set the title
-# print("Setting the title...")
-# title = f"Harmonic relations between the stationary resonances with {base_mode} as Mode {base_number}"
-# fig.suptitle(title, fontsize = 14, fontweight = "bold", y = 0.92)
+# Set the title
+print("Setting the title...")
+axes[0].set_title("Mode frequency variation", fontsize = title_size, fontweight = "bold")
 
 # Save the figure
 print("Saving the figure...")

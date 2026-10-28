@@ -74,24 +74,35 @@ def plot_similarity_matrix(sim_matrix: spmatrix, *, downsample=None, title=None)
     return fig, ax
 
 
-_BAR_EDGEWIDTH = 1.5
+_BAR_EDGEWIDTH = 2.0
+_BAR_EDGE_DOTTED = (0, (2, 2))
 
 
-def _bar_edgecolors(labels_sorted, highlight_labels):
+def _apply_group_bar_outlines(patches, labels_sorted, highlight_labels):
     highlight = set() if highlight_labels is None else set(highlight_labels)
-    return ["black" if label in highlight else "lightgray" for label in labels_sorted]
+    for patch, label in zip(patches, labels_sorted):
+        patch.set_edgecolor("black")
+        patch.set_linewidth(_BAR_EDGEWIDTH)
+        patch.set_linestyle("-" if label in highlight else _BAR_EDGE_DOTTED)
 
 
-def plot_label_histogram(labels, min_count=10, subarrays=None, highlight_labels=None):
+def plot_label_histogram(
+    labels,
+    min_count=10,
+    subarrays=None,
+    highlight_labels=None,
+    color_a="tab:blue",
+    color_b="tab:orange",
+):
     """
     Plot event counts per group with more than ``min_count`` members, sorted by
     count in descending order, with a logarithmic y-axis.
 
     If ``subarrays`` is given (same length as ``labels``, values ``"A"`` or ``"B"``),
-    each bar is stacked: Subarray A in blue, Subarray B in green.
+    each bar is stacked: Subarray A in ``color_a``, Subarray B in ``color_b``.
 
-    If ``highlight_labels`` is given, bars for those group labels are outlined in
-    black; all other bars are outlined in light gray.
+    If ``highlight_labels`` is given, bars for those group labels have a solid black
+    outline; all other bars have a dotted black outline.
     """
     labels_unique, counts = unique(labels, return_counts=True)
     mask = counts >= min_count
@@ -106,7 +117,6 @@ def plot_label_histogram(labels, min_count=10, subarrays=None, highlight_labels=
     ax = fig.add_subplot(111)
     x = list(range(len(counts_sorted)))
     if len(counts_sorted) > 0:
-        edgecolors = _bar_edgecolors(labels_sorted, highlight_labels)
         if subarrays is not None:
             subarrays = asarray(subarrays)
             counts_a = []
@@ -117,35 +127,38 @@ def plot_label_histogram(labels, min_count=10, subarrays=None, highlight_labels=
                 counts_b.append((subarrays[in_group] == "B").sum())
             counts_a = asarray(counts_a)
             counts_b = asarray(counts_b)
-            ax.bar(
+            bars_a = ax.bar(
                 x,
                 counts_a,
                 align="center",
-                color="tab:blue",
+                color=color_a,
                 linewidth=_BAR_EDGEWIDTH,
-                edgecolor=edgecolors,
+                edgecolor="black",
                 label="Subarray A",
             )
-            ax.bar(
+            bars_b = ax.bar(
                 x,
                 counts_b,
                 bottom=counts_a,
                 align="center",
-                color="tab:green",
+                color=color_b,
                 linewidth=_BAR_EDGEWIDTH,
-                edgecolor=edgecolors,
+                edgecolor="black",
                 label="Subarray B",
             )
+            _apply_group_bar_outlines(bars_a.patches, labels_sorted, highlight_labels)
+            _apply_group_bar_outlines(bars_b.patches, labels_sorted, highlight_labels)
             ax.legend(loc="upper right")
         else:
-            ax.bar(
+            bars = ax.bar(
                 x,
                 counts_sorted,
                 align="center",
                 color="tab:blue",
                 linewidth=_BAR_EDGEWIDTH,
-                edgecolor=edgecolors,
+                edgecolor="black",
             )
+            _apply_group_bar_outlines(bars.patches, labels_sorted, highlight_labels)
         ax.set_yscale("log")
     else:
         ax.text(

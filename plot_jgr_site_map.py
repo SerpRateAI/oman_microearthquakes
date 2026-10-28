@@ -293,8 +293,8 @@ for borehole, coords in boho_df.iterrows():
                     color = "black", arrowprops=dict(arrowstyle = "-", color = "black"), bbox = dict(facecolor = "white", edgecolor = "none", alpha = 0.5))
 
 # Add the subarray labels
-ax_map.text(subarray_a_label_x, subarray_a_label_y, "Subarray A", color = "black", fontsize = subarray_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "center")
-ax_map.text(subarray_b_label_x, subarray_b_label_y, "Subarray B", color = "black", fontsize = subarray_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "center")
+ax_map.text(subarray_a_label_x, subarray_a_label_y, "Subarray A", color = "crimson", fontsize = subarray_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "center")
+ax_map.text(subarray_b_label_x, subarray_b_label_y, "Subarray B", color = "crimson", fontsize = subarray_label_size, fontweight = "bold", verticalalignment = "center", horizontalalignment = "center")
 
 # Add the scale bar
 scale_bar = AnchoredSizeBar(ax_map.transData, scale_bar_length, 

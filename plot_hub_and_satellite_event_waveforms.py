@@ -35,7 +35,7 @@ from utils_plot import save_figure, get_geo_component_color, component2label
 """
 Plot the waveforms of an event
 """
-def plot_waveforms(ax, stream, stations, color = "lightgray"):
+def plot_waveforms(ax, stream, stations, color = "gray"):
     for i, station in enumerate(stations):
         trace = stream.select(station=station)[0]
         waveform = trace.data
@@ -117,13 +117,13 @@ print("Getting the event alignment information...")
 filename = f"event_alignments_group{group_label:d}_{suffix_group}.csv"
 filepath = join(dirpath_event, filename)
 alignment_df = read_csv(filepath)
-alignment_df["aligned_first_onset"] = to_datetime(alignment_df["aligned_first_onset"], format="ISO8601")
+alignment_df["aligned_time"] = to_datetime(alignment_df["aligned_time"], format="ISO8601")
 alignment_df["hub"] = alignment_df["hub"].astype(bool)
 num_events = len(alignment_df)
 
 # Get the stations to plot
 id_hub = alignment_df.loc[alignment_df["hub"] == True, "id"].values[0]
-station_first_onset = alignment_df.loc[alignment_df["hub"] == True, "first_onset_station"].values[0]
+station_first_onset = alignment_df.loc[alignment_df["hub"] == True, "aligned_station"].values[0]
 print(f"Hub event first onset station: {station_first_onset}")
 if station_first_onset.startswith("A"):
     stations_to_plot = stations_inner_a + stations_middle_a
@@ -156,11 +156,19 @@ print("Plotting the waveforms of the hub event and its aligned events...")
 for _, row in alignment_df.iterrows():
     for i_station, station in enumerate(stations_to_plot):
         id = row["id"]
-        aligned_first_onset = row["aligned_first_onset"]
+        aligned_time = row["aligned_time"]
         hub = row["hub"]
-        aligned_starttime_plot = aligned_first_onset - Timedelta(seconds=buffer_before_sec)
-        aligned_endtime_plot = aligned_first_onset + Timedelta(seconds=buffer_after_sec)
-        waveform_dict, _ = load_waveform_slice(filepath, station, aligned_starttime_plot, endtime = aligned_endtime_plot, normalize = True)
+        aligned_starttime_plot = aligned_time - Timedelta(seconds=buffer_before_sec)
+        aligned_endtime_plot = aligned_time + Timedelta(seconds=buffer_after_sec)
+        print(f"Station: {station}")
+        print(f"Aligned starttime plot: {aligned_starttime_plot}")
+        print(f"Aligned endtime plot: {aligned_endtime_plot}")
+
+        try:
+            waveform_dict, _ = load_waveform_slice(filepath, station, aligned_starttime_plot, endtime = aligned_endtime_plot, normalize = True)
+        except Exception as e:
+            print(f"Error loading waveform slice for station {station}: {e}")
+            continue
 
         for i_component, component in enumerate(components):
             if hub:
@@ -169,7 +177,7 @@ for _, row in alignment_df.iterrows():
                 zorder = 2
             else:
                 color = "lightgray"
-                linewidth = 0.1
+                linewidth = 0.2
                 zorder = 0
 
             waveform = waveform_dict[component]

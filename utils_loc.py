@@ -158,23 +158,24 @@ def load_travel_time_volumes_combined(filepath, scale_factor = 1.0):
         return easts_grid, norths_grid, depths_grid, travel_time_dict
 
 """
-Load the event travel time volumes for a given scale factor from the file produced by
-`compute_event_travel_time_volumes.py`.
+Load event travel time volumes for a given scale factor from HDF5 files produced by
+``compute_event_travel_time_volumes_linear_model.py``.
 
 The file structure is:
-  /scale_factors                       : 1D array of all scale factors stored in the file
+  /scale_factors                       : 1D array of scale factors stored in the file
   /easts_grid, /norths_grid, /depths_grid : 1D coordinate axes
-  /scale_factor_<i>/<station>          : 3D travel time volume with axes (north, east, depth)
+  /i_scale_factor_<i>/<station>        : 3D travel time volume with axes (north, east, depth)
 
-The travel time volumes are returned in the compute script's native layout
-``(north, east, depth)``, so they can be indexed as ``volume[i_north, i_east, i_depth]``.
+Volumes are returned in native ``(north, east, depth)`` layout.
 """
-def load_event_travel_time_volumes(filepath, scale_factor, atol = 1e-6):
+def load_event_travel_time_volumes(filepath, scale_factor, atol=1e-6):
     with File(filepath, "r") as f:
         scale_factors = f["scale_factors"][:]
 
-        # Find the index matching the requested scale factor
-        matches = [i for i, sf in enumerate(scale_factors) if abs(float(sf) - float(scale_factor)) < atol]
+        matches = [
+            i for i, sf in enumerate(scale_factors)
+            if abs(float(sf) - float(scale_factor)) < atol
+        ]
         if not matches:
             raise ValueError(
                 f"Scale factor {scale_factor} not found in {filepath}. "
@@ -182,18 +183,88 @@ def load_event_travel_time_volumes(filepath, scale_factor, atol = 1e-6):
             )
         i_scale_factor = matches[0]
 
-        # Read the axes
         easts_grid = f["easts_grid"][:]
         norths_grid = f["norths_grid"][:]
         depths_grid = f["depths_grid"][:]
 
-        # Read the travel time volumes for each station in native (north, east, depth) layout
-        group = f[f"scale_factor_{i_scale_factor:d}"]
+        group_name = f"i_scale_factor_{i_scale_factor:d}"
+        if group_name not in f:
+            group_name = f"scale_factor_{i_scale_factor:d}"
+        group = f[group_name]
+
         travel_time_dict = {}
         for station in group.keys():
             travel_time_dict[station] = group[station][:]
 
         return easts_grid, norths_grid, depths_grid, travel_time_dict
+
+
+"""
+Infer whether hub-event picks belong to Subarray A or B from station names.
+Raises if stations span both subarrays or use an unexpected prefix.
+"""
+def infer_hub_event_subarray(arrival_df):
+    letters = {str(s)[0].upper() for s in arrival_df["station"] if len(str(s)) >= 1}
+    if not letters:
+        raise ValueError("No stations available to infer subarray.")
+    if letters - {"A", "B"}:
+        raise ValueError(
+            f"Expected only A- and B-line stations; got first-character set {letters!r}."
+        )
+    if len(letters) != 1:
+        raise ValueError(
+            f"Stations span multiple subarrays {letters!r}; hub events must be in A or B only."
+        )
+    return letters.pop()
+
+
+def hub_event_travel_time_volumes_filepath(subarray, dirpath_vel_model=None):
+    """Path to ``event_travel_time_volumes_subarray_{a|b}.h5`` for the given subarray."""
+    if dirpath_vel_model is None:
+        dirpath_vel_model = dirpath_vel
+
+    subarray = str(subarray).upper()
+    if subarray not in ("A", "B"):
+        raise ValueError(f"Unsupported subarray {subarray!r}; expected 'A' or 'B'.")
+
+    return Path(dirpath_vel_model) / f"event_travel_time_volumes_subarray_{subarray.lower()}.h5"
+
+
+"""
+Read the velocity scale factors stored in a subarray travel-time volume HDF5 file.
+"""
+def load_hub_event_travel_time_scale_factors(subarray, dirpath_vel_model=None):
+    filepath_vol = hub_event_travel_time_volumes_filepath(subarray, dirpath_vel_model)
+    if not filepath_vol.is_file():
+        subarray = str(subarray).upper()
+        raise FileNotFoundError(
+            f"Travel-time volume file not found: {filepath_vol}. "
+            f"Run compute_event_travel_time_volumes_linear_model.py --subarray {subarray.lower()}."
+        )
+    with File(filepath_vol, "r") as f:
+        if "scale_factors" not in f:
+            raise ValueError(f"Dataset 'scale_factors' not found in {filepath_vol}.")
+        return [float(sf) for sf in f["scale_factors"][:]]
+
+
+"""
+Load event travel-time volumes for hub localization at velocity scale ``scale_factor``.
+
+Both subarrays use ``event_travel_time_volumes_subarray_{a|b}.h5`` at ``scale_factor`` (v0 and
+alpha scaled by the same factor from ``linear_vel_model_params_a.csv``).
+"""
+def load_hub_event_travel_times_for_scale(subarray, scale_factor, dirpath_vel_model=None):
+    subarray = str(subarray).upper()
+    scale_factor = float(scale_factor)
+
+    filepath_vol = hub_event_travel_time_volumes_filepath(subarray, dirpath_vel_model)
+    if not filepath_vol.is_file():
+        raise FileNotFoundError(
+            f"Travel-time volume file not found: {filepath_vol}. "
+            f"Run compute_event_travel_time_volumes_linear_model.py --subarray {subarray.lower()}."
+        )
+    return load_event_travel_time_volumes(filepath_vol, scale_factor)
+
 
 # """
 # Save location information of a grid search to an individual HDF5 file.
@@ -430,6 +501,54 @@ def save_hammer_location_to_hdf(filepath, location_dict, arrival_time_dict, stat
 
     print(f"Saved the hammer event location information to {filepath}.")
 
+
+"""
+Save 2D hammer locations (and east–north misfit maps) from the velocity-model estimate.
+
+File attributes store ``surface_vel`` and ``vel_gradient``. Shared datasets store ``east_grid``
+and ``north_grid``. Each hammer ID is a group with origin time, coordinates, predicted arrivals,
+station misfits, and a 2D misfit map.
+"""
+def save_hammer_locations_for_vel_model_estimate_to_hdf(
+    filepath,
+    surface_vel,
+    vel_gradient,
+    east_grid,
+    north_grid,
+    hammer_payloads,
+):
+    with File(filepath, "w") as f:
+        f.attrs["surface_vel"] = surface_vel
+        f.attrs["vel_gradient"] = vel_gradient
+        f.create_dataset("east_grid", data=east_grid, dtype=float, shape=east_grid.shape)
+        f.create_dataset("north_grid", data=north_grid, dtype=float, shape=north_grid.shape)
+
+        for payload in hammer_payloads:
+            hammer_id = payload["hammer_id"]
+            location_dict = payload["location_dict"]
+            arrival_time_dict = payload["arrival_time_dict"]
+            station_misfit_dict = payload["station_misfit_dict"]
+            misfit_mat = payload["misfit_mat"]
+
+            group = f.require_group(hammer_id)
+            group.attrs["east"] = location_dict["east"]
+            group.attrs["north"] = location_dict["north"]
+            group.attrs["origin_time"] = location_dict["origin_time"].value
+            group.attrs["min_misfit"] = location_dict["min_misfit"]
+
+            arrival_group = group.require_group("arrival_time")
+            for station, arrival_time in arrival_time_dict.items():
+                arrival_group.attrs[station] = arrival_time.value
+
+            misfit_group = group.require_group("station_misfit")
+            for station, misfit in station_misfit_dict.items():
+                misfit_group.attrs[station] = misfit
+
+            group.create_dataset("misfit", data=misfit_mat, dtype=float, shape=misfit_mat.shape)
+
+    print(f"Saved hammer location information for the velocity-model estimate to {filepath}.")
+
+
 """
 Read the station misfits of a grid search result from an HDF5 file
 """
@@ -448,6 +567,29 @@ def load_station_misfits_from_hdf_combined(filepath, arrival_type, phase, subarr
 
         return misfit_dict
 
+def _get_hub_event_scale_factor_group(f, scale_factor):
+    """
+    Return the HDF5 group and the scale factor stored for a hub localization at ``scale_factor``.
+
+    Supports the multi-scale layout (root attribute ``scale_factors``, groups ``scale_factor_0``, …)
+    and the legacy layout (groups named ``scale_factor_{value:.2f}``).
+    """
+    if "scale_factors" in f.attrs:
+        sfs = array(f.attrs["scale_factors"], dtype=float)
+        idx_exact = None
+        for i, sf in enumerate(sfs):
+            if abs(float(sf) - float(scale_factor)) < 1e-9:
+                idx_exact = i
+                break
+        if idx_exact is not None:
+            idx = idx_exact
+        else:
+            idx = int((abs(sfs - float(scale_factor))).argmin())
+        return f[f"scale_factor_{idx}"], float(sfs[idx])
+    sf = float(scale_factor)
+    return f[f"scale_factor_{sf:.2f}"], sf
+
+
 """
 Load the predicted arrival times of a hub event from an HDF5 file.
 
@@ -458,20 +600,7 @@ Supports the multi-scale layout written by ``save_hub_event_locations_multi_scal
 def load_hub_event_predicted_arrival_times_from_hdf(filepath, scale_factor):
 
     with File(filepath, "r") as f:
-        if "scale_factors" in f.attrs:
-            sfs = array(f.attrs["scale_factors"], dtype=float)
-            idx_exact = None
-            for i, sf in enumerate(sfs):
-                if abs(float(sf) - float(scale_factor)) < 1e-9:
-                    idx_exact = i
-                    break
-            if idx_exact is not None:
-                idx = idx_exact
-            else:
-                idx = int((abs(sfs - float(scale_factor))).argmin())
-            scale_factor_group = f[f"scale_factor_{idx}"]
-        else:
-            scale_factor_group = f[f"scale_factor_{scale_factor:.2f}"]
+        scale_factor_group, _ = _get_hub_event_scale_factor_group(f, scale_factor)
 
         # Load the predicted arrival times
         arrival_time_dict = {}
@@ -483,6 +612,23 @@ def load_hub_event_predicted_arrival_times_from_hdf(filepath, scale_factor):
         origin_time = Timestamp(scale_factor_group.attrs["origin_time"], unit="ns")
 
         return arrival_time_dict, origin_time
+
+
+"""
+Load the best-fit hub-event location from a multi-scale or legacy hub location HDF5 file.
+"""
+def load_hub_event_location_from_hdf(filepath, scale_factor):
+    with File(filepath, "r") as f:
+        g, scale_factor_used = _get_hub_event_scale_factor_group(f, scale_factor)
+        weight = bool(g.attrs.get("weight", f.attrs.get("weight", True)))
+        location_dict = {
+            "origin_time": Timestamp(g.attrs["origin_time"], unit="ns"),
+            "east": float(g.attrs["east"]),
+            "north": float(g.attrs["north"]),
+            "depth": float(g.attrs["depth"]),
+            "min_misfit": float(g.attrs["min_misfit"]),
+        }
+        return location_dict, scale_factor_used, weight
 
 """
 Load minimum misfit and best-fit depth as a function of velocity scale factor from a multi-scale
@@ -615,48 +761,93 @@ def save_location_to_csv_individual(filepath, template_id, arrival_type, phase, 
     print(f"Saved the location to {filepath}.")
 
 """
-Plot the misfit distribution of a template event.
+Plot the misfit distribution of an event.
 The figure consists of two subplots:
-- The first subplot shows the misfit distribution at the depth slice of the template event
-- The second subplot shows the misfit distribution at the north slice of the template event
+   - The first subplot shows the misfit distribution at the depth slice of the template event
+   - The second subplot shows the misfit distribution at the north slice of the template event
 
 ``misfit_grid`` is expected in the native ``(north, east, depth)`` layout used by
 ``compute_event_travel_time_volumes.py``, i.e. it can be indexed as
 ``misfit_grid[i_north, i_east, i_depth]``.
+
+Optional ``east_lim``, ``north_lim``, and ``depth_lim`` are ``(min, max)`` tuples in the same
+length units as the coordinate grids (meters). When ``None``, the axis extent follows the grid
+minima and maxima.
+
+Both panels use ``set_aspect("equal")`` so that one meter on the east axis spans the same
+distance as one meter on north (map) or depth (profile).
+
+Optional ``fig``, ``column_index``, and ``n_columns`` draw this map–profile pair into one
+horizontal column of an existing (or newly created) figure. Defaults keep a single full-width
+figure. When ``n_columns > 1``, ``title`` is a column heading on the map axes rather than a
+figure suptitle. Station name labels are drawn when ``annotate_stations`` is True (default).
 """
 def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, i_east, i_north, i_depth, station_df,
                           misfitmax=0.01,
                           figwidth = 8.0, hspace = 0.07, margin_x = 0.02, margin_y = 0.02,
                           source_size = 300, station_size = 250,
                           cbar_x = 0.03, cbar_y = 0.07, cbar_width = 0.02, cbar_height = 0.5, cbar_tick_spacing = 0.005,
-                          title = None):
-    
-    # Compute the dimensions of the subplots
-    min_east = easts_grid.min()
-    max_east = easts_grid.max()
-    min_north = norths_grid.min()
-    max_north = norths_grid.max()
-    min_depth = depths_grid.min()
-    max_depth = depths_grid.max()
+                          title = None,
+                          east_lim=None, north_lim=None, depth_lim=None,
+                          fig=None, column_index=0, n_columns=1, column_gap=0.04,
+                          annotate_stations=True, show_cbar=True, show_legend=False):
+    def _resolve_lim(arr, lim, label):
+        if lim is None:
+            return float(arr.min()), float(arr.max())
+        if len(lim) != 2:
+            raise ValueError(f"{label} must be a (min, max) sequence of length 2, got {lim!r}")
+        lo, hi = float(lim[0]), float(lim[1])
+        if hi < lo:
+            lo, hi = hi, lo
+        if lo == hi:
+            raise ValueError(f"{label} limits must span a positive range, got {lim!r}")
+        return lo, hi
 
-    east_range = max_east - min_east
-    north_range = max_north - min_north
-    depth_range = max_depth - min_depth
+    if n_columns < 1:
+        raise ValueError(f"n_columns must be >= 1, got {n_columns!r}")
+    if not (0 <= column_index < n_columns):
+        raise ValueError(
+            f"column_index must satisfy 0 <= column_index < n_columns, "
+            f"got column_index={column_index!r}, n_columns={n_columns!r}"
+        )
+
+    min_east, max_east = _resolve_lim(easts_grid, east_lim, "east_lim")
+    min_north, max_north = _resolve_lim(norths_grid, north_lim, "north_lim")
+    min_depth, max_depth = _resolve_lim(depths_grid, depth_lim, "depth_lim")
+
+    east_range = max(max_east - min_east, 1e-12)
+    north_range = max(max_north - min_north, 1e-12)
+    depth_range = max(max_depth - min_depth, 1e-12)
 
     aspect_map = north_range / east_range
     aspec_profile = depth_range / east_range
     fig_height = figwidth * (1 - 2 * margin_x) * (aspect_map + aspec_profile) / (1 - 2 * margin_y - hspace)
 
-    # Create the figure
-    fig = figure(figsize=(figwidth, fig_height))
+    if fig is None:
+        fig = figure(figsize=(figwidth * n_columns, fig_height))
+
+    if n_columns == 1:
+        x0 = 0.0
+        x1 = 1.0
+    else:
+        usable = 1.0 - column_gap * (n_columns - 1)
+        col_width = usable / n_columns
+        x0 = column_index * (col_width + column_gap)
+        x1 = x0 + col_width
+    xspan = x1 - x0
+
+    def _axes_rect(left, bottom, width, height):
+        return [x0 + left * xspan, bottom, width * xspan, height]
 
     # Create the subplot for the profile
     frac_profile_height = (1 - 2 * margin_y - hspace) / (depth_range + north_range) * depth_range
-    ax_profile = fig.add_axes([margin_x, margin_y, 1 - 2 * margin_x, frac_profile_height])
+    ax_profile = fig.add_axes(_axes_rect(margin_x, margin_y, 1 - 2 * margin_x, frac_profile_height))
 
     # Create the subplot for the map
     frac_map_height = 1 - 2 * margin_y - hspace - frac_profile_height
-    ax_map = fig.add_axes([margin_x, margin_y + frac_profile_height + hspace, 1 - 2 * margin_x, frac_map_height])
+    ax_map = fig.add_axes(
+        _axes_rect(margin_x, margin_y + frac_profile_height + hspace, 1 - 2 * margin_x, frac_map_height)
+    )
 
     # Plot the misfit distribution at the depth slice (map view spans north x east)
     misfit_map = misfit_grid[:, :, i_depth]
@@ -665,19 +856,27 @@ def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, 
     depth_min_rms = depths_grid[i_depth]
 
     im = ax_map.pcolormesh(easts_grid, norths_grid, misfit_map, vmin=0.0, vmax=misfitmax, shading='auto')
-    ax_map.scatter(east_min_rms, north_min_rms, color='salmon', marker='*', linewidths=1.0, edgecolors='black', s=source_size, zorder=10)
+    ax_map.scatter(east_min_rms, north_min_rms, color='salmon', marker='*', linewidths=1.0, edgecolors='black', s=source_size, zorder=10, label="Event")
     format_east_xlabels(ax_map, 
                         major_tick_spacing=10.0,
                         num_minor_ticks=5)
     format_north_ylabels(ax_map,
                          major_tick_spacing=10.0,
                          num_minor_ticks=5)
-    ax_map.set_title(f"Misfit at depth = {depth_min_rms:.0f} m", fontsize=12, fontweight='bold')
+    map_title = f"Misfit at depth = {depth_min_rms:.0f} m"
+    if n_columns > 1 and title is not None:
+        map_title = f"{title}\n{map_title}"
+    ax_map.set_title(map_title, fontsize=12, fontweight='bold')
 
     # Plot the stations
-    for _, row in station_df.iterrows():
-        ax_map.scatter(row["east"], row["north"], color='lightgray', marker='^', linewidths=1.0, edgecolors='black', s=station_size)
-        ax_map.annotate(row["name"], (row["east"], row["north"]), xytext=(0, 10), textcoords='offset points', color='black', fontsize=12, ha="center", va="bottom")
+    ax_map.scatter(
+        station_df["east"], station_df["north"],
+        color='lightgray', marker='^', linewidths=1.0, edgecolors='black', s=station_size,
+        label="Geophone",
+    )
+    if annotate_stations:
+        for _, row in station_df.iterrows():
+            ax_map.annotate(row["name"], (row["east"], row["north"]), xytext=(0, 10), textcoords='offset points', color='black', fontsize=12, ha="center", va="bottom")
 
     # Plot the misfit distribution along the east-depth profile at the picked north slice.
     # misfit_grid[i_north, :, :] has shape (east, depth); transpose to (depth, east) for pcolormesh.
@@ -692,16 +891,26 @@ def plot_misfit_distribution(misfit_grid, easts_grid, norths_grid, depths_grid, 
                          num_minor_ticks=5)
     ax_profile.set_title(f"Misfit at north = {north_min_rms:.0f} m", fontsize=12, fontweight='bold')
 
+    ax_map.set_xlim(min_east, max_east)
+    ax_map.set_ylim(min_north, max_north)
     ax_profile.set_xlim(min_east, max_east)
     ax_profile.set_ylim(min_depth, max_depth)
     ax_profile.invert_yaxis()
 
-    # Plot the colorbar
-    cbar_ax = ax_profile.inset_axes([cbar_x, cbar_y, cbar_width, cbar_height])
-    cbar = colorbar(im, cax=cbar_ax, orientation='vertical', label="Misfit (s)")
-    cbar.set_ticks(arange(0, misfitmax + cbar_tick_spacing, cbar_tick_spacing))
+    ax_map.set_aspect("equal", adjustable="box")
+    ax_profile.set_aspect("equal", adjustable="box")
 
-    if title is not None:
+    if show_legend:
+        ax_map.legend(loc="upper right", fontsize=10, framealpha=1.0, markerscale=0.4)
+
+    # Plot the colorbar
+    cbar = None
+    if show_cbar:
+        cbar_ax = ax_profile.inset_axes([cbar_x, cbar_y, cbar_width, cbar_height])
+        cbar = colorbar(im, cax=cbar_ax, orientation='vertical', label="Misfit (s)")
+        cbar.set_ticks(arange(0, misfitmax + cbar_tick_spacing, cbar_tick_spacing))
+
+    if title is not None and n_columns == 1:
         fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
 
     return fig, ax_map, ax_profile, cbar
@@ -715,6 +924,9 @@ holds these series in memory.
 
 Both curves share one horizontal axis (velocity scale factor); misfit uses the left *y* axis and
 depth uses the right *y* axis (depth increases upward).
+
+Optional ``misfit_ylim`` and ``depth_ylim`` are ``(ymin, ymax)`` tuples; pass ``None`` to autoscale.
+If ``scale_factor_prefer`` is set, a crimson vertical dashed line marks that velocity scale factor.
 """
 def plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays(
     scale_factors,
@@ -723,27 +935,41 @@ def plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays(
     title=None,
     figsize=(8.0, 5.5),
     marker_size=7.0,
+    ax=None,
+    show_xlabel=True,
+    misfit_ylim=None,
+    depth_ylim=None,
 ):
     scale_factors = array(scale_factors, dtype=float)
     min_misfits = array(min_misfits, dtype=float)
     depths = array(depths, dtype=float)
 
-    fig, ax_misfit = subplots(1, 1, figsize=figsize)
+    if ax is None:
+        fig, ax_misfit = subplots(1, 1, figsize=figsize)
+    else:
+        ax_misfit = ax
+        fig = ax.figure
+
     ax_depth = ax_misfit.twinx()
 
     ax_misfit.plot(scale_factors, min_misfits, "o-", color="tab:blue", markersize=marker_size, linewidth=1.5)
-    ax_misfit.set_xlabel("Velocity scale factor", fontsize=12)
+    if show_xlabel:
+        ax_misfit.set_xlabel("Velocity scale factor", fontsize=12)
     ax_misfit.set_ylabel("Min. misfit (s)", fontsize=12, color="tab:blue")
     ax_misfit.tick_params(axis="y", labelcolor="tab:blue")
-    ax_misfit.grid(True, alpha=0.35)
 
     ax_depth.plot(scale_factors, depths, "o-", color="tab:green", markersize=marker_size, linewidth=1.5)
     ax_depth.set_ylabel("Event depth (m)", fontsize=12, color="tab:green")
     ax_depth.tick_params(axis="y", labelcolor="tab:green")
 
+    if misfit_ylim is not None:
+        ax_misfit.set_ylim(*misfit_ylim)
+    if depth_ylim is not None:
+        ax_depth.set_ylim(*depth_ylim)
+
     if title is not None:
         ax_misfit.set_title(title, fontsize=14, fontweight="bold")
-    else:
+    elif ax is None:
         tight_layout()
 
     return fig, ax_misfit, ax_depth
@@ -760,10 +986,16 @@ def plot_hub_event_min_misfit_and_depth_vs_scale_factor(
     title=None,
     figsize=(8.0, 5.5),
     marker_size=7.0,
+    misfit_ylim=None,
+    depth_ylim=None,
+    scale_factor_prefer=None,
 ):
     scale_factors, min_misfits, depths = load_hub_event_min_misfit_depth_vs_scale_factor_from_hdf(filepath)
     return plot_hub_event_min_misfit_and_depth_vs_scale_factor_arrays(
-        scale_factors, min_misfits, depths, title=title, figsize=figsize, marker_size=marker_size,
+        scale_factors, min_misfits, depths,
+        title=title, figsize=figsize, marker_size=marker_size,
+        misfit_ylim=misfit_ylim, depth_ylim=depth_ylim,
+        scale_factor_prefer=scale_factor_prefer,
     )
 
 """

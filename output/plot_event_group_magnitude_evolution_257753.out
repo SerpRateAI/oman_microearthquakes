@@ -1,0 +1,19 @@
+--------------------------------
+Plotting event group magnitude evolution...
+--------------------------------
+Group labels: [18, 20]
+Group info: /proj/mazu/tianze.liu/oman/detections/event_group_info_selected_freq20hz_sta5_lta50_on4_off1_cc0.85_num_sim_det10_num_sim_sta3.csv
+Suffix group: freq20hz_sta5_lta50_on4_off1_cc0.85_num_sim_det10_num_sim_sta3
+Zoom window: 2020-01-16 00:00:00+00:00 to 2020-01-18 00:00:00+00:00
+Loading group 18 (Subarray A)...
+  Number of events: 4840
+Loading group 20 (Subarray B)...
+  Number of events: 2014
+Figure saved to /proj/mazu/tianze.liu/oman/figures/event_group_magnitude_evolution.png
+Printing a summary of the resources used...
+--------------------------------
+   JobName  AllocCPUS    CPUTime    Elapsed     MaxRSS  MaxVMSize 
+---------- ---------- ---------- ---------- ---------- ---------- 
+plot_even+          1   00:00:06   00:00:06                       
+     batch          1   00:00:06   00:00:06                       
+    extern          1   00:00:06   00:00:06                       

@@ -16,7 +16,7 @@ from matplotlib.pyplot import subplots
 from utils_basic import EASTMIN_A_LOC as min_east, EASTMAX_A_LOC as max_east, NORTHMIN_A_LOC as min_north, NORTHMAX_A_LOC as max_north
 from utils_basic import PICK_DIR as dirpath_pick
 from utils_snuffler import read_time_windows
-from utils_loc import process_arrival_info
+from utils_loc import process_arrival_info, save_hammer_locations_for_vel_model_estimate_to_hdf
 from utils_plot import save_figure
 from pandas import read_csv, DataFrame, Timestamp
 
@@ -197,11 +197,19 @@ print(f"Average minimum misfit: {min_misfit:.4f} s")
 print(f"Surface velocity: {surface_vel_min:.1f} m/s")
 print(f"Velocity gradient: {vel_gradient_min:.1f} 1/s")
 
+filepath_misfit = Path(dirpath_vel) / "avg_misfit_vs_vel_model_params.h5"
+with File(filepath_misfit, "w") as h5file_misfit:
+    h5file_misfit.create_dataset("surface_vel", data=surface_vel_grid)
+    h5file_misfit.create_dataset("vel_gradient", data=vel_gradient_grid)
+    h5file_misfit.create_dataset("avg_misfit", data=avg_misfit_mat)
+print(f"Saved average misfit to {filepath_misfit}.")
+
 # Save the optimum location of each hammer for the best velocity model
 print("Computing and saving optimum location of each hammer shot...")
 with File(filepath, "r") as h5file:
     group = h5file[f"surface_vel_{i_surface_vel_min}_vel_gradient_{i_vel_gradient_min}"]
     hammer_location_dicts = []
+    hammer_payloads = []
 
     for hammer_id in hammer_ids:
         arrival_info = arrival_info_dict[hammer_id]
@@ -216,23 +224,60 @@ with File(filepath, "r") as h5file:
             group
         )
         i_north_min, i_east_min = unravel_index(misfit_mat.argmin(), misfit_mat.shape)
+        origin_time = Timestamp(origin_time_mat[i_north_min, i_east_min], unit="s")
+        east = east_grid[i_east_min]
+        north = north_grid[i_north_min]
+        min_misfit_hammer = misfit_mat[i_north_min, i_east_min]
 
+        arrival_time_pred_dict = {}
+        station_misfit_dict = {}
+        for station, arrival_time in zip(stations, arrival_times):
+            travel_time = group[station][i_north_min, i_east_min]
+            arrival_time_pred = origin_time.timestamp() + travel_time
+            arrival_time_pred_dict[station] = Timestamp(arrival_time_pred, unit="s")
+            station_misfit_dict[station] = arrival_time - arrival_time_pred
+
+        location_dict = {
+            "east": east,
+            "north": north,
+            "origin_time": origin_time,
+            "min_misfit": min_misfit_hammer,
+        }
         hammer_location_dicts.append(
             {
                 "hammer_id": hammer_id,
-                "east": east_grid[i_east_min],
-                "north": north_grid[i_north_min],
-                "origin_time": Timestamp(origin_time_mat[i_north_min, i_east_min], unit="s"),
-                "min_misfit": misfit_mat[i_north_min, i_east_min],
+                "east": east,
+                "north": north,
+                "origin_time": origin_time,
+                "min_misfit": min_misfit_hammer,
                 "surface_velocity": surface_vel_min,
                 "velocity_gradient": vel_gradient_min,
             }
         )
+        hammer_payloads.append(
+            {
+                "hammer_id": hammer_id,
+                "location_dict": location_dict,
+                "arrival_time_dict": arrival_time_pred_dict,
+                "station_misfit_dict": station_misfit_dict,
+                "misfit_mat": misfit_mat,
+            }
+        )
 
 location_df = DataFrame(hammer_location_dicts)
-filepath = Path(dirpath_loc) / "hammer_locations_for_vel_model_estimate.csv"
-location_df.to_csv(filepath, index=False)
-print(f"Saved optimum hammer locations to {filepath}.")
+filepath_csv = Path(dirpath_loc) / "hammer_locations_for_vel_model_estimate.csv"
+location_df.to_csv(filepath_csv, index=False)
+print(f"Saved optimum hammer locations to {filepath_csv}.")
+
+filepath_h5 = Path(dirpath_loc) / "hammer_locations_for_vel_model_estimate.h5"
+save_hammer_locations_for_vel_model_estimate_to_hdf(
+    filepath_h5,
+    surface_vel_min,
+    vel_gradient_min,
+    east_grid,
+    north_grid,
+    hammer_payloads,
+)
 
 # Plot the source and station locations
 plot_source_and_station_locations(location_df)

@@ -1,5 +1,7 @@
 """
-Read event group labels from CSV (as written by classify_events.py) and save the label histogram figure.
+Plot stacked event-group size histograms for Subarrays A and B (AGU Advances).
+
+Reads event group labels from CSV (as written by classify_events.py).
 """
 
 import re
@@ -12,13 +14,9 @@ from utils_cluster import plot_label_histogram
 from utils_basic import DETECTION_DIR
 from utils_plot import save_figure
 
-
-def default_output_png(labels_csv: Path) -> str:
-    stem = labels_csv.stem
-    prefix = "event_labels_"
-    if stem.startswith(prefix):
-        return f"event_label_histogram_{stem[len(prefix):]}.png"
-    return f"{stem}_histogram.png"
+SUBARRAY_A_COLOR = "dodgerblue"
+SUBARRAY_B_COLOR = "darkorange"
+DEFAULT_OUTPUT_PNG = "aguadv_event_group_size_histograms.png"
 
 
 def default_associated_events_jsonl(labels_csv: Path) -> Path:
@@ -102,9 +100,8 @@ def parse_args():
         "-o",
         "--output",
         type=str,
-        default=None,
-        help="Output figure filename under FIGURE_DIR (utils_plot). "
-        "Default matches classify_events: event_label_histogram_<suffix>.png.",
+        default=DEFAULT_OUTPUT_PNG,
+        help="Output figure filename under FIGURE_DIR (utils_plot).",
     )
     parser.add_argument(
         "--selected-groups-csv",
@@ -148,10 +145,13 @@ def main(args):
     highlight_labels = load_highlight_labels(selected_groups_csv)
 
     fig, _ = plot_label_histogram(
-        labels, subarrays=subarrays, highlight_labels=highlight_labels
+        labels,
+        subarrays=subarrays,
+        highlight_labels=highlight_labels,
+        color_a=SUBARRAY_A_COLOR,
+        color_b=SUBARRAY_B_COLOR,
     )
-    out_name = output or default_output_png(labels_csv)
-    save_figure(fig, out_name)
+    save_figure(fig, output)
 
 
 if __name__ == "__main__":

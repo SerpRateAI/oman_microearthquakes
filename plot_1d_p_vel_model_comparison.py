@@ -21,7 +21,7 @@ from utils_plot import save_figure, WAVE_VELOCITY_UNIT as unit
 #-----------
 parser = ArgumentParser()
 parser.add_argument("--filename_vp", type=str, default="vp_1d_a.nd")
-parser.add_argument("--filename_vel_params", type=str, default="vel_model_params_from_hammers.csv")
+parser.add_argument("--filename_vel_params", type=str, default="linear_vel_model_params_a.csv")
 
 parser.add_argument("--figwidth", type=float, default=8.0)
 parser.add_argument("--figheight", type=float, default=8.0)

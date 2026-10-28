@@ -8,7 +8,7 @@ from scipy.stats import gmean
 from scipy.signal import hilbert
 from pandas import Timestamp, Timedelta, DatetimeIndex
 from pandas import Series
-from pandas import date_range, to_datetime, read_csv, read_excel, to_timedelta
+from pandas import DataFrame, date_range, to_datetime, read_csv, read_excel, to_timedelta
 from obspy import UTCDateTime, read_inventory
 
 ## Constants
@@ -48,6 +48,7 @@ MOVIE_DIR = "/proj/mazu/tianze.liu/oman/movies"
 PATH_GEO_METADATA = join(ROOTDIR_GEO, "station_metadata.xml")
 PATH_BROADBAND_METADATA = join(ROOTDIR_BROADBAND, "station_metadata.xml")
 PATH_KARST_METADATA = join(KARST_DATA_DIR, "station_metadata.xml")
+PATH_WATER_LEVEL_DATA = join(ROOTDIR_OTHER, "water_table.csv")
 
 CENTER_LONGITUDE = 58.70034
 CENTER_LATITUDE =  22.881751
@@ -69,7 +70,9 @@ GEO_COMPONENTS = ["Z", "1", "2"]
 GEO_CHANNELS = ["GHZ", "GH1", "GH2"]
 BROADBAND_COMPONENTS = ["Z", "N", "E"]
 KARST_COMPONENTS = ["Z", "N", "E"]
-#PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
+PM_COMPONENT_PAIRS = [("2", "1"), ("1", "Z"), ("2", "Z")]
+WAVELET_COMPONENT_PAIRS = [("1", "2"), ("Z", "1"), ("Z", "2")]
+COMPONENT_PAIRS = WAVELET_COMPONENT_PAIRS
 PHASE_DIFF_COMPONENT_PAIRS = [("1", "2"), ("1", "Z"), ("2", "Z")]
 
 GEO_STATIONS_A = ["A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11", "A13", "A14", "A15", "A16", "A17", "A19"]
@@ -120,15 +123,25 @@ EASTMAX_B_INNER = -16.0
 NORTHMIN_B_INNER = 52.0
 NORTHMAX_B_INNER = 72.0
 
+EASTMIN_A_MIDDLE = 2.5
+EASTMAX_A_MIDDLE = 52.5
+NORTHMIN_A_MIDDLE = -85.0
+NORTHMAX_A_MIDDLE = -35.0
+
+EASTMIN_B_MIDDLE = -50.0
+EASTMAX_B_MIDDLE = 0.0
+NORTHMIN_B_MIDDLE = 37.5
+NORTHMAX_B_MIDDLE = 87.5
+
 EASTMIN_A_LOC = -25.0
 EASTMAX_A_LOC = 75.0
 NORTHMIN_A_LOC = -110.0
 NORTHMAX_A_LOC = -25.0
 
-EASTMIN_B_LOC = -50.0
-EASTMAX_B_LOC = 0.0
-NORTHMIN_B_LOC = 40.0
-NORTHMAX_B_LOC = 85.0
+EASTMIN_B_LOC = -55.0
+EASTMAX_B_LOC = 5.0
+NORTHMIN_B_LOC = 35.0
+NORTHMAX_B_LOC = 90.0
 
 SAMPLING_RATE = 1000 # in Hz
 SAMPLING_RATE_AUDIO = 48000 # in Hz
@@ -363,6 +376,24 @@ def get_baro_temp_data():
     baro_temp_df.set_index("time", inplace=True)
 
     return baro_temp_df
+
+# Get the hourly precipitation data
+def get_precip_data():
+    inpath = join(ROOTDIR_OTHER, "era5_hourly_precipitation.csv")
+    precip_df = read_csv(inpath, parse_dates=["time"])
+    precip_df["time"] = to_datetime(precip_df["time"], utc=True)
+    precip_df.set_index("time", inplace=True)
+
+    return precip_df
+
+# Get the aquifer water-table data
+def get_water_level_data():
+    water_level_df = read_csv(PATH_WATER_LEVEL_DATA, parse_dates=["time"])
+    water_level_df["time"] = to_datetime(water_level_df["time"], utc=True)
+    water_level_df = water_level_df.rename(columns={"rel_water_level": "water_table"})
+    water_level_df.set_index("time", inplace=True)
+
+    return water_level_df
 
 # Get the tidal strain data
 def get_tidal_strain_data():

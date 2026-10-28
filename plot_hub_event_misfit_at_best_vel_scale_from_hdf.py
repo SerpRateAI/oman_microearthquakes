@@ -12,12 +12,58 @@ groups and picks the one with smallest ``min_misfit`` attribute.
 from argparse import ArgumentParser
 from pathlib import Path
 
-import numpy as np
+from numpy import argmin, abs
 from h5py import File
 
-from utils_basic import LOC_DIR as dirpath_loc, get_geophone_coords
+from utils_basic import (
+    EASTMAX_A_MIDDLE,
+    EASTMAX_B_MIDDLE,
+    EASTMIN_A_MIDDLE,
+    EASTMIN_B_MIDDLE,
+    LOC_DIR as dirpath_loc,
+    NORTHMAX_A_MIDDLE,
+    NORTHMAX_B_MIDDLE,
+    NORTHMIN_A_MIDDLE,
+    NORTHMIN_B_MIDDLE,
+    get_geophone_coords,
+)
 from utils_loc import plot_misfit_distribution
 from utils_plot import save_figure
+
+
+def _infer_subarray_letter(stations):
+    """Return ``'A'`` or ``'B'`` from geophone names (first character), matching hub localization."""
+    letters = {str(s)[0].upper() for s in stations if len(str(s)) >= 1}
+    if not letters:
+        raise ValueError("No stations available to infer subarray.")
+    if letters - {"A", "B"}:
+        raise ValueError(
+            f"Expected only A- and B-line stations; got first-character set {letters!r}."
+        )
+    if len(letters) != 1:
+        raise ValueError(
+            f"Stations span multiple subarray letters {letters!r}; cannot pick one map extent."
+        )
+    return letters.pop()
+
+
+def _middle_axis_limits_for_subarray(subarray_letter):
+    """East/north limits (m) for map view: ``*_MIDDLE`` constants from ``utils_basic``."""
+    if subarray_letter == "A":
+        return (
+            EASTMIN_A_MIDDLE,
+            EASTMAX_A_MIDDLE,
+            NORTHMIN_A_MIDDLE,
+            NORTHMAX_A_MIDDLE,
+        )
+    if subarray_letter == "B":
+        return (
+            EASTMIN_B_MIDDLE,
+            EASTMAX_B_MIDDLE,
+            NORTHMIN_B_MIDDLE,
+            NORTHMAX_B_MIDDLE,
+        )
+    raise ValueError(f"Unsupported subarray letter: {subarray_letter!r}")
 
 
 def _list_hub_scale_groups(filepath):
@@ -46,7 +92,9 @@ def _list_hub_scale_groups(filepath):
 def _load_misfit_plot_inputs_from_group(filepath, group_name):
     """
     Load grids, misfit volume, best-fit map coordinates, and grid indices for
-    ``plot_misfit_distribution``.
+    ``plot_misfit_distribution``. After plotting, east/north axis limits on the map and the east
+axis on the depth profile are set from ``EAST*_*_MIDDLE`` / ``NORTH*_*_MIDDLE`` in
+``utils_basic.py`` according to the subarray inferred from station names (``A`` vs ``B`` line).
     """
     with File(filepath, "r") as f:
         g = f[group_name]
@@ -65,9 +113,9 @@ def _load_misfit_plot_inputs_from_group(filepath, group_name):
         arrival = g["arrival_time"]
         stations = list(arrival.attrs.keys())
 
-    i_east = int(np.argmin(np.abs(easts_grid - east)))
-    i_north = int(np.argmin(np.abs(norths_grid - north)))
-    i_depth = int(np.argmin(np.abs(depths_grid - depth)))
+    i_east = int(argmin(abs(easts_grid - east)))
+    i_north = int(argmin(abs(norths_grid - north)))
+    i_depth = int(argmin(abs(depths_grid - depth)))
 
     coord_df = get_geophone_coords()
     coord_df = coord_df[coord_df.index.isin(stations)]
@@ -75,6 +123,8 @@ def _load_misfit_plot_inputs_from_group(filepath, group_name):
     if "name" not in coord_df.columns:
         first = coord_df.columns[0]
         coord_df = coord_df.rename(columns={first: "name"})
+
+    subarray_letter = _infer_subarray_letter(stations)
 
     return {
         "misfit_vol": misfit_vol,
@@ -91,6 +141,8 @@ def _load_misfit_plot_inputs_from_group(filepath, group_name):
         "min_misfit": min_misfit,
         "scale_factor": scale_factor,
         "group_name": group_name,
+        "stations": stations,
+        "subarray_letter": subarray_letter,
     }
 
 
@@ -140,6 +192,7 @@ def main():
     print(f"Best velocity scale factor: {data['scale_factor']:.4f}")
     print(f"Minimum misfit (stored): {data['min_misfit']:.6f} s")
     print(f"Best location: {data['east']:.1f} m E, {data['north']:.1f} m N, {data['depth']:.1f} m depth")
+    print(f"Inferred subarray: {data['subarray_letter']} (from station names)")
     print("All scales (group, scale_factor, min_misfit):")
     for r in sorted(rows, key=lambda x: x["scale_factor"]):
         mark = " <-- best" if r["group"] == best_row["group"] else ""
@@ -150,7 +203,8 @@ def main():
         f"Group {args.group_label:d}, best scale factor {data['scale_factor']:.4f} "
         f"(min misfit {data['min_misfit']:.4f} s)"
     )
-    fig, ax_map, ax_profile, cbar = plot_misfit_distribution(
+    east_lo, east_hi, north_lo, north_hi = _middle_axis_limits_for_subarray(data["subarray_letter"])
+    fig, _, _, _ = plot_misfit_distribution(
         data["misfit_vol"],
         data["easts_grid"],
         data["norths_grid"],
@@ -161,6 +215,12 @@ def main():
         data["station_df"],
         misfitmax=args.misfitmax,
         title=title,
+        east_lim=(east_lo, east_hi),
+        north_lim=(north_lo, north_hi),
+    )
+    print(
+        f"Map axis limits (subarray {data['subarray_letter']} middle): "
+        f"east [{east_lo:g}, {east_hi:g}] m, north [{north_lo:g}, {north_hi:g}] m"
     )
 
     if args.figname is not None:

@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+- Import functions individually: `from numpy import mean`, never `import numpy as np`.
+- Assign argparse results to plain variables immediately after `args = parser.parse_args()`.
+- Every Python command for this project runs under `oman_new`:
+  `conda run -n oman_new python ...`. A bare `python ...` is always wrong.
+- For procedures (new scripts, Slurm submission, long jobs), read
+  `.cursor/skills/oman-microearthquakes/SKILL.md` before acting.
