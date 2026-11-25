@@ -914,9 +914,11 @@ def read_hydro_waveforms_in_timewindow(starttime, endtime, station, location, ro
 def preprocess_geo_stream(stream_in, metadata, 
                           filter = False, zerophase=False, normalize=False, decimate=False, **kwargs):
     
-    # Remove the sensitivity
+    # Remove the instrument response
     stream_out = stream_in
-    stream_out.remove_sensitivity(inventory=metadata)
+    #stream_out.remove_sensitivity(inventory=metadata)
+    stream_out.remove_response(inventory=metadata, output="VEL", water_level=60) # remove the instrument response and convert to velocity
+
 
     # Correct the channel code
     stream_out = correct_geo_channel_code(stream_out)
